@@ -122,7 +122,7 @@ export default function ChatApp() {
     return () => { alive = false; };
   }, []);
 
-  /* 合并完成后：若服务端版本消息更多（例如上次关页面丢了尾巴），补回当前会话 */
+  /* 合并完成后（以及 reset/切会话后 messages 短暂为空时）：服务端版本消息更多就补回 */
   useEffect(() => {
     if (!synced) return;
     const conv = convos.list.find(c => c.id === convos.activeId);
@@ -133,7 +133,7 @@ export default function ChatApp() {
       if (conv.profile) setProfile({ ...newProfile(), ...conv.profile });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [synced]);
+  }, [synced, convos.activeId, convos.list, messages.length]);
 
   /* 页面隐藏/关闭前把待写入的变更立即落库 */
   useEffect(() => {
@@ -164,6 +164,9 @@ export default function ChatApp() {
   const saveCurrent = useCallback(() => {
     const snapshot = asChatMessages(messages);
     setConvos(prev => {
+      const cur = prev.list.find(c => c.id === prev.activeId);
+      /* 初始化 / reset() 竞争会让 messages 短暂为 []，此时不能用它覆盖已有历史 */
+      if (!snapshot.length && cur && (cur.messages || []).length) return prev;
       const list = prev.list.map(c =>
         c.id === prev.activeId
           ? { ...c, messages: snapshot.slice(-40), updatedAt: Date.now(),
@@ -255,6 +258,23 @@ export default function ChatApp() {
     if (conv.profile) setProfile({ ...newProfile(), ...conv.profile });
     toast('已切换会话：' + (conv.title || '新会话'));
   }, [convoId, convos.list, isLoading, reset, saveCurrent, setMessages, toast]);
+
+  /** 显式清空当前对话：先把会话历史置空（saveCurrent 的守卫才会放行），再清消息 */
+  const clearCurrent = useCallback(() => {
+    reset();
+    setMessages([]);
+    setRunId('');
+    setConvos(prev => {
+      const list = prev.list.map(c =>
+        c.id === prev.activeId ? { ...c, messages: [], updatedAt: Date.now() } : c);
+      const nd = { activeId: prev.activeId, list };
+      persistConvos(nd);
+      const active = list.find(c => c.id === nd.activeId);
+      if (active) queueSaveConvo(active);
+      return nd;
+    });
+    toast('已清空当前对话');
+  }, [reset, setMessages, toast]);
 
   const deleteConvo = useCallback((id: string) => {
     const d = loadConvos();
@@ -355,7 +375,7 @@ export default function ChatApp() {
               <div className="meta">{chatMeta}</div>
             </div>
             <div className="spacer"></div>
-            <button className="btn btn-ghost btn-sm" onClick={() => { reset(); setRunId(''); saveCurrent(); }}>清空对话</button>
+            <button className="btn btn-ghost btn-sm" onClick={clearCurrent}>清空对话</button>
           </div>
 
           <AgentTrace trace={trace} active={isLoading} />

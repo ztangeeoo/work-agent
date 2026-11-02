@@ -308,27 +308,52 @@ html, body { height: 100%; }
 
   /* ---- 题目卡片：一题一卡 ---- */
   .msg.ai { max-width: 92%; }
-  .ai-plain { font-size: 14px; line-height: 1.75; }
-  .q-card {
-    border: 1px solid var(--border); border-left: 3px solid var(--primary);
-    border-radius: 12px; background: #fff; margin: 10px 0; overflow: hidden;
-    transition: box-shadow .15s; animation: fadeUp .25s ease;
+  /* 含题目时气泡退化成透明容器，卡片直接浮在对话流里 */
+  .msg.ai .bubble.bubble-qcards {
+    background: none; border: none; border-radius: 0; padding: 0;
+    white-space: normal; width: 100%;
   }
-  .q-card:first-child { margin-top: 0; }
-  .q-card:hover { box-shadow: 0 3px 14px rgba(79, 110, 247, .12); }
+  .ai-block { display: block; }
+  .ai-plain { font-size: 14px; line-height: 1.75; }
+  .ai-plain + .ai-block { margin-top: 10px; }
+  .ai-block + .ai-plain { margin-top: 2px; }
+
+  .q-card {
+    --qa: #c3c8d4;
+    border: 1px solid var(--border); border-left: 3px solid var(--qa);
+    border-radius: 12px; background: #fff; margin: 0 0 14px; overflow: hidden;
+    box-shadow: 0 1px 2px rgba(20, 30, 60, .04);
+    transition: box-shadow .15s, transform .15s;
+    animation: fadeUp .25s ease;
+  }
+  .q-card:last-child { margin-bottom: 0; }
+  .q-card:hover { box-shadow: 0 4px 16px rgba(79, 110, 247, .14); }
+  .q-card.t-blue   { --qa: #4f6ef7; }
+  .q-card.t-teal   { --qa: #12b3a4; }
+  .q-card.t-purple { --qa: #7c5cf5; }
+  .q-card.t-orange { --qa: #f59e0b; }
+  .q-card.t-red    { --qa: #ef4444; }
+  .q-card.t-gray   { --qa: #9aa2b4; }
+  /* 进行中（正在流式输出的最后一题）：不重播入场动画，用脉冲点表示 */
+  .q-card.is-live { box-shadow: 0 0 0 3px rgba(79, 110, 247, .07); border-left-width: 3px; }
+  .bubble.is-streaming .q-card { animation: none; }
+
   .q-card-head {
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-    padding: 9px 14px; background: linear-gradient(135deg, #f7f9ff, #ffffff);
+    padding: 10px 14px; background: linear-gradient(135deg, #f8faff, #ffffff);
     border-bottom: 1px solid var(--border);
+    min-height: 42px;
   }
   .q-no {
-    background: linear-gradient(135deg, #4f6ef7, #7c5cf5); color: #fff;
+    background: var(--qa, #4f6ef7); color: #fff;
     font-size: 11px; font-weight: 700; border-radius: 6px; padding: 2px 8px; flex-shrink: 0;
+    letter-spacing: .3px;
   }
-  .q-title { font-size: 13px; font-weight: 600; flex: 1; min-width: 120px; }
+  .q-title { font-size: 13.5px; font-weight: 600; flex: 1; min-width: 100px; line-height: 1.5; }
   .q-tag {
-    font-size: 10px; font-weight: 500; border-radius: 999px; padding: 1px 8px;
-    border: 1px solid; flex-shrink: 0; line-height: 1.5;
+    font-size: 11px; font-weight: 500; border-radius: 999px; padding: 1.5px 9px;
+    border: 1px solid; flex-shrink: 0; line-height: 1.5; max-width: 100%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .q-tag.t-blue   { color: #2f5fd8; border-color: #b9cbf5; background: #eef3ff; }
   .q-tag.t-teal   { color: #0a7d74; border-color: #a5e2dc; background: #ecfaf8; }
@@ -336,12 +361,32 @@ html, body { height: 100%; }
   .q-tag.t-orange { color: #b25a00; border-color: #f5d3a8; background: #fff5e8; }
   .q-tag.t-red    { color: #c0392b; border-color: #f2c1bb; background: #fdf0ee; }
   .q-tag.t-gray   { color: #5a6172; border-color: #d4d8e2; background: #f4f5f8; }
+  .q-live-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--qa, #4f6ef7);
+    flex-shrink: 0; animation: qpulse 1.2s ease-in-out infinite;
+  }
+  @keyframes qpulse { 0%, 100% { opacity: .25; transform: scale(.8); } 50% { opacity: 1; transform: scale(1); } }
   .q-card-body { padding: 12px 14px; font-size: 14px; line-height: 1.75; }
+  .q-card-body > *:first-child { margin-top: 0; }
+  .q-card-body > *:last-child { margin-bottom: 0; }
+  .q-card-body hr, .q-card-body p:empty { display: none; }
   .q-followup {
     margin-top: 10px; background: #fffbe8; border: 1px solid #f0e0a0; border-radius: 8px;
     padding: 8px 12px; font-size: 13px;
   }
   .q-followup b { color: #8a6d00; }
+  /* 卡片底部：考察点说明条 */
+  .q-focus {
+    margin-top: 12px; padding-top: 9px; border-top: 1px dashed var(--border);
+    display: flex; gap: 8px; align-items: baseline;
+    font-size: 12.5px; line-height: 1.7; color: var(--sub);
+  }
+  .q-focus b {
+    color: var(--primary-dark); font-size: 11px; font-weight: 600;
+    background: #eef1fb; border-radius: 5px; padding: 1px 6px; flex-shrink: 0;
+  }
+  .q-focus p { display: inline; margin: 0; }
+  .q-focus em { color: var(--primary-dark); font-style: normal; font-weight: 600; }
 
   /* toast */
   #toast {

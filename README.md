@@ -119,6 +119,26 @@ agent_server.py  run_pipeline() 各环节起止 → SSE 里发 {agent_stage: {..
 - `runId` 由前端每轮生成，随 `/api/model-config` 同步到服务端，用于把事件归到本轮；
 - 中途点「停止」时面板显示「已中止」，不会一直转圈。
 
+### 一题一卡（题目卡片）
+
+出题 prompt 要求标题写成 `### 第 N 题【题型】`，前端按这个边界把一条 AI 回复切成多张独立卡片：
+
+```
+┌ Q1  【基础概念 + 深挖追问】 ──────────────────────┐  ← 题号徽标 + 题型标签（按类型着色）
+│ 某银行核心系统的支付回调服务使用一个 ThreadPoolExecutor…  │
+│ 请回答：1. … 2. … 3. …                              │
+│ ─────────────────────────────────────────────── │
+│ 🎯 考察点  是否真正理解线程池参数与任务提交/执行路径…      │  ← 从【考察点】行抽出的说明条
+└─────────────────────────────────────────────────┘
+```
+
+- **切分不挑格式**：行首的 `###` / `>` / `**` 前缀都能识别，兼容 `第N题` / `题N` / `问题N` / `QN`，
+  题目之间的 `---` 分隔线自动剥离；
+- **题型驱动配色**：基础=蓝、场景设计=青、深挖=紫、算法=橙、排查=红，卡片左色条与标签同色；
+- **流式边出边成卡**：已完成的题立刻变卡片，最后一道带脉冲点表示「正在出题」；
+- **按块渲染 + 稳定 key**：新 token 只更新进行中的那张卡，已出现的卡片不重建（不闪烁、可选中）；
+- 非题目内容（开场白、考察大纲、结尾总结）保持普通富文本，不与卡片混排。
+
 ## 历史数据存储（SQLite）
 
 历史会话原来是**只存在浏览器 localStorage**（约 5MB 上限，换设备/清缓存即丢）。现在改为：
@@ -207,7 +227,7 @@ VITE_COPILOTKIT_KEY=ckpb_你的key
 | `agent_server.py` | AgentScope 智能体服务：多 Agent 编排、OpenAI 兼容 SSE 接口、阶段事件、错误人性化提示 |
 | `question_bank.py` | 内置高频面试题库（11 个主方向 × 细分），作为面试官的检索工具 |
 | `data/interview.db` | 历史会话数据库（自动创建，已加入 `.gitignore`） |
-| `tests/` | 回归测试：`test_db.js`（持久层）、`test_web.ts`（渲染逻辑）、`test_stages.ts`（流水线状态）、`test_layout.ts`（布局约束）、`test_render.js`（旧版渲染逻辑）、`mock_llm.js`（mock 上游验全链路） |
+| `tests/` | 回归测试：`test_db.js`（持久层）、`test_web.ts`（渲染逻辑）、`test_qcard.ts`（卡片布局与历史守卫）、`test_stages.ts`（流水线状态）、`test_layout.ts`（布局约束）、`test_render.js`（旧版渲染逻辑）、`mock_llm.js`（mock 上游验全链路） |
 | `index.html` | 旧版单文件应用（保留作回退，不再维护） |
 | `start.bat` | 一键启动 |
 
@@ -215,7 +235,8 @@ VITE_COPILOTKIT_KEY=ckpb_你的key
 
 ```bash
 node tests/test_db.js                              # 持久层：读写/检索/隔离/级联（29 断言）
-node --experimental-strip-types tests/test_web.ts     # 渲染 / 题目卡片逻辑（25 断言）
+node --experimental-strip-types tests/test_web.ts     # 渲染 / 题目卡片逻辑（47 断言）
+node --experimental-strip-types tests/test_qcard.ts   # 卡片布局 / 历史恢复守卫（27 断言）
 node --experimental-strip-types tests/test_stages.ts  # 智能体流水线状态归并（23 断言）
 node --experimental-strip-types tests/test_layout.ts  # 聊天区滚动布局约束（17 断言）
 node tests/test_render.js                            # 旧版单文件渲染逻辑（26 断言）

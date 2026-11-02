@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage } from '../types';
-import { esc, renderAiHtml, renderAiHtmlStreaming } from '../lib/markdown';
+import { esc, aiBlocks } from '../lib/markdown';
 
 interface Props {
   messages: ChatMessage[];
@@ -9,15 +9,13 @@ interface Props {
   onStop: () => void;
 }
 
-/** AI 消息：题目卡片化渲染（流式期间不拆卡，结束后由上层重渲染触发拆卡） */
+/** AI 消息：按块渲染（一题一卡）。每块独立 DOM 且 key 稳定，流式时已完成的卡片不重建 */
 function AiBubble({ content, streaming }: { content: string; streaming: boolean }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const html = streaming ? renderAiHtmlStreaming(content) : renderAiHtml(content);
+  const blocks = aiBlocks(content, streaming);
+  const isCards = blocks.some(b => b.kind === 'q');
   return (
     <div
-      className="bubble"
-      ref={ref}
-      dangerouslySetInnerHTML={{ __html: html }}
+      className={'bubble' + (isCards ? ' bubble-qcards' : '') + (streaming ? ' is-streaming' : '')}
       onClick={(e) => {
         const btn = (e.target as HTMLElement).closest('.code-copy') as HTMLButtonElement | null;
         if (!btn) return;
@@ -29,7 +27,15 @@ function AiBubble({ content, streaming }: { content: string; streaming: boolean 
           });
         }
       }}
-    />
+    >
+      {blocks.map(b => (
+        <div
+          key={b.key}
+          className={'ai-block' + (b.live ? ' is-live' : '')}
+          dangerouslySetInnerHTML={{ __html: b.html }}
+        />
+      ))}
+    </div>
   );
 }
 
