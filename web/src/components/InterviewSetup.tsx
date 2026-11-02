@@ -4,8 +4,9 @@ import { EXPS, INDUSTRIES, LEVELS, TRACKS, TRACK_SUBS } from '../data/tracks';
 import { IMG_EXT, parseResume } from '../lib/resume';
 
 interface Props {
+  /** 是否展开；收起后只显示一行摘要 */
   open: boolean;
-  onClose: () => void;
+  onToggle: () => void;
   profile: Profile;
   onProfileChange: (p: Profile) => void;
   onConfirm: () => void;
@@ -13,6 +14,8 @@ interface Props {
   cfg: ModelCfg;
   onNeedCfg: () => void;
   toast: (msg: string) => void;
+  /** 已有对话时，收起状态下提示「点这里改配置」 */
+  compact?: boolean;
 }
 
 function ChipGroup({ items, value, onPick }: { items: string[]; value: string; onPick: (v: string) => void }) {
@@ -25,7 +28,13 @@ function ChipGroup({ items, value, onPick }: { items: string[]; value: string; o
   );
 }
 
-export default function AgentModal({ open, onClose, profile, onProfileChange, onConfirm, genErr, cfg, onNeedCfg, toast }: Props) {
+/**
+ * 面试配置卡（内联，不用弹框）。
+ * 直接出现在对话流里，用户只需点选 / 输入，然后确认生成。
+ */
+export default function InterviewSetup({
+  open, onToggle, profile, onProfileChange, onConfirm, genErr, cfg, onNeedCfg, toast, compact,
+}: Props) {
   const [hint, setHint] = useState('上传简历后，AI 将结合简历内容针对性出题');
   const [thumb, setThumb] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
@@ -33,7 +42,6 @@ export default function AgentModal({ open, onClose, profile, onProfileChange, on
 
   useEffect(() => () => { if (thumbRef.current) URL.revokeObjectURL(thumbRef.current); }, []);
 
-  if (!open) return null;
   const set = (patch: Partial<Profile>) => onProfileChange({ ...profile, ...patch });
 
   const handleFile = async (file: File) => {
@@ -58,15 +66,30 @@ export default function AgentModal({ open, onClose, profile, onProfileChange, on
 
   const subs = TRACK_SUBS[profile.track] || [];
   const subItems = ['随机', ...subs];
+  const summary = [
+    profile.track,
+    profile.sub && profile.sub !== '随机' ? profile.sub : '细分随机',
+    profile.level,
+    profile.exp,
+    profile.industry === '不限' ? '' : profile.industry,
+    `${profile.count} 道`,
+    profile.resumeName ? '含简历' : '',
+  ].filter(Boolean).join(' · ');
 
   return (
-    <div className="modal-mask show" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal modal-wide">
-        <div className="modal-head">
-          <span className="modal-title">🎯 面试出题官 · 面试配置</span>
-          <button className="modal-close" onClick={onClose} title="关闭">✕</button>
+    <div className={'setup-card' + (open ? '' : ' is-folded')}>
+      <div className="setup-head" onClick={onToggle}>
+        <span className="setup-icon">🎯</span>
+        <div className="setup-titles">
+          <div className="setup-title">面试配置</div>
+          <div className="setup-sub">{open ? '选好方向与级别，点下面按钮出题' : summary}</div>
         </div>
-        <div className="modal-body">
+        <div className="spacer"></div>
+        <span className="setup-fold">{open ? '收起' : (compact ? '展开修改' : '展开')}</span>
+      </div>
+
+      {open && (
+        <div className="setup-body">
           <label className="field">技术方向</label>
           <ChipGroup items={TRACKS} value={profile.track}
             onPick={(v) => set({ track: v, sub: '随机' })} />
@@ -123,19 +146,21 @@ export default function AgentModal({ open, onClose, profile, onProfileChange, on
           )}
           <div className="hint">{hint}</div>
           {genErr && <div className="err-text" style={{ display: 'block' }}>{genErr}</div>}
+
+          <div className="setup-actions">
+            <button className="btn btn-ghost btn-sm" onClick={onToggle}>稍后再说</button>
+            <div className="spacer"></div>
+            <button className="btn btn-primary btn-sm" onClick={() => {
+              if (!cfg.base || !cfg.model) {
+                onNeedCfg();
+                toast('❌ 请先完成「模型配置」');
+                return;
+              }
+              onConfirm();
+            }}>🚀 生成面试题</button>
+          </div>
         </div>
-        <div className="modal-actions">
-          <button className="btn btn-ghost btn-sm" onClick={onClose}>取消</button>
-          <button className="btn btn-primary btn-sm" onClick={() => {
-            if (!cfg.base || !cfg.model) {
-              onNeedCfg();
-              toast('❌ 请先完成「模型配置」');
-              return;
-            }
-            onConfirm();
-          }}>🚀 确认并生成面试题</button>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

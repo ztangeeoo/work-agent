@@ -9,6 +9,10 @@ interface Props {
   onStop: () => void;
   /** 列表顶部的自定义内容（代码审核模式的工作台） */
   header?: ReactNode;
+  /** 列表尾部的自定义内容（内联配置卡，紧贴输入框上方） */
+  footer?: ReactNode;
+  /** 输入框上方的自定义内容（智能体切换） */
+  inputTop?: ReactNode;
   /** 空状态；传 null 表示不渲染（工作台自己会占位） */
   empty?: ReactNode;
   avatar?: string;
@@ -46,7 +50,7 @@ function AiBubble({ content, streaming }: { content: string; streaming: boolean 
 }
 
 export default function ChatPanel({
-  messages, isLoading, onSend, onStop, header, empty, avatar = '🎯', placeholder,
+  messages, isLoading, onSend, onStop, header, footer, inputTop, empty, avatar = '🎯', placeholder,
 }: Props) {
   const [text, setText] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
@@ -90,9 +94,9 @@ export default function ChatPanel({
         {messages.length === 0 && (empty === undefined ? (
           <div className="empty-state">
             <div className="big">🎯</div>
-            <p>点击下方「面试出题官」卡片，新建面试会话</p>
-            <p>填写面试配置（方向 / 级别 / 经验 / 简历）并确认，即可生成面试题</p>
-            <p>也可以直接在下方输入任何指令，例如"再出 3 道算法题"</p>
+            <p>在下方配置里选好方向与级别，点「🚀 生成面试题」</p>
+            <p>也可以直接在输入框里提问，例如「再出 3 道算法题」</p>
+            <p>换一个智能体？点输入框上方的「代码审核官」</p>
           </div>
         ) : empty)}
         {messages.map((m, i) => {
@@ -113,7 +117,10 @@ export default function ChatPanel({
             <div className="bubble"><span className="typing"><i></i><i></i><i></i></span></div>
           </div>
         )}
+        {footer}
       </div>
+
+      {inputTop}
 
       <div className="chat-input">
         <textarea

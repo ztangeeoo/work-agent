@@ -21,8 +21,8 @@ import AgentSwitcher from './components/AgentSwitcher';
 import ChatPanel from './components/ChatPanel';
 import AgentTrace from './components/AgentTrace';
 import ConfigModal from './components/ConfigModal';
-import AgentModal from './components/AgentModal';
-import RepoModal from './components/RepoModal';
+import InterviewSetup from './components/InterviewSetup';
+import RepoSetup from './components/RepoSetup';
 import ReviewBar from './components/ReviewBar';
 import ReviewWorkbench from './components/ReviewWorkbench';
 
@@ -38,7 +38,8 @@ export default function ChatApp() {
 
   /* ---------- 面试配置 ---------- */
   const [profile, setProfile] = useState<Profile>(newProfile);
-  const [agentOpen, setAgentOpen] = useState(false);
+  /* 配置卡是内联在对话流里的，这里只控制展开/收起 */
+  const [setupOpen, setSetupOpen] = useState(true);
   const [genErr, setGenErr] = useState('');
 
   /* ---------- 智能体模式：面试出题 / 代码审核 ---------- */
@@ -52,6 +53,7 @@ export default function ChatApp() {
   const [selectedPr, setSelectedPr] = useState<number | null>(null);
   const [runningPr, setRunningPr] = useState<number | null>(null);
   const [polling, setPolling] = useState(false);
+  /* 仓库配置卡同样内联展开，不弹框 */
   const [repoOpen, setRepoOpen] = useState(false);
   const [repoEditing, setRepoEditing] = useState<Repo | null>(null);
   const [repoErr, setRepoErr] = useState('');
@@ -88,40 +90,17 @@ export default function ChatApp() {
   const [runId, setRunId] = useState('');
   const trace = useAgentStages(runId, isLoading, mode);
 
-  /* 初始恢复：只恢复与当前智能体同模式的会话，避免把面试对话显示在审核模式里 */
-  const modeOf = (c: Convo): AgentMode => c.mode || 'interview';
+  /* 初始恢复：直接恢复当前会话（左边列表保持不变，不按智能体拆会话） */
   const restoredRef = useRef(false);
   useEffect(() => {
     if (restoredRef.current) return;
     restoredRef.current = true;
 
-    let conv = convos.list.find(c => c.id === convoId);
-    if (!conv || modeOf(conv) !== mode) {
-      const same = convos.list.find(c => modeOf(c) === mode);
-      if (same) {
-        conv = same;
-        setConvos(prev => {
-          const nd = { ...prev, activeId: same.id };
-          persistConvos(nd);
-          return nd;
-        });
-      } else {
-        const id = genId();
-        const fresh: Convo = {
-          id, title: '新会话', createdAt: Date.now(), updatedAt: Date.now(),
-          messages: [], profile: snapshotProfile(profile), mode,
-        };
-        conv = fresh;
-        setConvos(prev => {
-          const nd = { activeId: id, list: [fresh, ...prev.list].slice(0, 30) };
-          persistConvos(nd);
-          return nd;
-        });
-      }
-    }
+    const conv = convos.list.find(c => c.id === convoId);
     if (conv && conv.messages && conv.messages.length) {
       setMessages(conv.messages.map(m => ({ id: m.id, role: m.role, content: m.content })));
       if (conv.profile) setProfile({ ...newProfile(), ...conv.profile });
+      setSetupOpen(false);   // 已有对话：配置卡先收起，别占满屏幕
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -459,11 +438,10 @@ export default function ChatApp() {
   const deleteConvo = useCallback((id: string) => {
     const d = loadConvos();
     d.list = d.list.filter(c => c.id !== id);
-    const sameMode = d.list.filter(c => modeOf(c) === mode);
-    if (d.activeId === id) d.activeId = sameMode.length ? sameMode[0].id : '';
-    if (!sameMode.length) {
+    if (d.activeId === id) d.activeId = d.list.length ? d.list[0].id : '';
+    if (!d.list.length) {
       const nid = genId();
-      d.list = [{ id: nid, title: '新会话', createdAt: Date.now(), updatedAt: Date.now(), messages: [], profile: null, mode }, ...d.list];
+      d.list = [{ id: nid, title: '新会话', createdAt: Date.now(), updatedAt: Date.now(), messages: [], profile: null }];
       d.activeId = nid;
     }
     persistConvos(d);
@@ -477,56 +455,34 @@ export default function ChatApp() {
       if (next?.profile) setProfile({ ...newProfile(), ...next.profile });
     }
     toast('已删除会话');
-  }, [convoId, mode, reset, setMessages, toast]);
+  }, [convoId, reset, setMessages, toast]);
 
-  /* ---------- 智能体切换 ---------- */
+  /* ---------- 智能体切换 ----------
+   * 只切换「谁来回话 + 显示哪张配置卡」，不新建、不切换、不过滤左侧会话。
+   * 再次点击当前智能体 = 展开/收起它的配置卡。
+   */
   const switchMode = useCallback((m: AgentMode) => {
     if (m === mode) {
-      /* 再次点击当前智能体 = 打开它的配置 */
       if (m === 'review') {
         setRepoEditing(repos.find(r => r.id === repoId) || null);
-        setRepoOpen(true);
+        setRepoOpen(v => !v);
       } else {
-        setAgentOpen(true);
+        setSetupOpen(v => !v);
       }
       return;
     }
     if (isLoading) return;
     saveCurrent();
     flushNow();
-
-    /* 每个智能体有自己的会话集合：优先切回该模式最近一场，没有才新建 */
-    const target = convos.list.find(c => modeOf(c) === m);
     setMode(m);
     localStorage.setItem(LS_MODE, m);
-
-    if (target) {
-      setConvos(prev => {
-        const nd = { ...prev, activeId: target.id };
-        persistConvos(nd);
-        return nd;
-      });
-      reset();
-      setRunId('');
-      setMessages((target.messages || []).slice(-40).map(x => ({ id: x.id, role: x.role, content: x.content })));
-      if (target.profile) setProfile({ ...newProfile(), ...target.profile });
+    if (m === 'review') {
+      setRepoOpen(!repos.length);        // 还没配仓库 → 直接展开让用户填
     } else {
-      const id = genId();
-      const conv: Convo = {
-        id, title: '新会话', createdAt: Date.now(), updatedAt: Date.now(),
-        messages: [], profile: snapshotProfile(profile), mode: m,
-      };
-      setConvos(prev => {
-        const nd = { activeId: id, list: [conv, ...prev.list].slice(0, 30) };
-        persistConvos(nd);
-        return nd;
-      });
-      reset();
-      setRunId('');
-      setMessages([]);
+      setSetupOpen(true);
     }
     toast(m === 'review' ? '已切换到「代码审核官」' : '已切换到「面试出题官」');
-  }, [mode, isLoading, convos.list, saveCurrent, reset, setMessages, profile, repos, repoId, toast]);
+  }, [mode, isLoading, saveCurrent, repos, repoId, toast]);
 
   /* ---------- 面试配置确认 ---------- */
   const onAgentConfirm = useCallback(() => {
@@ -536,18 +492,15 @@ export default function ChatApp() {
       return;
     }
     setGenErr('');
-    setAgentOpen(false);
+    setSetupOpen(false);   // 生成后把配置卡收起，让出对话空间
     send(buildGeneratePrompt(profile));
   }, [cfg.base, cfg.model, profile, send]);
 
   /* ---------- 派生数据 ---------- */
   const activeAgent = useMemo(() => AGENTS.find(a => a.mode === mode) || AGENTS[0], [mode]);
   const currentRepo = useMemo(() => repos.find(r => r.id === repoId) || null, [repos, repoId]);
-  /* 侧栏只显示当前智能体的会话，避免两种工作混在一起 */
-  const visibleConvos = useMemo(
-    () => ({ activeId: convos.activeId, list: convos.list.filter(c => modeOf(c) === mode) }),
-    [convos, mode],
-  );
+  /* 左侧会话列表保持完整：不按智能体过滤，切换时也不新建会话 */
+  const visibleConvos = convos;
 
   const indText = profile.industry === '不限' ? '行业不限' : profile.industry;
   const chatTitle = mode === 'review'
@@ -628,7 +581,7 @@ export default function ChatApp() {
               onPick={setRepoId}
               onPoll={handlePoll}
               onAdd={() => { setRepoEditing(null); setRepoOpen(true); }}
-              onSettings={() => { setRepoEditing(currentRepo); setRepoOpen(true); }}
+              onSettings={() => { setRepoEditing(currentRepo); setRepoOpen(v => !v); }}
               polling={polling}
               prCount={prs.length}
               lastError={repoErr || currentRepo?.lastError || ''}
@@ -659,52 +612,69 @@ export default function ChatApp() {
                 onAsk={send}
               />
             ) : undefined}
+            footer={mode === 'review' ? (
+              /* 仓库配置内联在对话流尾部；没有仓库时强制展开 */
+              ((repoOpen || !currentRepo) && (
+                <RepoSetup
+                  open={repoOpen || !currentRepo}
+                  onToggle={() => setRepoOpen(v => !v)}
+                  repo={repoEditing}
+                  hasRepo={!!currentRepo}
+                  onSaved={(repo, isNew) => {
+                    setRepos(prev => (isNew ? [...prev, repo] : prev.map(r => (r.id === repo.id ? repo : r))));
+                    setRepoId(repo.id);
+                    setRepoEditing(repo);
+                    setRepoOpen(false);
+                  }}
+                  onDeleted={(id) => {
+                    setRepos(prev => prev.filter(r => r.id !== id));
+                    setRepoId(prev => (prev === id ? '' : prev));
+                    setRepoOpen(true);
+                  }}
+                  toast={toast}
+                />
+              ))
+            ) : (
+              /* 面试配置内联在对话流尾部，紧贴输入框上方 */
+              <InterviewSetup
+                open={setupOpen}
+                onToggle={() => setSetupOpen(v => !v)}
+                profile={profile}
+                onProfileChange={setProfile}
+                onConfirm={onAgentConfirm}
+                genErr={genErr}
+                cfg={cfg}
+                onNeedCfg={() => setCfgOpen(true)}
+                toast={toast}
+                compact={messages.length > 0}
+              />
+            )}
             empty={mode === 'review' ? null : undefined}
             placeholder={mode === 'review'
               ? '针对这份审核报告追问，例如「第 2 个问题怎么改？」'
               : '输入消息…（Enter 发送，Shift+Enter 换行）'}
-          />
-
-          <AgentSwitcher
-            agents={AGENTS}
-            mode={mode}
-            onSwitch={switchMode}
-            onOpenConfig={() => {
-              if (mode === 'review') { setRepoEditing(currentRepo); setRepoOpen(true); }
-              else setAgentOpen(true);
-            }}
-            configLabel={mode === 'review' ? '仓库设置' : '面试配置'}
+            inputTop={
+              <AgentSwitcher
+                agents={AGENTS}
+                mode={mode}
+                onSwitch={switchMode}
+                onOpenConfig={() => {
+                  if (mode === 'review') {
+                    setRepoEditing(currentRepo);
+                    setRepoOpen(v => !v);
+                  } else {
+                    setSetupOpen(v => !v);
+                  }
+                }}
+                configLabel={mode === 'review' ? '仓库配置' : '面试配置'}
+                configOpen={mode === 'review' ? (repoOpen || !currentRepo) : setupOpen}
+              />
+            }
           />
         </div>
       </main>
 
       <ConfigModal open={cfgOpen} onClose={() => setCfgOpen(false)} cfg={cfg} onSave={onSaveCfg} toast={toast} />
-      <AgentModal
-        open={agentOpen}
-        onClose={() => setAgentOpen(false)}
-        profile={profile}
-        onProfileChange={setProfile}
-        onConfirm={onAgentConfirm}
-        genErr={genErr}
-        cfg={cfg}
-        onNeedCfg={() => setCfgOpen(true)}
-        toast={toast}
-      />
-      <RepoModal
-        open={repoOpen}
-        onClose={() => setRepoOpen(false)}
-        repo={repoEditing}
-        onSaved={(repo, isNew) => {
-          setRepos(prev => (isNew ? [...prev, repo] : prev.map(r => (r.id === repo.id ? repo : r))));
-          setRepoId(repo.id);
-        }}
-        onDeleted={(id) => {
-          setRepos(prev => prev.filter(r => r.id !== id));
-          setRepoId(prev => (prev === id ? '' : prev));
-          setRepoOpen(false);
-        }}
-        toast={toast}
-      />
 
       <div id="toast" className={toastMsg ? 'show' : ''}>{toastMsg}</div>
     </>

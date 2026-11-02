@@ -3,9 +3,13 @@ import type { Repo } from '../types';
 import { removeRepo, saveRepo, testRepo } from '../lib/review';
 
 interface Props {
+  /** 是否展开 */
   open: boolean;
-  onClose: () => void;
-  repo: Repo | null;              // null = 新增
+  onToggle: () => void;
+  /** 当前要编辑的仓库；null = 新增 */
+  repo: Repo | null;
+  /** 是否已有仓库（用于文案） */
+  hasRepo: boolean;
   onSaved: (repo: Repo, isNew: boolean) => void;
   onDeleted: (id: string) => void;
   toast: (msg: string) => void;
@@ -20,7 +24,11 @@ const INTERVALS = [
   { v: 1800, label: '30 分钟' },
 ];
 
-export default function RepoModal({ open, onClose, repo, onSaved, onDeleted, toast }: Props) {
+/**
+ * 仓库配置卡（内联，不用弹框）。
+ * 首次进入审核模式时会自动展开，用户填地址即可；已有仓库时收起成一行摘要。
+ */
+export default function RepoSetup({ open, onToggle, repo, hasRepo, onSaved, onDeleted, toast }: Props) {
   const [url, setUrl] = useState('');
   const [provider, setProvider] = useState('auto');
   const [token, setToken] = useState('');
@@ -31,6 +39,7 @@ export default function RepoModal({ open, onClose, repo, onSaved, onDeleted, toa
   const [err, setErr] = useState('');
   const [testInfo, setTestInfo] = useState('');
 
+  /* 展开时用当前仓库回填（切换仓库/首次打开都会刷新） */
   useEffect(() => {
     if (!open) return;
     setUrl(repo?.url || '');
@@ -42,9 +51,7 @@ export default function RepoModal({ open, onClose, repo, onSaved, onDeleted, toa
     setErr('');
     setTestInfo('');
     setBusy('');
-  }, [open, repo]);
-
-  if (!open) return null;
+  }, [open, repo?.id]);
 
   const payload = () => ({
     id: repo?.id,
@@ -105,14 +112,24 @@ export default function RepoModal({ open, onClose, repo, onSaved, onDeleted, toa
     }
   };
 
+  const summary = repo
+    ? `${repo.owner}/${repo.name} · 每 ${Math.round(repo.intervalSec / 60) || 1} 分钟轮询 · ${repo.hasToken ? '已配 Token' : '未配 Token'}`
+    : '还没有配置仓库，填入代码地址即可开始自动审核';
+
   return (
-    <div className="modal-mask show" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal modal-wide">
-        <div className="modal-head">
-          <span className="modal-title">🛡️ 代码审核官 · 仓库配置</span>
-          <button className="modal-close" onClick={onClose} title="关闭">✕</button>
+    <div className={'setup-card is-review' + (open ? '' : ' is-folded')}>
+      <div className="setup-head" onClick={onToggle}>
+        <span className="setup-icon">🛡️</span>
+        <div className="setup-titles">
+          <div className="setup-title">仓库配置</div>
+          <div className="setup-sub">{summary}</div>
         </div>
-        <div className="modal-body">
+        <div className="spacer"></div>
+        <span className="setup-fold">{open ? '收起' : (hasRepo ? '展开修改' : '展开填写')}</span>
+      </div>
+
+      {open && (
+        <div className="setup-body">
           <label className="field">代码地址</label>
           <input
             type="text"
@@ -168,22 +185,24 @@ export default function RepoModal({ open, onClose, repo, onSaved, onDeleted, toa
 
           {testInfo && <div className="ok-text" style={{ display: 'block' }}>{testInfo}</div>}
           {err && <div className="err-text" style={{ display: 'block' }}>{err}</div>}
-        </div>
-        <div className="modal-actions">
-          {repo && (
-            <button className="btn btn-ghost btn-sm danger" disabled={!!busy} onClick={doDelete}>
-              删除仓库
+
+          <div className="setup-actions">
+            {repo && (
+              <button className="btn btn-ghost btn-sm danger" disabled={!!busy} onClick={doDelete}>
+                删除仓库
+              </button>
+            )}
+            <div className="spacer"></div>
+            <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={doTest}>
+              {busy === 'test' ? '测试中…' : '测试连接'}
             </button>
-          )}
-          <div className="spacer" style={{ flex: 1 }}></div>
-          <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={doTest}>
-            {busy === 'test' ? '测试中…' : '测试连接'}
-          </button>
-          <button className="btn btn-primary btn-sm" disabled={!!busy} onClick={() => doSave().then(r => { if (r) onClose(); })}>
-            {busy === 'save' ? '保存中…' : '保存'}
-          </button>
+            <button className="btn btn-primary btn-sm" disabled={!!busy}
+              onClick={() => doSave().then(r => { if (r) onToggle(); })}>
+              {busy === 'save' ? '保存中…' : '保存并轮询'}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

@@ -108,11 +108,25 @@ npm run dev     # Vite :5173，/api 代理到 :8787
 | 🛡️ 审核官 | 代码审核第 2 棒 | 按正确性 / 安全 / 并发性能 / 可维护性 / 兼容测试五个维度输出结构化问题清单（严重度 · 文件 · 行号 · 触发条件 · 改法），最多 10 条 |
 | ⚖️ 裁决官 | 代码审核第 3 棒 | 基于前两棒给出风险等级（高/中/低）与合入结论（可合入 / 建议先改 / 打回修改），并给亮点与建议 |
 
+### 界面怎么用
+
+两个智能体是**输入框上方的两个标签**（🎯 面试出题官 / 🛡️ 代码审核官），点一下就切换：
+
+- 切换只改变「谁来回话 + 显示哪张配置卡」，**左侧会话列表保持不变**（不新建、不切换、不过滤会话）；
+- 配置**不是弹框**，而是直接出现在对话流里的卡片，用户只需点选 / 填表：
+
+| 智能体 | 内联配置卡 | 内容 |
+|---|---|---|
+| 🎯 面试出题官 | 面试配置 | 技术方向 / 细分 / 级别 / 经验 / 行业 / 题数 / 语言 / 补充要求 / 简历上传 → 「🚀 生成面试题」 |
+| 🛡️ 代码审核官 | 仓库配置 | 代码地址 / 平台 / Token / 轮询间隔 / 自动回帖 → 「测试连接」「保存并轮询」 |
+
+配置卡默认展开；点卡片标题或输入框上方的「⚙️ 面试配置 / 仓库配置」可收起/展开，生成过一次后自动收起。
+
 ### 代码审核官怎么用
 
-1. 聊天框上方切到「🛡️ 代码审核官」。
-2. 点「⚙️ 仓库设置」，填代码地址（`https://github.com/owner/repo`、`github.com/owner/repo`、`git@github.com:owner/repo.git`、`owner/repo` 都能识别；GitLab 同理），私有仓库填 Token，设置轮询间隔与是否自动回帖。
-3. 点「🧪 测试连接」确认能读到 PR；之后按间隔自动轮询，也可点「立即轮询」。
+1. 点输入框上方的「🛡️ 代码审核官」，配置卡会在对话流里出现（还没有仓库时自动展开）。
+2. 填代码地址（`https://github.com/owner/repo`、`github.com/owner/repo`、`git@github.com:owner/repo.git`、`owner/repo` 都能识别；GitLab 同理），私有仓库填 Token，设置轮询间隔与是否自动回帖。
+3. 点「测试连接」确认能读到 PR，再点「保存并轮询」；之后按间隔自动轮询，也可在状态条点「立即轮询」。
 4. 工作台列出开放 PR，未审的前面有圆点；点某个 PR 可直接审核，或在下一轮自动被审。
 5. 审核完成出报告卡：风险 / 结论徽章、问题清单（按严重度分组）、亮点与建议、三智能体耗时；有 Token 时可在卡片上「🚀 回帖到 PR」。
 6. 关于这次审核的疑问，直接在聊天框追问（例如「第一个问题怎么改」「写一条 PR 评论」），审核官会带着报告上下文回答。
@@ -263,7 +277,7 @@ VITE_COPILOTKIT_KEY=ckpb_你的key
 
 | 文件 | 作用 |
 |---|---|
-| `web/` | React 前端（Vite + TS + CopilotKit）。`src/lib/markdown.ts` 负责题目卡片渲染，`src/lib/stageReducer.ts` 负责流水线状态归并，`src/lib/remote.ts` 负责与服务端历史库同步，`src/lib/review.ts` 负责代码审核接口与展示辅助，`src/components/` 为各界面区块（`AgentTrace.tsx` 流水线面板、`AgentSwitcher.tsx` 智能体选择器、`ReviewWorkbench.tsx` 审核工作台、`RepoModal.tsx` 仓库配置） |
+| `web/` | React 前端（Vite + TS + CopilotKit）。`src/lib/markdown.ts` 负责题目卡片渲染，`src/lib/stageReducer.ts` 负责流水线状态归并，`src/lib/remote.ts` 负责与服务端历史库同步，`src/lib/review.ts` 负责代码审核接口与展示辅助，`src/components/` 为各界面区块（`AgentSwitcher.tsx` 输入框上方的智能体标签、`InterviewSetup.tsx` / `RepoSetup.tsx` 对话流内联配置卡、`AgentTrace.tsx` 流水线面板、`ReviewWorkbench.tsx` 审核工作台） |
 | `server.js` | Node 服务：静态托管、`/api/models`、`/api/chat`、`/api/model-config`、`/api/stages`（阶段事件 SSE）、`/api/copilotkit`（CopilotKit runtime），其余 `/api/*` 反向代理到 Python |
 | `agent_adapter.js` | CopilotKit → AgentScope 智能体服务的 ServiceAdapter（SSE 转接，并截获智能体阶段事件） |
 | `agent_server.py` | FastAPI 服务：AgentScope 多 Agent 编排、`/v1/chat/completions`（OpenAI 兼容 SSE）、`/v1/review`（审核流水线），以及全部 `/api/*` 数据接口 |
@@ -284,7 +298,7 @@ VITE_COPILOTKIT_KEY=ckpb_你的key
 node --experimental-strip-types tests/test_web.ts     # 渲染 / 题目卡片逻辑（47 断言）
 node --experimental-strip-types tests/test_qcard.ts   # 卡片布局 / 历史恢复守卫（27 断言）
 node --experimental-strip-types tests/test_stages.ts  # 智能体流水线状态归并（23 断言）
-node --experimental-strip-types tests/test_layout.ts  # 聊天区滚动布局约束（18 断言）
+node --experimental-strip-types tests/test_layout.ts  # 滚动布局 + 智能体切换/内联配置（37 断言）
 node tests/test_render.js                             # 旧版单文件渲染逻辑（26 断言）
 node tests/mock_llm.js                                # mock 上游（含审核三智能体应答），配合 curl 验证全链路
 ```

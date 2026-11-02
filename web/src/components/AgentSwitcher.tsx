@@ -6,38 +6,45 @@ interface Props {
   onSwitch: (m: AgentMode) => void;
   onOpenConfig: () => void;
   configLabel: string;
+  /** 配置卡当前是否展开，用于高亮按钮 */
+  configOpen?: boolean;
 }
 
 /**
- * 聊天框上方的智能体选择器：并排展示可用的智能体，点击切换。
- * 与面试出题官一致——选中态高亮，右侧是当前模式对应的配置入口。
+ * 输入框上方的智能体选择条：两个智能体做成分段标签，点击即切换。
+ * 切换只改变「谁来回话 + 显示哪张配置卡」，不新建/不切换左侧会话。
  */
-export default function AgentSwitcher({ agents, mode, onSwitch, onOpenConfig, configLabel }: Props) {
+export default function AgentSwitcher({ agents, mode, onSwitch, onOpenConfig, configLabel, configOpen }: Props) {
   return (
     <div className="agent-bar">
-      <div className="agent-switch">
+      <div className="agent-tabs" role="tablist">
         {agents.map(a => {
           const active = a.mode === mode;
           return (
-            <div
+            <button
               key={a.id}
-              className={'agent-card' + (active ? ' active' : '') + (a.mode === 'review' ? ' agent-review' : '')}
+              role="tab"
+              aria-selected={active}
+              className={
+                'agent-tab' + (active ? ' active' : '') + (a.mode === 'review' ? ' is-review' : '')
+              }
               onClick={() => onSwitch(a.mode)}
-              title={active ? '当前智能体' : '切换到「' + a.name + '」'}
+              title={a.desc}
             >
-              <span className="agent-icon">{a.icon}</span>
-              <div className="agent-info">
-                <div className="agent-name">
-                  {a.name}
-                  {active && <span className="agent-badge">当前</span>}
-                </div>
-                <div className="agent-desc">{a.desc}</div>
-              </div>
-            </div>
+              <span className="agent-tab-icon">{a.icon}</span>
+              <span>{a.name}</span>
+            </button>
           );
         })}
       </div>
-      <button className="btn btn-ghost btn-sm" onClick={onOpenConfig}>⚙️ {configLabel}</button>
+      <div className="spacer"></div>
+      <button
+        className={'btn btn-ghost btn-sm' + (configOpen ? ' is-on' : '')}
+        onClick={onOpenConfig}
+        title={configOpen ? '收起配置' : '展开配置'}
+      >
+        ⚙️ {configLabel}
+      </button>
     </div>
   );
 }

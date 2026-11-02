@@ -210,36 +210,28 @@ html, body { height: 100%; }
   @keyframes blink { 0%,80%,100% { opacity: .25; } 40% { opacity: 1; } }
 
   /* ---- 智能体栏（聊天框上方） ---- */
+  /* 输入框上方的智能体切换条：两个分段标签 + 右侧配置开关 */
   .agent-bar {
-    display: flex; align-items: center; gap: 10px; padding: 10px 20px;
+    display: flex; align-items: center; gap: 10px; padding: 8px 20px;
     background: var(--panel); border-top: 1px solid var(--border); flex-shrink: 0;
   }
-  .agent-card {
-    flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px;
-    padding: 9px 14px; border: 1.5px solid var(--border); border-radius: 12px;
-    cursor: pointer; transition: all .15s; background: linear-gradient(135deg, #f7f9ff, #ffffff);
+  .agent-bar .spacer { flex: 1; }
+  .agent-tabs { display: flex; gap: 6px; min-width: 0; }
+  .agent-tab {
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+    padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border);
+    background: #fff; color: var(--text); font-size: 12.5px; font-family: inherit;
+    cursor: pointer; transition: border-color .12s, background .12s, color .12s;
   }
-  .agent-card:hover { border-color: var(--primary); box-shadow: 0 2px 10px rgba(79, 110, 247, .14); }
-  .agent-card.active { border-color: var(--primary); background: var(--primary-light); }
-  .agent-icon {
-    width: 38px; height: 38px; border-radius: 10px; flex-shrink: 0;
-    background: linear-gradient(135deg, #4f6ef7, #7c5cf5);
-    display: flex; align-items: center; justify-content: center; font-size: 18px;
-  }
-  .agent-info { flex: 1; min-width: 0; }
-  .agent-name { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
-  .agent-badge {
-    font-size: 10px; font-weight: 500; color: var(--primary); background: #fff;
-    border: 1px solid var(--primary); border-radius: 999px; padding: 1px 8px; line-height: 1.4;
-  }
-  .agent-desc {
-    font-size: 11px; color: var(--sub); margin-top: 2px;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
+  .agent-tab:hover { border-color: var(--primary); }
+  .agent-tab.active { border-color: var(--primary); background: var(--primary-light); color: var(--primary); font-weight: 600; }
+  .agent-tab.is-review.active { border-color: #16a34a; background: #f0fdf7; color: #16a34a; }
+  .agent-tab-icon { font-size: 14px; line-height: 1; }
+  .agent-bar .btn.is-on { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
 
   /* 输入区 */
   .chat-input {
-    padding: 14px 20px; background: var(--panel); border-top: 1px solid var(--border);
+    padding: 8px 20px 14px; background: var(--panel); border-top: none;
     display: flex; gap: 10px; flex-shrink: 0;
   }
   .chat-input textarea {
@@ -518,12 +510,42 @@ html, body { height: 100%; }
 
   /* =================== 代码审核官 =================== */
 
-  /* 智能体选择器：两个卡片并排 */
-  .agent-switch { flex: 1; display: flex; gap: 10px; min-width: 0; }
-  .agent-switch .agent-card { flex: 1; }
-  .agent-card.agent-review .agent-icon { background: linear-gradient(135deg, #16a34a, #0ea5a4); }
-  .agent-card.agent-review.active { border-color: #16a34a; background: #f0fdf7; }
-  .agent-card.agent-review.active .agent-badge { color: #16a34a; border-color: #16a34a; }
+  /* 内联配置卡（面试配置 / 仓库配置）：直接出现在对话流里，不用弹框 */
+  .setup-card {
+    flex-shrink: 0; margin: 10px 0 2px;
+    border: 1px solid var(--border); border-left: 3px solid var(--primary);
+    border-radius: 14px; background: #fff; overflow: hidden;
+    animation: fadeUp .22s ease;
+  }
+  .setup-card.is-review { border-left-color: #16a34a; }
+  .setup-card.is-folded { background: linear-gradient(135deg, #f8faff, #ffffff); }
+  .setup-card.is-review.is-folded { background: linear-gradient(135deg, #f6fefb, #ffffff); }
+  .setup-head {
+    display: flex; align-items: center; gap: 10px; padding: 9px 14px;
+    cursor: pointer; user-select: none;
+  }
+  .setup-head .spacer { flex: 1; }
+  .setup-icon {
+    width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 14px;
+    background: var(--primary-light);
+  }
+  .setup-card.is-review .setup-icon { background: #e8fbf1; }
+  .setup-titles { min-width: 0; }
+  .setup-title { font-size: 13px; font-weight: 600; }
+  .setup-sub {
+    font-size: 11px; color: var(--sub); margin-top: 1px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 62vw;
+  }
+  .setup-fold { font-size: 11px; color: var(--sub); flex-shrink: 0; }
+  .setup-head:hover .setup-fold { color: var(--primary); }
+  .setup-body { padding: 4px 14px 12px; border-top: 1px solid var(--border); }
+  .setup-body .field:first-child { margin-top: 10px; }
+  .setup-actions {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border);
+  }
+  .setup-actions .spacer { flex: 1; }
 
   /* 轮询状态条 */
   .review-bar {
@@ -649,9 +671,12 @@ html, body { height: 100%; }
   .btn.danger { color: var(--danger); border-color: #f2c1bb; }
   .btn.danger:hover { background: #fdf0ee; border-color: var(--danger); color: var(--danger); }
 
-  /* 窄屏：智能体卡片改为单列，状态条换行 */
+  /* 窄屏：智能体标签与状态条换行，配置卡正文更紧凑 */
   @media (max-width: 900px) {
-    .agent-switch { flex-direction: column; }
+    .agent-bar { flex-wrap: wrap; }
+    .agent-tabs { width: 100%; }
+    .agent-tab { flex: 1; justify-content: center; }
     .review-bar { flex-wrap: wrap; }
     .rb-status { max-width: 100%; }
+    .setup-body { padding: 4px 10px 10px; }
   }
