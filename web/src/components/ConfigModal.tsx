@@ -72,7 +72,7 @@ export default function ConfigModal({ open, onClose, cfg, onSave, toast }: Props
   };
 
   return (
-    <div className="modal-mask show" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div id="cfgModal" className="modal-mask show" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal">
         <div className="modal-head">
           <span className="modal-title">模型配置</span>

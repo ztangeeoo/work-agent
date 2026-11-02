@@ -41,7 +41,7 @@ export default function AgentSwitcher({ agents, mode, onSwitch, onOpenConfig, co
       <button
         className={'btn btn-ghost btn-sm' + (configOpen ? ' is-on' : '')}
         onClick={onOpenConfig}
-        title={configOpen ? '收起配置' : '展开配置'}
+        title={'打开' + configLabel + '弹框'}
       >
         ⚙️ {configLabel}
       </button>

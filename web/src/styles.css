@@ -46,7 +46,7 @@ html, body { height: 100%; }
   /* ===== 模型配置弹框 ===== */
   .modal-mask {
     display: none; position: fixed; inset: 0; background: rgba(20, 24, 40, .45);
-    z-index: 100; align-items: flex-start; justify-content: center; padding: 12vh 16px 16px;
+    z-index: 100; align-items: flex-start; justify-content: center; padding: 8vh 16px 24px;
   }
   .modal-mask.show { display: flex; }
   .modal {
@@ -74,7 +74,16 @@ html, body { height: 100%; }
 
   /* ===== 面试配置弹框（宽） ===== */
   .modal-wide { width: 640px; }
-  #cfgModal { z-index: 110; }   /* 模型配置弹框可叠在面试配置弹框之上 */
+  .modal-tall { max-height: 82vh; }
+  /* 固定在弹框底部的操作区：表单再长，主按钮也始终可点 */
+  .modal-foot {
+    display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+    padding: 12px 18px; border-top: 1px solid var(--border); background: #fbfcff;
+    border-radius: 0 0 14px 14px;
+  }
+  .modal-foot .spacer { flex: 1; }
+  .modal-foot .btn-primary { flex: 1; min-width: 140px; }
+  #cfgModal { z-index: 110; }   /* 模型配置弹框可叠在面试/仓库配置弹框之上 */
   .convo-list { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
   .convo-item {
     display: flex; align-items: center; gap: 10px; padding: 10px 12px;
@@ -510,43 +519,6 @@ html, body { height: 100%; }
 
   /* =================== 代码审核官 =================== */
 
-  /* 内联配置卡（面试配置 / 仓库配置）：直接出现在对话流里，不用弹框 */
-  .setup-card {
-    flex-shrink: 0; margin: 10px 0 2px;
-    border: 1px solid var(--border); border-left: 3px solid var(--primary);
-    border-radius: 14px; background: #fff; overflow: hidden;
-    animation: fadeUp .22s ease;
-  }
-  .setup-card.is-review { border-left-color: #16a34a; }
-  .setup-card.is-folded { background: linear-gradient(135deg, #f8faff, #ffffff); }
-  .setup-card.is-review.is-folded { background: linear-gradient(135deg, #f6fefb, #ffffff); }
-  .setup-head {
-    display: flex; align-items: center; gap: 10px; padding: 9px 14px;
-    cursor: pointer; user-select: none;
-  }
-  .setup-head .spacer { flex: 1; }
-  .setup-icon {
-    width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0;
-    display: flex; align-items: center; justify-content: center; font-size: 14px;
-    background: var(--primary-light);
-  }
-  .setup-card.is-review .setup-icon { background: #e8fbf1; }
-  .setup-titles { min-width: 0; }
-  .setup-title { font-size: 13px; font-weight: 600; }
-  .setup-sub {
-    font-size: 11px; color: var(--sub); margin-top: 1px;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 62vw;
-  }
-  .setup-fold { font-size: 11px; color: var(--sub); flex-shrink: 0; }
-  .setup-head:hover .setup-fold { color: var(--primary); }
-  .setup-body { padding: 4px 14px 12px; border-top: 1px solid var(--border); }
-  .setup-body .field:first-child { margin-top: 10px; }
-  .setup-actions {
-    display: flex; align-items: center; gap: 8px;
-    margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border);
-  }
-  .setup-actions .spacer { flex: 1; }
-
   /* 轮询状态条 */
   .review-bar {
     display: flex; align-items: center; gap: 10px; padding: 8px 20px;
@@ -671,12 +643,14 @@ html, body { height: 100%; }
   .btn.danger { color: var(--danger); border-color: #f2c1bb; }
   .btn.danger:hover { background: #fdf0ee; border-color: var(--danger); color: var(--danger); }
 
-  /* 窄屏：智能体标签与状态条换行，配置卡正文更紧凑 */
+  /* 窄屏：智能体标签与状态条换行，弹框占满宽度 */
   @media (max-width: 900px) {
     .agent-bar { flex-wrap: wrap; }
     .agent-tabs { width: 100%; }
     .agent-tab { flex: 1; justify-content: center; }
     .review-bar { flex-wrap: wrap; }
     .rb-status { max-width: 100%; }
-    .setup-body { padding: 4px 10px 10px; }
+    .modal-wide { width: 100%; }
+    .modal-body { padding: 6px 14px 16px; }
+    .modal-foot { padding: 10px 14px; }
   }

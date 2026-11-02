@@ -79,18 +79,32 @@ ok(!/<ChatPanel[\s\S]*?\/>\s*<AgentSwitcher/.test(APP), '不再把智能体选�
 ok(/\.agent-bar\s*\{[^}]*border-top/.test(CSS), '切换条与聊天区之间有分隔线');
 ok(/\.agent-tab\.active/.test(CSS), '切换条有选中态样式');
 
-console.log('\n[6] 配置在聊天框内联出现（不是弹框）');
-ok(/footer\?:\s*ReactNode/.test(PANEL), 'ChatPanel 提供 footer 插槽（内联配置卡）');
-ok(/\{footer\}/.test(PANEL), 'footer 渲染在消息列表末尾（紧贴输入框上方）');
-ok(/<InterviewSetup/.test(APP), '面试配置用内联组件 InterviewSetup');
-ok(/<RepoSetup/.test(APP), '仓库配置用内联组件 RepoSetup');
-ok(!/<AgentModal/.test(APP) && !/<RepoModal/.test(APP), '不再使用配置弹框');
-ok(!/modal-mask/.test(fs.readFileSync(path.join(ROOT, 'web/src/components/InterviewSetup.tsx'), 'utf8')),
-   '面试配置卡里没有弹框遮罩');
-ok(!/modal-mask/.test(fs.readFileSync(path.join(ROOT, 'web/src/components/RepoSetup.tsx'), 'utf8')),
-   '仓库配置卡里没有弹框遮罩');
-ok(/\.setup-card\s*\{[^}]*border-left/.test(CSS), '配置卡有左侧色条（在对话流中可辨识）');
-ok(/setup-actions/.test(CSS), '配置卡有独立操作区');
+console.log('\n[6] 配置走弹框（不再内联在对话流里）');
+const SETUP = fs.readFileSync(path.join(ROOT, 'web/src/components/InterviewSetup.tsx'), 'utf8');
+const REPO = fs.readFileSync(path.join(ROOT, 'web/src/components/RepoSetup.tsx'), 'utf8');
+ok(!/footer\?:\s*ReactNode/.test(PANEL), 'ChatPanel 不再提供 footer 内联插槽');
+ok(!/\{footer\}/.test(PANEL), '消息列表末尾不再渲染内联配置卡');
+ok(!/setup-card/.test(CSS), '旧的内联卡样式 .setup-card 已移除');
+ok(/<InterviewSetup/.test(APP) && /<RepoSetup/.test(APP), '面试/仓库配置以组件形式挂在页面上');
+ok(/modal-mask show/.test(SETUP) && /modal-mask show/.test(REPO), '两个配置组件都渲染可见的弹框遮罩');
+ok(/if \(e\.target === e\.currentTarget\) onClose\(\)/.test(SETUP)
+  && /if \(e\.target === e\.currentTarget\) onClose\(\)/.test(REPO), '点遮罩关闭弹框');
+ok(/e\.key === 'Escape'/.test(SETUP) && /e\.key === 'Escape'/.test(REPO), '支持 Esc 关闭弹框');
+ok(/modal-tall/.test(SETUP) && /\.modal-tall\s*\{[^}]*max-height/.test(CSS),
+   '面试弹框限高（长表单内部滚动，不撑破屏幕）');
+ok(/modal-wide/.test(REPO), '仓库配置弹框用宽版');
+ok(/\.modal-foot\s*\{[^}]*flex-shrink\s*:\s*0/.test(CSS), '操作区固定在弹框底部（不随表单滚动）');
+ok(/modal-foot/.test(SETUP) && /modal-foot/.test(REPO), '两个配置弹框都用了固定操作区');
+ok(/#cfgModal\s*\{[^}]*z-index/.test(CSS) && /id="cfgModal"/.test(
+  fs.readFileSync(path.join(ROOT, 'web/src/components/ConfigModal.tsx'), 'utf8')),
+   '模型配置弹框叠在配置弹框之上');
+ok(/const \[setupOpen, setSetupOpen\] = useState\(false\)/.test(APP), '面试配置弹框默认关闭（不占屏幕）');
+ok(/const \[repoOpen, setRepoOpen\] = useState\(false\)/.test(APP), '仓库配置弹框默认关闭');
+ok(!/if \(mode === 'interview'\) setSetupOpen\(true\)/.test(APP), '新建会话不再自动弹出配置');
+ok(/if \(m === 'review' && !repos\.length\)[\s\S]{0,120}setRepoOpen\(true\)/.test(APP),
+   '只有审核官还没有仓库时才自动弹框引导');
+ok(/onOpenConfig=\{[\s\S]{0,240}setSetupOpen\(true\)/.test(APP), '「⚙️ 面试配置」按钮打开弹框');
+ok(/setSetupOpen\(false\);   \/\/ 生成后关掉弹框/.test(APP), '生成面试题后自动关闭弹框');
 
 console.log('\n[7] 切换智能体不影响左侧会话列表');
 ok(/const visibleConvos = convos;/.test(APP), '侧栏使用完整会话列表（不按智能体过滤）');
@@ -99,6 +113,19 @@ ok(/const switchMode[\s\S]{0,900}?只切换|不新建、不切换、不过滤左
    'switchMode 注释明确不改会话');
 const switchBody = (APP.match(/const switchMode = useCallback\(\(m: AgentMode\) => \{([\s\S]*?)\n  \}, \[/) || ['', ''])[1];
 ok(!/newConvo\(|activeId:/.test(switchBody), '切换智能体时不新建/不切换会话');
+
+console.log('\n[8] 新建会话不带上一条消息（reset 留下空占位）');
+ok(/const toSavable = [\s\S]{0,220}filter\(m => m\.content\.trim\(\)\.length > 0\)/.test(APP),
+   '落盘前过滤空内容消息（toSavable）');
+ok(/(?:const|let) snapshot = toSavable\(messages\)/.test(APP), 'saveCurrent 使用过滤后的快照');
+ok(/const shown = messages\.filter\(m => m\.role === 'user' \|\| String\(m\.content \?\? ''\)\.trim\(\)\.length > 0\)/.test(PANEL),
+   '渲染时跳过空的 AI 占位消息（不出现空气泡）');
+ok(/\{shown\.map\(/.test(PANEL) && !/\{messages\.map\(/.test(PANEL), '消息列表改用 shown 渲染');
+ok(/\{shown\.length === 0 &&/.test(PANEL), '空状态与打字指示改用 shown 判断');
+ok(/if \(active && \(active\.messages \|\| \[\]\)\.length\) queueSaveConvo\(active\)/.test(APP),
+   '空会话不推服务端（避免攒一堆「新会话 · 0 条消息」）');
+ok(/toPush\.filter\(c => \(c\.messages \|\| \[\]\)\.length\)/.test(APP), '启动合并时也不上推空会话');
+ok(!/if \(mode === 'interview'\) setSetupOpen\(true\)/.test(APP), '新建会话不弹配置框（不打断对话）');
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败\n`);
 process.exit(fail ? 1 : 0);

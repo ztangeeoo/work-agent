@@ -9,8 +9,6 @@ interface Props {
   onStop: () => void;
   /** 列表顶部的自定义内容（代码审核模式的工作台） */
   header?: ReactNode;
-  /** 列表尾部的自定义内容（内联配置卡，紧贴输入框上方） */
-  footer?: ReactNode;
   /** 输入框上方的自定义内容（智能体切换） */
   inputTop?: ReactNode;
   /** 空状态；传 null 表示不渲染（工作台自己会占位） */
@@ -50,7 +48,7 @@ function AiBubble({ content, streaming }: { content: string; streaming: boolean 
 }
 
 export default function ChatPanel({
-  messages, isLoading, onSend, onStop, header, footer, inputTop, empty, avatar = '🎯', placeholder,
+  messages, isLoading, onSend, onStop, header, inputTop, empty, avatar = '🎯', placeholder,
 }: Props) {
   const [text, setText] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
@@ -87,21 +85,24 @@ export default function ChatPanel({
     onSend(t);
   };
 
+  /* reset() / 新建会话时 CopilotKit 会留一条空占位消息，不要渲染成空气泡 */
+  const shown = messages.filter(m => m.role === 'user' || String(m.content ?? '').trim().length > 0);
+
   return (
     <>
       <div className="chat-list" ref={listRef}>
         {header}
-        {messages.length === 0 && (empty === undefined ? (
+        {shown.length === 0 && (empty === undefined ? (
           <div className="empty-state">
             <div className="big">🎯</div>
-            <p>在下方配置里选好方向与级别，点「🚀 生成面试题」</p>
+            <p>点输入框上方的「⚙️ 面试配置」选好方向与级别，再点「🚀 生成面试题」</p>
             <p>也可以直接在输入框里提问，例如「再出 3 道算法题」</p>
             <p>换一个智能体？点输入框上方的「代码审核官」</p>
           </div>
         ) : empty)}
-        {messages.map((m, i) => {
+        {shown.map((m, i) => {
           const isUser = m.role === 'user';
-          const streaming = !isUser && isLoading && i === messages.length - 1;
+          const streaming = !isUser && isLoading && i === shown.length - 1;
           return (
             <div key={m.id || i} className={'msg ' + (isUser ? 'user' : 'ai')}>
               <div className="avatar">{isUser ? '🧑' : avatar}</div>
@@ -111,13 +112,12 @@ export default function ChatPanel({
             </div>
           );
         })}
-        {isLoading && messages.length === 0 && (
+        {isLoading && shown.length === 0 && (
           <div className="msg ai">
             <div className="avatar">{avatar}</div>
             <div className="bubble"><span className="typing"><i></i><i></i><i></i></span></div>
           </div>
         )}
-        {footer}
       </div>
 
       {inputTop}

@@ -38,8 +38,8 @@ export default function ChatApp() {
 
   /* ---------- 面试配置 ---------- */
   const [profile, setProfile] = useState<Profile>(newProfile);
-  /* 配置卡是内联在对话流里的，这里只控制展开/收起 */
-  const [setupOpen, setSetupOpen] = useState(true);
+  /* 面试配置走弹框：点输入框上方的「⚙️ 面试配置」打开，生成后自动关闭 */
+  const [setupOpen, setSetupOpen] = useState(false);
   const [genErr, setGenErr] = useState('');
 
   /* ---------- 智能体模式：面试出题 / 代码审核 ---------- */
@@ -53,7 +53,7 @@ export default function ChatApp() {
   const [selectedPr, setSelectedPr] = useState<number | null>(null);
   const [runningPr, setRunningPr] = useState<number | null>(null);
   const [polling, setPolling] = useState(false);
-  /* 仓库配置卡同样内联展开，不弹框 */
+  /* 仓库配置同样走弹框：没有可用仓库时自动打开 */
   const [repoOpen, setRepoOpen] = useState(false);
   const [repoEditing, setRepoEditing] = useState<Repo | null>(null);
   const [repoErr, setRepoErr] = useState('');
@@ -90,6 +90,11 @@ export default function ChatApp() {
   const [runId, setRunId] = useState('');
   const trace = useAgentStages(runId, isLoading, mode);
 
+  /* 新建会话后的短暂窗口里，CopilotKit 的 reset() 可能把上一场消息又塞回来。
+     这里记住「新建之前就存在的消息 id」，在出现真正的新消息之前一律不落到新会话。 */
+  const staleMsgIdsRef = useRef<Set<string>>(new Set());
+  const freshConvoRef = useRef(false);
+
   /* 初始恢复：直接恢复当前会话（左边列表保持不变，不按智能体拆会话） */
   const restoredRef = useRef(false);
   useEffect(() => {
@@ -100,7 +105,6 @@ export default function ChatApp() {
     if (conv && conv.messages && conv.messages.length) {
       setMessages(conv.messages.map(m => ({ id: m.id, role: m.role, content: m.content })));
       if (conv.profile) setProfile({ ...newProfile(), ...conv.profile });
-      setSetupOpen(false);   // 已有对话：配置卡先收起，别占满屏幕
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -142,7 +146,8 @@ export default function ChatApp() {
         const activeId = list.some(c => c.id === prev.activeId) ? prev.activeId : list[0].id;
         const nd = { activeId, list };
         persistConvos(nd);
-        toPush.forEach(c => queueSaveConvo(c));
+        /* 空会话不上推（避免每次开新浏览器都往库里加一条空壳） */
+        toPush.filter(c => (c.messages || []).length).forEach(c => queueSaveConvo(c));
         return nd;
       });
       setSynced(true);
@@ -298,8 +303,24 @@ export default function ChatApp() {
   const asChatMessages = (list: typeof messages): ChatMessage[] =>
     list.map(m => ({ id: m.id, role: m.role as ChatMessage['role'], content: String(m.content ?? '') }));
 
+  /**
+   * 落盘用快照：丢掉空内容消息。
+   * 新建会话 / reset() 瞬间，CopilotKit 会留下一条 content 为空的占位消息，
+   * 若照单全收，新会话就会凭空多出「1 条消息」（空气泡 + 侧栏计数 +1）。
+   */
+  const toSavable = (list: typeof messages): ChatMessage[] =>
+    asChatMessages(list).filter(m => m.content.trim().length > 0);
+
   const saveCurrent = useCallback(() => {
-    const snapshot = asChatMessages(messages);
+    let snapshot = toSavable(messages);
+    /* 新会话刚建好时，过滤掉「上一场残留下来的」旧消息 */
+    if (freshConvoRef.current) {
+      const stale = staleMsgIdsRef.current;
+      const fresh = snapshot.filter(m => !stale.has(String(m.id)));
+      if (!fresh.length) return;          // 还是旧消息回流：这次不落盘
+      snapshot = fresh;
+      freshConvoRef.current = false;      // 出现真正的新消息，恢复常规保存
+    }
     setConvos(prev => {
       const cur = prev.list.find(c => c.id === prev.activeId);
       /* 初始化 / reset() 竞争会让 messages 短暂为 []，此时不能用它覆盖已有历史 */
@@ -314,9 +335,10 @@ export default function ChatApp() {
       list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
       const nd = { activeId: prev.activeId, list: list.slice(0, 30) };
       persistConvos(nd);
-      /* 同步到服务端 SQLite（去抖 1.2s，流式输出不会刷爆请求） */
+      /* 同步到服务端 SQLite（去抖 1.2s，流式输出不会刷爆请求）
+       * 空会话（刚点「新建」还没说话）不推服务端，否则库里会攒一堆「新会话 · 0 条消息」 */
       const active = nd.list.find(c => c.id === nd.activeId);
-      if (active) queueSaveConvo(active);
+      if (active && (active.messages || []).length) queueSaveConvo(active);
       return nd;
     });
   }, [messages, mode, profile]);
@@ -385,6 +407,9 @@ export default function ChatApp() {
   const newConvo = useCallback((silent = false) => {
     if (isLoading) return;
     saveCurrent();
+    /* 记录旧消息 id：新会话在收到真正的新消息前，不接受这些旧消息 */
+    staleMsgIdsRef.current = new Set(asChatMessages(messages).map(m => String(m.id)));
+    freshConvoRef.current = true;
     const id = genId();
     const conv: Convo = {
       id, title: '新会话', createdAt: Date.now(), updatedAt: Date.now(),
@@ -398,12 +423,13 @@ export default function ChatApp() {
     reset();
     setRunId('');
     if (!silent) toast('已创建新会话');
-  }, [isLoading, mode, profile, reset, saveCurrent, toast]);
+  }, [isLoading, messages, mode, profile, reset, saveCurrent, toast]);
 
   const switchConvo = useCallback((id: string) => {
     if (isLoading || id === convoId) return;
     saveCurrent();
     flushNow(); // 切走前把上一场立即落库
+    freshConvoRef.current = false;   // 切会话：恢复常规保存
     const conv = convos.list.find(c => c.id === id);
     if (!conv) return;
     setConvos(prev => {
@@ -420,6 +446,7 @@ export default function ChatApp() {
 
   /** 显式清空当前对话：先把会话历史置空（saveCurrent 的守卫才会放行），再清消息 */
   const clearCurrent = useCallback(() => {
+    freshConvoRef.current = false;   // 清空是显式操作，允许落盘
     reset();
     setMessages([]);
     setRunId('');
@@ -458,16 +485,16 @@ export default function ChatApp() {
   }, [convoId, reset, setMessages, toast]);
 
   /* ---------- 智能体切换 ----------
-   * 只切换「谁来回话 + 显示哪张配置卡」，不新建、不切换、不过滤左侧会话。
-   * 再次点击当前智能体 = 展开/收起它的配置卡。
+   * 只切换「谁来回话」，不新建、不切换、不过滤左侧会话。
+   * 再次点击当前智能体 = 打开它的配置弹框（面试配置 / 仓库配置）。
    */
   const switchMode = useCallback((m: AgentMode) => {
     if (m === mode) {
       if (m === 'review') {
         setRepoEditing(repos.find(r => r.id === repoId) || null);
-        setRepoOpen(v => !v);
+        setRepoOpen(true);
       } else {
-        setSetupOpen(v => !v);
+        setSetupOpen(true);
       }
       return;
     }
@@ -476,10 +503,10 @@ export default function ChatApp() {
     flushNow();
     setMode(m);
     localStorage.setItem(LS_MODE, m);
-    if (m === 'review') {
-      setRepoOpen(!repos.length);        // 还没配仓库 → 直接展开让用户填
-    } else {
-      setSetupOpen(true);
+    /* 切过去不主动弹框（弹框会打断视线）；只有审核官还没有仓库时才自动弹出来引导 */
+    if (m === 'review' && !repos.length) {
+      setRepoEditing(null);
+      setRepoOpen(true);
     }
     toast(m === 'review' ? '已切换到「代码审核官」' : '已切换到「面试出题官」');
   }, [mode, isLoading, saveCurrent, repos, repoId, toast]);
@@ -492,7 +519,7 @@ export default function ChatApp() {
       return;
     }
     setGenErr('');
-    setSetupOpen(false);   // 生成后把配置卡收起，让出对话空间
+    setSetupOpen(false);   // 生成后关掉弹框，把屏幕还给对话
     send(buildGeneratePrompt(profile));
   }, [cfg.base, cfg.model, profile, send]);
 
@@ -612,43 +639,6 @@ export default function ChatApp() {
                 onAsk={send}
               />
             ) : undefined}
-            footer={mode === 'review' ? (
-              /* 仓库配置内联在对话流尾部；没有仓库时强制展开 */
-              ((repoOpen || !currentRepo) && (
-                <RepoSetup
-                  open={repoOpen || !currentRepo}
-                  onToggle={() => setRepoOpen(v => !v)}
-                  repo={repoEditing}
-                  hasRepo={!!currentRepo}
-                  onSaved={(repo, isNew) => {
-                    setRepos(prev => (isNew ? [...prev, repo] : prev.map(r => (r.id === repo.id ? repo : r))));
-                    setRepoId(repo.id);
-                    setRepoEditing(repo);
-                    setRepoOpen(false);
-                  }}
-                  onDeleted={(id) => {
-                    setRepos(prev => prev.filter(r => r.id !== id));
-                    setRepoId(prev => (prev === id ? '' : prev));
-                    setRepoOpen(true);
-                  }}
-                  toast={toast}
-                />
-              ))
-            ) : (
-              /* 面试配置内联在对话流尾部，紧贴输入框上方 */
-              <InterviewSetup
-                open={setupOpen}
-                onToggle={() => setSetupOpen(v => !v)}
-                profile={profile}
-                onProfileChange={setProfile}
-                onConfirm={onAgentConfirm}
-                genErr={genErr}
-                cfg={cfg}
-                onNeedCfg={() => setCfgOpen(true)}
-                toast={toast}
-                compact={messages.length > 0}
-              />
-            )}
             empty={mode === 'review' ? null : undefined}
             placeholder={mode === 'review'
               ? '针对这份审核报告追问，例如「第 2 个问题怎么改？」'
@@ -661,18 +651,47 @@ export default function ChatApp() {
                 onOpenConfig={() => {
                   if (mode === 'review') {
                     setRepoEditing(currentRepo);
-                    setRepoOpen(v => !v);
+                    setRepoOpen(true);
                   } else {
-                    setSetupOpen(v => !v);
+                    setSetupOpen(true);
                   }
                 }}
                 configLabel={mode === 'review' ? '仓库配置' : '面试配置'}
-                configOpen={mode === 'review' ? (repoOpen || !currentRepo) : setupOpen}
+                configOpen={mode === 'review' ? repoOpen : setupOpen}
               />
             }
           />
         </div>
       </main>
+
+      {/* 三个弹框：面试配置 / 仓库配置 / 模型配置（模型配置叠在最上层） */}
+      <InterviewSetup
+        open={setupOpen}
+        onClose={() => setSetupOpen(false)}
+        profile={profile}
+        onProfileChange={setProfile}
+        onConfirm={onAgentConfirm}
+        genErr={genErr}
+        cfg={cfg}
+        onNeedCfg={() => setCfgOpen(true)}
+        toast={toast}
+      />
+
+      <RepoSetup
+        open={repoOpen}
+        onClose={() => setRepoOpen(false)}
+        repo={repoEditing}
+        onSaved={(repo, isNew) => {
+          setRepos(prev => (isNew ? [...prev, repo] : prev.map(r => (r.id === repo.id ? repo : r))));
+          setRepoId(repo.id);
+          setRepoEditing(repo);
+        }}
+        onDeleted={(id) => {
+          setRepos(prev => prev.filter(r => r.id !== id));
+          setRepoId(prev => (prev === id ? '' : prev));
+        }}
+        toast={toast}
+      />
 
       <ConfigModal open={cfgOpen} onClose={() => setCfgOpen(false)} cfg={cfg} onSave={onSaveCfg} toast={toast} />
 
