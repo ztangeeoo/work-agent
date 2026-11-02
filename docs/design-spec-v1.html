@@ -764,7 +764,7 @@ const REVIEW = { running: 'brand', pending: 'info', done: 'success', failed: 'da
 
 <!-- ============ 13 ============ -->
 <section id="s13">
-  <h2><span class="num">13</span>暗色模式 <span class="tag t-new">已定案</span></h2>
+  <h2><span class="num">13</span>暗色模式 <span class="tag t-ok">已落地</span></h2>
 
   <h3>13.1 三层取值</h3>
   <table>
@@ -786,22 +786,30 @@ const REVIEW = { running: 'brand', pending: 'info', done: 'success', failed: 'da
     <br />② 文字轨<strong>必须整体换亮色版</strong>：浅色主题的深绿 <code>#0E7C46</code> 压在 <code>#1D1E1F</code> 上只有 3.5:1，不达 AA。
   </div>
 
-  <h3>13.2 怎么开</h3>
-  <p>token 已经备好，目前<strong>未接入切换入口</strong>（属产品决策，不是样式缺失）。接入只需两步：</p>
-  <pre><code>// 1) 给根元素挂类（不要在中间 div 上挂）
-document.documentElement.classList.toggle('dark', isDark)
-
-// 2) 记住偏好，首屏前应用，避免闪白
-localStorage.setItem('theme', isDark ? 'dark' : 'light')
-
-// 3) 需要更细的偏好控制时加：
-//    &lt;meta name="color-scheme" content="light dark"&gt;</code></pre>
+  <h3>13.2 切换入口</h3>
+  <p>右上角齿轮左侧有一个圆形图标按钮（<code>.cfg-btn.theme-btn</code>），浅色下显示月亮、深色下显示太阳 —— <strong>图标表达「点下去会变成什么」</strong>，不是当前状态。偏好存 <code>localStorage.theme</code>。</p>
+  <table>
+    <thead><tr><th style="width:230px">文件</th><th>职责</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">web/src/lib/theme.ts</td><td>唯一入口：<code>loadTheme / applyTheme / saveTheme / initTheme</code></td></tr>
+      <tr><td class="mono">web/src/main.tsx</td><td>渲染前调 <code>initTheme()</code>，让 React 状态与已挂的类对齐</td></tr>
+      <tr><td class="mono">web/index.html</td><td>内联脚本，样式加载前就挂类 —— <strong>防首屏闪白</strong></td></tr>
+      <tr><td class="mono">web/src/ChatApp.tsx</td><td>按钮 + <code>useState</code>，变更时 <code>applyTheme</code> + <code>saveTheme</code></td></tr>
+    </tbody>
+  </table>
+  <pre><code>const [theme, setTheme] = useState&lt;Theme&gt;(loadTheme);
+useEffect(() =&gt; { applyTheme(theme); saveTheme(theme); }, [theme]);</code></pre>
+  <div class="note warn">
+    <span class="n-h">防闪白必须是内联脚本，不能只靠 React</span>
+    <code>main.tsx</code> 是 <code>type="module"</code>（延迟执行），浏览器可能已经先画了一帧白底。
+    所以 <code>index.html</code> 的 <code>&lt;head&gt;</code> 里要放一段普通 <code>&lt;script&gt;</code>，在样式生效前就把 <code>dark</code> 类挂上。
+  </div>
   <div class="note bad">
     <span class="n-h">踩过的坑：类必须挂在 &lt;html&gt; 上</span>
     <code>:root</code> 里的映射变量（<code>--bg: var(--md-surface-0)</code>）在声明处就完成了替换。
     只在某个后代 div 上覆盖基础 token，<strong>不会让映射变量重算</strong> —— 结果是「类加上了、颜色一个没变」。
   </div>
-  <p>另外：<strong>不要自动跟随系统偏好</strong>。首屏观感被系统设置突然改掉属于意外行为，应由用户显式选择，系统偏好只作首次默认值。</p>
+  <p>首次访问<strong>默认浅色</strong>，不跟随系统偏好。首屏观感被系统设置突然改掉属于意外行为；要支持「跟随系统」应当做成三档显式选择（浅 / 深 / 跟随），而不是默认行为。</p>
 
   <h3>13.3 自检清单</h3>
   <ul>
@@ -865,7 +873,7 @@ import './styles.css';</code></pre>
       <tr><td><span class="tag t-ok">已完成</span></td><td>同义色重复定义</td><td>高危红 3 种 / 审核绿 2 种</td><td>收敛到 danger / success 双轨</td></tr>
       <tr><td><span class="tag t-warn">P1</span></td><td>字号字面值未 token 化</td><td><strong>84 处</strong> <code>font-size: Npx</code></td><td>按 §2.2 就近归并，注意撑破固定宽度</td></tr>
       <tr><td><span class="tag t-warn">P1</span></td><td>间距非 4 倍数</td><td>padding / margin 中约 <strong>40 处</strong>（5px、7px、10px、22px…）</td><td>收益低，随页面迭代改</td></tr>
-      <tr><td><span class="tag t-warn">P2</span></td><td>暗色入口未接</td><td>token 已就绪</td><td>按 §13.2 两步接入，需先过自检清单</td></tr>
+      <tr><td><span class="tag t-ok">已完成</span></td><td>暗色模式入口</td><td>右上角切换按钮 + localStorage</td><td>内联脚本防闪白，默认浅色</td></tr>
       <tr><td><span class="tag t-warn">P2</span></td><td>兼容别名层未下线</td><td>8 个别名仍在使用</td><td>新代码直接用 <code>--md-*</code>，旧代码随迭代替换</td></tr>
     </tbody>
   </table>
@@ -909,6 +917,7 @@ import './styles.css';</code></pre>
   <table>
     <thead><tr><th style="width:100px">版本</th><th style="width:110px">日期</th><th>内容</th></tr></thead>
     <tbody>
+      <tr><td class="mono">v1.1</td><td>2026-11-02</td><td>接入暗色切换：右上角按钮 + <code>localStorage.theme</code> + <code>index.html</code> 内联防闪白脚本；新增 <code>web/src/lib/theme.ts</code>；首次访问默认浅色</td></tr>
       <tr><td class="mono">v1.0</td><td>2026-11-02</td><td>首版。主色由蓝 <code>#4F6EF7</code> 改微信绿 <code>#07C160</code>，引入四轨（填充 / 文字 / 实底 / 浅色阶）；建立 token 层并完成 153 处色值、16 处字重、10 种圆角的收敛；新增题型分类色与暗色主题两套取值</td></tr>
     </tbody>
   </table>

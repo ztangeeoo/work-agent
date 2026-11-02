@@ -4,6 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>IT 面试出题官</title>
+<!-- 深色偏好在样式加载前就挂上类，避免深色用户看到一闪而过的白屏。
+     这是普通 script（非 module），阻塞执行且早于任何渲染。 -->
+<script>
+  try {
+    if (localStorage.getItem('theme') === 'dark') {
+      document.documentElement.classList.add('dark');
+    }
+  } catch (e) { /* 隐私模式下 localStorage 不可用，按浅色渲染即可 */ }
+</script>
 </head>
 <body>
 <div id="root"></div>

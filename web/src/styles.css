@@ -52,6 +52,10 @@ html, body { height: 100%; }
   }
   .cfg-btn:hover { border-color: var(--md-brand); color: var(--md-brand-text); }
   .cfg-btn .conn-dot { position: absolute; top: 5px; right: 5px; border: 1.5px solid var(--md-surface-1); }
+  /* 主题切换按钮：图标带一点旋转反馈，切换时不突兀 */
+  .theme-btn svg { transition: transform var(--md-dur-base) var(--md-ease); }
+  .theme-btn:hover svg { transform: rotate(-18deg); }
+  .theme-btn:active svg { transform: rotate(-90deg) scale(.9); }
 
   /* ===== 模型配置弹框 ===== */
   .modal-mask {
@@ -664,4 +668,7 @@ html, body { height: 100%; }
     .modal-wide { width: 100%; }
     .modal-body { padding: 6px 14px 16px; }
     .modal-foot { padding: 10px 14px; }
+    /* 顶栏右侧多了主题按钮，窄屏先让副标题让位，避免按钮被挤出屏幕 */
+    header .sub { display: none; }
+    #connText { display: none; }
   }
