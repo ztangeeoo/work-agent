@@ -97,6 +97,32 @@ npm run dev     # Vite :5173，/api 代理到 :8787
 
 打开 http://localhost:5173 。Node（:8787）与 Python（:8790）服务仍需运行。
 
+## 样式与主题（全局规范）
+
+全站配色、字号、间距、圆角、阴影、层级收敛在**一个 token 文件**里，业务代码不写 `#hex`：
+
+```
+web/src/styles/tokens.css   唯一 token 源（颜色 / 字体 / 间距 / 圆角 / 阴影 / 动效 / 层级 + 亮暗两套）
+web/src/styles.css          组件样式，只消费 var(--md-*)
+web/src/main.tsx            引入顺序：先 tokens.css，后 styles.css
+docs/design-spec-v1.html    规范正文（怎么用、为什么这么定）
+docs/theme-demo.html        实时预览，可切深浅，直接引用 tokens.css 保证同源
+```
+
+改主色只需动 `tokens.css` 里的 `--md-brand*` 一组，全站跟着变。核心约定：
+
+- **绿色分轨**：色块 / 色条 / 图标用 `--md-brand`（#07C160）；**写字**一律 `--md-brand-text`（#0E7C46，5.26:1）。微信绿当文字只有 2.38:1。
+- **实心按钮用 `--md-brand-solid`**（同为 #0E7C46）—— 白字压在 #07C160 上不达 AA。
+- **字号 6 档、字重只有 400 / 500**（中文无真 700，会伪加粗）。
+- 暗色主题取值已备好但**未接切换入口**，接法见规范 §13.2（`<html class="dark">`）。
+
+改样式后跑一遍回归，两个测试会读 `styles.css` 断言关键布局约束：
+
+```bash
+node --experimental-strip-types tests/test_layout.ts
+node --experimental-strip-types tests/test_qcard.ts
+```
+
 ## 多 Agent 是怎么分工的
 
 | Agent | 触发条件 | 做什么 |
@@ -288,6 +314,7 @@ VITE_COPILOTKIT_KEY=ckpb_你的key
 | `question_bank.py` | 内置高频面试题库（11 个主方向 × 细分），作为面试官的检索工具 |
 | `data/interview.db` | 会话 / 仓库 / 审核报告数据库（自动创建，已加入 `.gitignore`） |
 | `tests/` | 回归测试：`test_store.py`（持久层）、`test_reviewer.py`（地址解析 / diff / 代理规则）、`test_web.ts`（渲染逻辑）、`test_qcard.ts`（卡片布局与历史守卫）、`test_stages.ts`（流水线状态）、`test_layout.ts`（布局约束）、`test_render.js`（旧版渲染逻辑）、`mock_llm.js`（mock 上游验全链路） |
+| `docs/` | `design-spec-v1.html` 全局样式主题规范 · `theme-demo.html` 主题实时预览（可切深浅） |
 | `index.html` | 旧版单文件应用（保留作回退，不再维护） |
 | `start.bat` | 一键启动 |
 

@@ -7,7 +7,9 @@ web/node_modules/
 web/dist/
 
 # 本地数据（历史会话库，含个人面试记录，不要提交）
-data/
+# 注意必须有前导斜杠：写成 data/ 会把 web/src/data/ 也一起忽略掉，
+# 导致源码文件（如 tracks.ts）永远提交不上，别人 clone 下来直接构建失败。
+/data/
 
 # 本地 AI 工作日志 / 工作区元数据
 .workbuddy/

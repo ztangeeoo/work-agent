@@ -1,0 +1,414 @@
+/* ==========================================================================
+   IT 面试出题官 · 全局样式主题标准 v1.0 —— Token 落地文件
+   --------------------------------------------------------------------------
+   引入顺序（必须，见 main.tsx）：
+     import './styles/tokens.css'   ← 本文件，先
+     import './styles.css'          ← 组件样式，后
+   本文件只声明变量 + 少量全局兜底，不含任何组件类名，可被任意子页面复用。
+
+   三层结构：
+     ① 语义 token        —— :root / html.dark 声明，业务只允许用这一层
+     ② 兼容别名          —— styles.css 顶部把历史变量名映射到 ①，逐步下线
+     ③ 组件样式          —— 只消费 ①，不出现 #hex
+
+   ★ 核心约定：品牌色拆「填充 / 文字」双轨
+     · 填充轨 --md-brand          #07C160  白底 2.38:1
+       → 只做色块、色条、图标、选中态、进度、图表。不承载小字。
+     · 文字轨 --md-brand-text     #0E7C46  白底 5.26:1  → 绿色文字、链接、plain 文字
+     · 实底轨 --md-brand-solid    #0E7C46  白字 5.26:1  → 实心按钮 / 用户气泡（白字必须可读）
+     微信绿够嫩，作为文字只有 2.38:1，达不到 AA，所以它只能做填充。
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* ===== 1. 品牌色（微信绿 · 双轨）=====================================
+     对比度均按白底实测，详见规范 §1 / 附录。 */
+
+  /* -- 1.1 填充轨 ------------------------------------------------------ */
+  --md-brand: #07c160; /* 主色 · 只做填充 2.38:1 */
+  --md-brand-hover: #51d490; /* hover 底 */
+  --md-brand-active: #069a4d; /* 按下态（比主色深） */
+  --md-brand-disabled: #83e0b0; /* 禁用底：只做填充，不要在上面写字（白字仅 1.9:1） */
+  --md-brand-rgb: 7, 193, 96; /* 半透明场景：rgba(var(--md-brand-rgb), .1) */
+
+  /* -- 1.2 浅色阶（底 / 边框）------------------------------------------ */
+  --md-brand-subtle: #e6f9ef; /* 选中行底、plain 底、弱提示底 */
+  --md-brand-subtle-2: #cdf3df; /* 选中行边框、次级描边 */
+  --md-brand-border: #83e0b0; /* plain 边框 */
+
+  /* -- 1.3 文字轨 ------------------------------------------------------ */
+  --md-brand-text: #0e7c46; /* 5.26:1 */
+  --md-brand-text-hover: #0a6b3a;
+
+  /* -- 1.4 实底轨（白字可达 AA）---------------------------------------- */
+  --md-brand-solid: #0e7c46; /* 白字 5.26:1 */
+  --md-brand-solid-hover: #0a6b3a;
+  --md-brand-solid-active: #085c30;
+  --md-on-brand: #ffffff; /* 品牌实底上的前景色（深色主题会翻转） */
+
+  /* -- 1.5 固定前景 -----------------------------------------------------
+     饱和色块（渐变色块、分类徽标）上的文字在两种主题下都要清晰，
+     所以不能跟随 --md-on-brand 翻转 —— 深色主题下 --md-on-brand 是深绿。 */
+  --md-on-accent: #ffffff; /* 永不翻转的白 */
+  --md-on-cat: #ffffff; /* 题型徽标文字：浅色白字，深色翻成深字 */
+  --md-inverse-surface: #2a2f3a; /* toast / tooltip 这类反色浮层底 */
+  --md-inverse-text: #ffffff;
+
+  /* ===== 2. 语义色（每组四件套：主色 / 浅底 / 描边 / 文字轨）==========
+     主色用于色块、图标（要求 3:1）；文字轨用于文本（要求 4.5:1）。
+     success 复用品牌轨 —— 全站只有一种绿。 */
+  --md-success: var(--md-brand); /* 7C160 填充 */
+  --md-success-subtle: var(--md-brand-subtle);
+  --md-success-border: var(--md-brand-border);
+  --md-success-text: #0e7c46; /* 5.26:1 */
+
+  --md-warning: #e6a23c; /* 2.19:1 仅填充 */
+  --md-warning-subtle: #fdf5e6;
+  --md-warning-border: #f5d3a8;
+  --md-warning-text: #b45309; /* 5.02:1 */
+
+  --md-danger: #f56c6c; /* 2.90:1 仅填充 */
+  --md-danger-subtle: #fdecea;
+  --md-danger-border: #fbc4c4;
+  --md-danger-text: #dc2626; /* 4.83:1 */
+
+  --md-info: #909399; /* 3.08:1 仅填充 */
+  --md-info-subtle: #f4f5f8;
+  --md-info-border: #dcdfe6;
+  --md-info-text: #6b7280; /* 4.83:1 */
+
+  /* ===== 3. 中性色 ==================================================== */
+  /* -- 3.1 文字：4 级，值都过 AA（含禁用态只要求可辨识）---------------- */
+  --md-text-1: #303133; /* 标题 / 主要正文 13.02:1 */
+  --md-text-2: #606266; /* 正文 / 表格内容 6.11:1 */
+  --md-text-3: #6b7280; /* 辅助文字、说明 4.83:1 */
+  --md-text-4: #a8abb2; /* 禁用、占位符 2.30:1（非正文） */
+  --md-text-inverse: #ffffff;
+
+  /* -- 3.2 边框：3 级，越往下越淡 -------------------------------------- */
+  --md-border: #dcdfe6; /* 可交互控件边框 */
+  --md-border-weak: #e5e7eb; /* 卡片 / 面板分割线 */
+  --md-border-hair: #f0f1f3; /* 表格内线、极淡分隔 */
+
+  /* -- 3.3 表面：4 级，暗色下整体翻转 -----------------------------------
+     页面底最深 → 卡片比它亮一级，靠这一级色差 + 1px 描边把内容托起来。
+     页面底不要用 #f5f7f9 这类极浅灰：与白卡只有 1.07:1，肉眼分辨不出。 */
+  --md-surface-0: #ebeef2; /* 页面底 1.16:1（对白卡） */
+  --md-surface-1: #ffffff; /* 卡片 / 面板 / 输入框 */
+  --md-surface-2: #f5f7fa; /* 次级块、表头、hover 底 */
+  --md-surface-3: #eff1f5; /* 更实的次级块 */
+  --md-overlay: rgba(20, 24, 40, 0.45); /* 遮罩 */
+
+  /* ===== 4. 业务涨跌色（与品牌色隔离）=================================
+     只在「增减 / 流入流出」类数据里启用。国内习惯：正=红、负=绿；
+     负值的绿取偏青的 #0e7490，避免与品牌绿混为一谈。 */
+  --md-up: #cf1322; /* 5.57:1 */
+  --md-up-subtle: #fdecea;
+  --md-down: #0e7490; /* 5.36:1 */
+  --md-down-subtle: #e8f6f9;
+  --md-flat: #6b7280;
+
+  /* ===== 5. 题型分类色（本项目扩展）===================================
+     一题一卡的左侧色条 + 题型标签。分类色不是语义色：它表达「题型」，
+     不表达「状态」，所以不走 success / danger。
+     每个值同时满足两种用法：作徽标底（白字 ≥4.5:1）与作浅底上的文字（≥4.5:1），
+     所以「色条色 == 文字色」只需要一个变量。 */
+  --md-cat-basic: #2f5fd8; /* 基础概念 · 白字 5.65:1 / 浅底 5.09:1 */
+  --md-cat-basic-bg: #eef3ff;
+  --md-cat-basic-border: #b9cbf5;
+
+  --md-cat-scenario: #0a7d74; /* 场景设计 · 5.00:1 / 4.52:1 */
+  --md-cat-scenario-bg: #ecfaf8;
+  --md-cat-scenario-border: #a5e2dc;
+
+  --md-cat-deep: #6d3fd4; /* 深挖追问 · 6.24:1 / 5.56:1 */
+  --md-cat-deep-bg: #f5f0ff;
+  --md-cat-deep-border: #d3c2f5;
+
+  --md-cat-algo: #b25a00; /* 算法编码 · 4.86:1 / 4.58:1 */
+  --md-cat-algo-bg: #fff5e8;
+  --md-cat-algo-border: #f5d3a8;
+
+  --md-cat-trouble: #c0392b; /* 排查诊断 · 5.44:1 / 4.87:1 */
+  --md-cat-trouble-bg: #fdf0ee;
+  --md-cat-trouble-border: #f2c1bb;
+
+  --md-cat-neutral: #5a6172; /* 未分类 / 其他 */
+  --md-cat-neutral-bg: #f4f5f8;
+  --md-cat-neutral-border: #d4d8e2;
+
+  /* ===== 6. 字体 ====================================================== */
+  /* 不要覆盖为纯中文栈：拉丁字符走 Helvetica，中文回落苹方 / 雅黑。 */
+  --md-font-sans: "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
+  /* 等宽只用于：哈希 / 流水号 / 报文 / 代码 */
+  --md-font-mono: Consolas, Monaco, "Courier New", monospace;
+
+  /* -- 6.1 字号 6 档，行高与字号成对使用 ------------------------------- */
+  --md-fs-1: 12px; /* 辅助说明、标签、脚注 */
+  --md-lh-1: 18px;
+  --md-fs-2: 14px; /* 正文默认、单元格、表单 */
+  --md-lh-2: 22px;
+  --md-fs-3: 16px; /* 卡片标题、区块标题 */
+  --md-lh-3: 24px;
+  --md-fs-4: 20px; /* 统计数值、弹窗标题 */
+  --md-lh-4: 28px;
+  --md-fs-5: 24px; /* 页面标题 */
+  --md-lh-5: 32px;
+  --md-fs-6: 28px; /* 大屏指标（仅大屏） */
+  --md-lh-6: 36px;
+
+  /* -- 6.2 字重：只有两档 ----------------------------------------------
+     中文字体没有真 700，浏览器做伪加粗会笔画粘连。600/700/bold 一律禁用。 */
+  --md-fw-normal: 400;
+  --md-fw-medium: 500;
+
+  /* -- 6.3 长文行高 ----------------------------------------------------
+     正文默认 22px（14/22）；对话气泡、Markdown 长段这类连续阅读场景
+     放宽到 1.75，属于唯一允许偏离 22px 的地方。 */
+  --md-lh-prose: 1.75;
+
+  /* ===== 7. 间距（4 的倍数，优先 8 的倍数）============================= */
+  --md-space-1: 4px;
+  --md-space-2: 8px;
+  --md-space-3: 12px;
+  --md-space-4: 16px;
+  --md-space-5: 20px;
+  --md-space-6: 24px;
+  --md-space-8: 32px;
+
+  /* ===== 8. 圆角 ======================================================
+     本产品是对话式界面，控件比方正的后台中台更圆：交互控件取 8px。
+     不要出现 5 / 7 / 9 / 11 / 13px 这类手调值。 */
+  --md-radius-xs: 2px; /* 小色块、进度内条 */
+  --md-radius-sm: 4px; /* 气泡尖角、Tag 内部 */
+  --md-radius-md: 6px; /* 小控件、代码行内块 */
+  --md-radius-lg: 8px; /* 按钮、输入框、下拉、小卡片 */
+  --md-radius-xl: 10px; /* 气泡、上传区、代码块 */
+  --md-radius-2xl: 14px; /* 弹窗、大卡片 */
+  --md-radius-pill: 999px; /* 胶囊标签、头像、状态点 */
+
+  /* ===== 9. 阴影（4 档，越往上越"浮"）================================= */
+  --md-shadow-1: 0 1px 2px rgba(20, 30, 60, 0.04); /* 卡片静置 */
+  --md-shadow-2: 0 2px 8px rgba(20, 30, 60, 0.08); /* hover / 悬浮 */
+  --md-shadow-3: 0 8px 24px rgba(20, 30, 60, 0.12); /* 下拉、浮层 */
+  --md-shadow-4: 0 12px 40px rgba(20, 24, 40, 0.18); /* 弹窗 */
+  --md-shadow-focus: 0 0 0 3px rgba(7, 193, 96, 0.12); /* 聚焦光晕 */
+  --md-shadow-brand: 0 4px 16px rgba(7, 193, 96, 0.14); /* 卡片 hover（品牌色） */
+
+  /* ===== 10. 动效 ===================================================== */
+  --md-ease: cubic-bezier(0.2, 0, 0, 1); /* 通用 */
+  --md-ease-out: cubic-bezier(0.16, 1, 0.3, 1); /* 入场 */
+  --md-dur-fast: 0.12s; /* hover、focus、颜色过渡 */
+  --md-dur-base: 0.2s; /* 展开折叠、位移 */
+  --md-dur-slow: 0.3s; /* 弹窗、抽屉 */
+
+  /* ===== 11. 层级 ===================================================== */
+  --md-z-base: 0;
+  --md-z-sticky: 10; /* 吸顶栏 */
+  --md-z-dropdown: 50; /* 下拉、气泡提示 */
+  --md-z-toast: 90; /* 轻提示 */
+  --md-z-modal: 100; /* 弹窗遮罩 + 弹窗 */
+  --md-z-modal-top: 110; /* 叠在弹窗之上的弹窗 */
+
+  /* ===== 12. 代码块（本产品特色：对话里大量代码）======================
+     代码块在两种主题下都保持深色，不跟随主题反色 —— 反色会让语法高亮失真。 */
+  --md-code-bg: #1f2430;
+  --md-code-head: #2a2f3a;
+  --md-code-border: #2a2f3a;
+  --md-code-text: #e6e9f0;
+  --md-code-dim: #a9b2c6; /* 语言标签、次要说明 */
+  --md-code-line: #4a5060; /* 复制按钮描边 */
+  --md-code-line-hover: #8a92a8;
+  --md-code-inline-bg: #f0f2f8; /* 行内 code 底 */
+
+  /* ===== 13. 尺寸骨架 ================================================= */
+  --md-header-h: 56px; /* 顶栏 */
+  --md-sidebar-w: 264px; /* 左侧会话栏 */
+  --md-control-h-sm: 28px;
+  --md-control-h: 34px; /* 默认控件高 */
+  --md-control-h-lg: 40px;
+  --md-prose-max: 720px; /* 长文最大宽度，超过 80 字/行阅读体验明显下降 */
+  --md-scrollbar-w: 10px; /* Windows 默认滚动条太窄不好拖 */
+}
+
+/* ==========================================================================
+   深色主题
+   --------------------------------------------------------------------------
+   启用方式：给 <html> 加 class="dark"（切换逻辑见规范 §14）。
+   不自动跟随系统偏好 —— 首屏观感被系统设置突然改掉属于意外行为。
+
+   两条红线：
+     1. 内容区底色必须与页面同色，不能沿用浅灰底 —— 深色界面里一条亮灰色带极其刺眼；
+        分层交给「卡片比底色亮一级 + 1px 描边」。
+     2. 文字轨全部换亮色版：浅色主题的深绿 / 深棕压在深底上只有 3.5~3.8:1。
+   ========================================================================== */
+html.dark {
+  color-scheme: dark;
+
+  /* -- 品牌：填充轨色相不变，文字轨换亮版 ------------------------------ */
+  --md-brand: #07c160;
+  --md-brand-hover: #35d07f;
+  --md-brand-active: #39cd80; /* 深色下「按下」应更亮 */
+  --md-brand-subtle: #082a19;
+  --md-brand-subtle-2: #0d3b23;
+  --md-brand-border: #1d6b40;
+
+  --md-brand-text: #35d07f; /* 8.4:1 on #1d1e1f */
+  --md-brand-text-hover: #5cdc98;
+
+  /* 深色下实底用亮绿 + 深字：比「深绿底 + 白字」更清晰，也更像原生暗色控件 */
+  --md-brand-solid: #07c160;
+  --md-brand-solid-hover: #2ed07b;
+  --md-brand-solid-active: #069a4d;
+  --md-on-brand: #04240f; /* 6.74:1 on #07c160 */
+
+  --md-on-accent: #ffffff;
+  --md-on-cat: #10131a; /* 徽标底色在深色主题下变亮，文字必须翻成深字 */
+  --md-inverse-surface: #3a3d44;
+  --md-inverse-text: #ffffff;
+
+  /* -- 语义 ------------------------------------------------------------ */
+  --md-success: var(--md-brand);
+  --md-success-subtle: var(--md-brand-subtle);
+  --md-success-border: var(--md-brand-border);
+  --md-success-text: #35d07f;
+
+  --md-warning-subtle: #2e2415;
+  --md-warning-border: #5a4522;
+  --md-warning-text: #e6a23c; /* 8.42:1 */
+
+  --md-danger-subtle: #2e1a1a;
+  --md-danger-border: #5c2b2b;
+  --md-danger-text: #f56c6c; /* 6.35:1 */
+
+  --md-info-subtle: #262727;
+  --md-info-border: #3a3b3d;
+  --md-info-text: #a3a6ad; /* 7.56:1 */
+
+  /* -- 中性：表面比页面亮一级 ------------------------------------------ */
+  --md-text-1: #e5eaf3;
+  --md-text-2: #cfd3dc;
+  --md-text-3: #a3a6ad;
+  --md-text-4: #6c6e72;
+  --md-text-inverse: #141414;
+
+  --md-border: #4c4d4f;
+  --md-border-weak: #363637;
+  --md-border-hair: #2a2b2c;
+
+  --md-surface-0: #141414; /* 页面底（最深） */
+  --md-surface-1: #1d1e1f; /* 卡片、面板 */
+  --md-surface-2: #262727; /* hover 底、次级块 */
+  --md-surface-3: #2e2f30;
+  --md-overlay: rgba(0, 0, 0, 0.6);
+
+  /* -- 涨跌 ------------------------------------------------------------ */
+  --md-up: #ff7875;
+  --md-up-subtle: #2e1a1a;
+  --md-down: #22a6b3;
+  --md-down-subtle: #10262a;
+  --md-flat: #a3a6ad;
+
+  /* -- 题型分类：暗底上整体提亮 ---------------------------------------- */
+  --md-cat-basic: #8ab4ff;
+  --md-cat-basic-bg: #1b2434;
+  --md-cat-basic-border: #2f4470;
+
+  --md-cat-scenario: #4fd1c5;
+  --md-cat-scenario-bg: #132a29;
+  --md-cat-scenario-border: #245652;
+
+  --md-cat-deep: #bfa8ff;
+  --md-cat-deep-bg: #241d38;
+  --md-cat-deep-border: #453469;
+
+  --md-cat-algo: #f5b971;
+  --md-cat-algo-bg: #2e2417;
+  --md-cat-algo-border: #5a4527;
+
+  --md-cat-trouble: #ff8a8a;
+  --md-cat-trouble-bg: #2e1a1a;
+  --md-cat-trouble-border: #5c2b2b;
+
+  --md-cat-neutral: #b6bcc8;
+  --md-cat-neutral-bg: #262727;
+  --md-cat-neutral-border: #3a3b3d;
+
+  /* -- 阴影：深色下靠描边区分层级，阴影更重但更淡 ---------------------- */
+  --md-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --md-shadow-2: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --md-shadow-3: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --md-shadow-4: 0 12px 40px rgba(0, 0, 0, 0.6);
+  --md-shadow-focus: 0 0 0 3px rgba(7, 193, 96, 0.2);
+  --md-shadow-brand: 0 4px 16px rgba(7, 193, 96, 0.18);
+
+  /* -- 代码块在深色下压深一档，与卡片区分 ------------------------------ */
+  --md-code-bg: #16191f;
+  --md-code-head: #1e222a;
+  --md-code-border: #2e333d;
+  --md-code-inline-bg: #2a2c30;
+}
+
+/* ==========================================================================
+   全局兜底（纯增益，不含组件类名）
+   ========================================================================== */
+
+/* -- 键盘焦点环 --------------------------------------------------------
+   :focus-visible 只在键盘导航时出现，不影响鼠标操作观感。 */
+:focus-visible {
+  outline: 2px solid var(--md-brand);
+  outline-offset: 2px;
+}
+
+/* -- 字重兜底 ----------------------------------------------------------
+   <b> / <strong> 的浏览器默认字重是 700，会触发中文伪加粗。
+   注意：这条压不过 .font-700 这类 class 选择器，那批只能手改。 */
+b,
+strong {
+  font-weight: var(--md-fw-medium);
+}
+
+/* -- 工具类 ------------------------------------------------------------ */
+
+/* 等宽：哈希 / 流水号 / 报文 / 代码 */
+.md-mono {
+  font-family: var(--md-font-mono);
+  letter-spacing: 0;
+}
+
+/* 等宽数字：金额、比率等需要竖着比对位数的列必须加 */
+.md-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 长文段落宽度约束 */
+.md-prose {
+  max-width: var(--md-prose-max);
+}
+
+/* 视觉隐藏但可被读屏访问 */
+.md-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* 尊重系统「减少动态效果」偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

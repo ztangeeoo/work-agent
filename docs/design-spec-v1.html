@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>全局样式主题标准 v1.0 · IT 面试出题官</title>
+<style>
+  :root {
+    --brand: #07c160; --brand-ink: #0e7c46; --brand-50: #e6f9ef; --brand-border: #cdf3df;
+    --ink: #1f2328; --ink-2: #4b5563; --ink-3: #6b7280; --line: #e5e7eb; --line-2: #f0f1f3;
+    --bg: #fff; --bg-2: #f6f7f9;
+    --ok: #0e7c46; --ok-bg: #e6f9ef; --warn: #b45309; --warn-bg: #fdf5e6; --bad: #c0392b; --bad-bg: #fdecea;
+    --radius: 10px; --mono: ui-monospace, SFMono-Regular, Consolas, Monaco, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg-2); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.7; -webkit-font-smoothing: antialiased; }
+  .wrap { display: grid; grid-template-columns: 210px minmax(0,1fr); gap: 32px; max-width: 1120px; margin: 0 auto; padding: 0 28px 96px; }
+  nav { position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto; padding: 40px 0 24px; font-size: 13px; }
+  nav .nav-title { font-size: 12px; letter-spacing: .06em; color: var(--ink-3); margin: 0 0 10px; }
+  nav a { display: block; padding: 4px 10px; border-left: 2px solid transparent; color: var(--ink-2); text-decoration: none; border-radius: 0 6px 6px 0; }
+  nav a:hover { background: #eef0f3; color: var(--ink); }
+  nav a.sub { padding-left: 22px; font-size: 12.5px; color: var(--ink-3); }
+  main { min-width: 0; padding-top: 40px; }
+  header.doc { padding-bottom: 24px; border-bottom: 1px solid var(--line); margin-bottom: 32px; }
+  header.doc h1 { font-size: 26px; font-weight: 500; margin: 0 0 8px; letter-spacing: -.01em; }
+  header.doc h1 .ver { font-size: 13px; font-weight: 500; color: var(--brand-ink); background: var(--brand-50); border: 1px solid var(--brand-border); padding: 2px 9px; border-radius: 999px; vertical-align: 4px; margin-left: 6px; }
+  header.doc .sub { color: var(--ink-2); margin: 0 0 16px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; }
+  .meta span { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: #fff; border: 1px solid var(--line); color: var(--ink-2); }
+  section { margin-bottom: 52px; scroll-margin-top: 16px; }
+  h2 { font-size: 19px; font-weight: 500; margin: 0 0 6px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  h2 .num { color: var(--brand-ink); font-weight: 500; margin-right: 8px; }
+  h3 { font-size: 15px; font-weight: 500; margin: 28px 0 10px; }
+  h4 { font-size: 13.5px; font-weight: 500; margin: 20px 0 8px; color: var(--ink-2); }
+  p { margin: 0 0 12px; color: var(--ink-2); }
+  ul, ol { margin: 0 0 12px; padding-left: 22px; color: var(--ink-2); }
+  li { margin-bottom: 5px; }
+  code { font-family: var(--mono); font-size: 12.5px; background: #f2f3f5; padding: 1.5px 5px; border-radius: 4px; color: #b03060; }
+  pre { background: #f8f9fb; border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px; line-height: 1.7; color: #24292f; margin: 0 0 14px; }
+  pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 0 0 14px; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+  th { background: #f7f8fa; font-weight: 500; font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
+  tbody tr:last-child td { border-bottom: none; }
+  td.mono, th.mono { font-family: var(--mono); font-size: 12px; }
+  .num-col { text-align: right; font-variant-numeric: tabular-nums; }
+  .tag { display: inline-block; font-size: 11.5px; font-weight: 500; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+  .t-ok { background: var(--ok-bg); color: var(--ok); }
+  .t-warn { background: var(--warn-bg); color: var(--warn); }
+  .t-bad { background: var(--bad-bg); color: var(--bad); }
+  .t-new { background: #eef4ff; color: #1f4e9c; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; margin: 0 0 16px; }
+  .card.brand { border-color: var(--brand-border); background: #fbfdfb; }
+  .card .card-h { font-size: 13px; font-weight: 500; margin: 0 0 12px; color: var(--ink); }
+  .note { border-left: 3px solid var(--line); background: #fff; padding: 12px 16px; border-radius: 0 var(--radius) var(--radius) 0; margin: 0 0 16px; font-size: 13px; color: var(--ink-2); }
+  .note.warn { border-left-color: #e6a23c; background: #fffdf5; }
+  .note.bad { border-left-color: #f56c6c; background: #fffafa; }
+  .note.ok { border-left-color: var(--brand); background: #fbfdfb; }
+  .note .n-h { font-weight: 500; color: var(--ink); display: block; margin-bottom: 4px; }
+  .sw-row { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+  .sw { flex: 0 0 auto; width: 112px; }
+  .sw .chip { height: 46px; border-radius: 8px; border: 1px solid rgba(0,0,0,.08); }
+  .sw .lbl { font-size: 11px; color: var(--ink-3); margin-top: 5px; line-height: 1.5; font-family: var(--mono); }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .b { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 34px; padding: 0 15px; font-size: 14px; line-height: 1; border-radius: 8px; border: 1px solid transparent; white-space: nowrap; }
+  .b-default { background: #fff; border-color: #dcdfe6; color: #606266; }
+  .b-plain { background: var(--brand-50); border-color: #83e0b0; color: var(--brand-ink); }
+  .b-solid { background: var(--brand-ink); border-color: var(--brand-ink); color: #fff; }
+  .b-neon { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .b-danger { background: #fdecea; border-color: #fbc4c4; color: #dc2626; }
+  .b-link { background: none; border: none; color: var(--brand-ink); padding: 0 4px; }
+  .b-sm { height: 28px; font-size: 12.5px; padding: 0 11px; }
+  .rules { counter-reset: r; list-style: none; padding: 0; margin: 0; }
+  .rules li { counter-increment: r; position: relative; padding: 12px 16px 12px 52px; background: #fff; border: 1px solid var(--brand-border); border-radius: var(--radius); margin-bottom: 10px; }
+  .rules li::before { content: counter(r); position: absolute; left: 16px; top: 12px; width: 24px; height: 24px; border-radius: 50%; background: var(--brand-ink); color: #fff; font-size: 12.5px; font-weight: 500; display: flex; align-items: center; justify-content: center; }
+  .rules li b { color: var(--ink); }
+  .demobubble { display: flex; gap: 10px; margin-bottom: 12px; max-width: 520px; }
+  .demobubble .av { width: 34px; height: 34px; border-radius: 50%; flex: 0 0 34px; display: flex; align-items: center; justify-content: center; font-size: 15px; color: #fff; background: linear-gradient(135deg, #0e7c46, #0a7d74); }
+  .demobubble .bb { padding: 9px 13px; border-radius: 10px; font-size: 13.5px; line-height: 1.75; background: #fff; border: 1px solid var(--line); border-top-left-radius: 4px; }
+  .demobubble.me { flex-direction: row-reverse; }
+  .demobubble.me .bb { background: var(--brand-ink); color: #fff; border: none; border-top-left-radius: 10px; border-top-right-radius: 4px; }
+  .demobubble.me .av { background: #e6a23c; }
+  .qcard { border: 1px solid var(--line); border-left: 3px solid #2f5fd8; border-radius: 10px; background: #fff; margin-bottom: 12px; overflow: hidden; }
+  .qcard-h { display: flex; align-items: center; gap: 8px; padding: 9px 13px; background: linear-gradient(180deg, #f5f7fa, #fff); border-bottom: 1px solid var(--line); }
+  .qno { background: #2f5fd8; color: #fff; font-size: 11px; font-weight: 500; border-radius: 6px; padding: 2px 8px; }
+  .qtitle { font-size: 13.5px; font-weight: 500; flex: 1; }
+  .qtag { font-size: 11px; padding: 1.5px 9px; border-radius: 999px; border: 1px solid #b9cbf5; background: #eef3ff; color: #2f5fd8; }
+  .qcard-b { padding: 11px 13px; font-size: 13.5px; line-height: 1.75; color: var(--ink-2); }
+  .qfocus { margin-top: 10px; padding-top: 9px; border-top: 1px dashed var(--line); font-size: 12.5px; color: var(--ink-3); display: flex; gap: 8px; }
+  .qfocus b { color: var(--brand-ink); font-size: 11px; font-weight: 500; background: var(--brand-50); border-radius: 5px; padding: 1px 6px; flex: 0 0 auto; }
+  .footer { border-top: 1px solid var(--line); padding-top: 20px; font-size: 12.5px; color: var(--ink-3); }
+  @media (max-width: 900px) {
+    .wrap { grid-template-columns: 1fr; gap: 0; padding: 0 18px 64px; }
+    nav { position: static; max-height: none; padding: 24px 0 0; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+    nav a { display: inline-block; border-left: none; }
+    main { padding-top: 20px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<nav>
+  <p class="nav-title">目录</p>
+  <a href="#s0">0 · 一页速查</a>
+  <a href="#s1">1 · 颜色</a>
+  <a class="sub" href="#s1-1">1.1 品牌双轨</a>
+  <a class="sub" href="#s1-2">1.2 语义四件套</a>
+  <a class="sub" href="#s1-3">1.3 中性色与表面</a>
+  <a class="sub" href="#s1-4">1.4 涨跌色</a>
+  <a class="sub" href="#s1-5">1.5 题型分类色</a>
+  <a class="sub" href="#s1-6">1.6 用色决策表</a>
+  <a href="#s2">2 · 字体与字号</a>
+  <a href="#s3">3 · 间距 / 圆角 / 阴影</a>
+  <a href="#s4">4 · 按钮</a>
+  <a href="#s5">5 · 表单</a>
+  <a href="#s6">6 · 对话界面</a>
+  <a href="#s7">7 · 数据格式</a>
+  <a href="#s8">8 · 状态标识</a>
+  <a href="#s9">9 · 弹窗与浮层</a>
+  <a href="#s10">10 · 反馈与空态</a>
+  <a href="#s11">11 · 图标</a>
+  <a href="#s12">12 · 布局与尺寸骨架</a>
+  <a href="#s13">13 · 暗色模式</a>
+  <a href="#s14">14 · 落地方式</a>
+  <a href="#s15">15 · 存量与整改</a>
+  <a href="#s16">附 · 对比度实测</a>
+</nav>
+
+<main>
+
+<header class="doc">
+  <h1>全局样式主题标准<span class="ver">v1.0</span></h1>
+  <p class="sub">一套 token 管住全站的色、字、距、层级。业务代码里不再出现 <code>#hex</code>，换主题只改一个文件。</p>
+  <div class="meta">
+    <span>主色：#07C160 微信绿</span>
+    <span>技术栈：React 18 + Vite + 原生 CSS</span>
+    <span>适用：web/src/**</span>
+    <span>2026-11-02</span>
+  </div>
+  <div class="note ok" style="margin-top:16px">
+    <span class="n-h">这份文档管什么</span>
+    规定「现在该怎么做」，不是变更记录。颜色、字号、间距、圆角、阴影、层级、暗色全部收敛到
+    <code>web/src/styles/tokens.css</code> 一个文件；本页与 <code>docs/theme-demo.html</code>（可切换深浅的实时预览）配套使用。
+    <br />标注口径：<span class="tag t-ok">已落地</span> = 代码已按此执行；<span class="tag t-new">已定案</span> = 本版新增，需评审；<span class="tag t-warn">建议</span> = 方向明确、细节可调。
+  </div>
+</header>
+
+<!-- ============ 0 ============ -->
+<section id="s0">
+  <h2><span class="num">0</span>一页速查</h2>
+
+  <h3>五条铁律</h3>
+  <ol class="rules">
+    <li><b>颜色只从 token 取。</b>业务代码里不出现 <code>#hex</code>、不出现 <code>rgba(7,193,96,.1)</code> 这种手拼值，一律 <code>var(--md-*)</code>。唯一例外是图表配置对象（见 §12 注）。</li>
+    <li><b>绿色分两条轨。</b>色块、色条、图标、选中态用 <code>--md-brand</code>（#07C160）；<b>凡是写字就用</b> <code>--md-brand-text</code>（#0E7C46）。微信绿当文字只有 2.38:1，是真实的可读性缺陷。</li>
+    <li><b>字号只用 6 档、字重只用 2 档。</b>字号 <code>12 / 14 / 16 / 20 / 24 / 28</code>，字重 <code>400 / 500</code>。禁用 600 / 700 / bold。</li>
+    <li><b>间距只用 4 的倍数</b>，优先 8 的倍数；圆角只用 7 档（§3）。</li>
+    <li><b>同一个状态在任何页面都是同一个颜色。</b>业务状态先归到 5 个语义类，再由语义类决定颜色（§8）。颜色不表达「业务含义」，只表达「操作优先级」和「状态」。</li>
+  </ol>
+
+  <h3>色板</h3>
+  <div class="sw-row">
+    <div class="sw"><div class="chip" style="background:#07c160"></div><div class="lbl">brand<br />#07C160</div></div>
+    <div class="sw"><div class="chip" style="background:#0e7c46"></div><div class="lbl">brand-text<br />#0E7C46</div></div>
+    <div class="sw"><div class="chip" style="background:#e6f9ef"></div><div class="lbl">brand-subtle<br />#E6F9EF</div></div>
+    <div class="sw"><div class="chip" style="background:#e6a23c"></div><div class="lbl">warning<br />#E6A23C</div></div>
+    <div class="sw"><div class="chip" style="background:#f56c6c"></div><div class="lbl">danger<br />#F56C6C</div></div>
+    <div class="sw"><div class="chip" style="background:#909399"></div><div class="lbl">info<br />#909399</div></div>
+    <div class="sw"><div class="chip" style="background:#cf1322"></div><div class="lbl">value-up<br />#CF1322</div></div>
+    <div class="sw"><div class="chip" style="background:#0e7490"></div><div class="lbl">value-down<br />#0E7490</div></div>
+    <div class="sw"><div class="chip" style="background:#303133"></div><div class="lbl">text-1<br />#303133</div></div>
+    <div class="sw"><div class="chip" style="background:#606266"></div><div class="lbl">text-2<br />#606266</div></div>
+    <div class="sw"><div class="chip" style="background:#ebeef2"></div><div class="lbl">surface-0<br />#EBEEF2</div></div>
+    <div class="sw"><div class="chip" style="background:#dcdfe6"></div><div class="lbl">border<br />#DCDFE6</div></div>
+  </div>
+
+  <h3>字号与间距</h3>
+  <table>
+    <thead><tr><th>用途</th><th class="mono">字号 / 行高</th><th class="mono">字重</th><th>Token</th></tr></thead>
+    <tbody>
+      <tr><td>辅助说明、标签、时间戳</td><td class="mono">12 / 18</td><td class="mono">400</td><td class="mono">--md-fs-1</td></tr>
+      <tr><td>正文、气泡、表单、单元格</td><td class="mono">14 / 22</td><td class="mono">400</td><td class="mono">--md-fs-2</td></tr>
+      <tr><td>卡片标题、区块标题</td><td class="mono">16 / 24</td><td class="mono">500</td><td class="mono">--md-fs-3</td></tr>
+      <tr><td>统计数值、弹窗标题</td><td class="mono">20 / 28</td><td class="mono">500</td><td class="mono">--md-fs-4</td></tr>
+      <tr><td>页面标题</td><td class="mono">24 / 32</td><td class="mono">500</td><td class="mono">--md-fs-5</td></tr>
+      <tr><td>大屏指标（仅大屏）</td><td class="mono">28 / 36</td><td class="mono">500</td><td class="mono">--md-fs-6</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ 1 ============ -->
+<section id="s1">
+  <h2><span class="num">1</span>颜色 <span class="tag t-ok">已落地</span></h2>
+
+  <h3 id="s1-1">1.1 品牌双轨（微信绿）</h3>
+  <p>微信绿足够「嫩」，但作为文字只有 <strong>2.38:1</strong>，不达 WCAG AA（正文要求 4.5:1）。所以主色拆成两条轨，各管一件事：</p>
+  <table>
+    <thead><tr><th style="width:120px">轨道</th><th style="width:180px">变量</th><th>用在哪</th><th style="width:110px">白底对比度</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tag t-ok">填充轨</span></td><td class="mono">--md-brand #07C160</td><td>色条、选中态底、图标、进度条、图表主色、状态点</td><td class="num-col">2.38 : 1</td></tr>
+      <tr><td><span class="tag t-new">文字轨</span></td><td class="mono">--md-brand-text #0E7C46</td><td>绿色文字、链接、plain 按钮文字、弱底上的强调文字</td><td class="num-col">5.26 : 1</td></tr>
+      <tr><td><span class="tag t-new">实底轨</span></td><td class="mono">--md-brand-solid #0E7C46</td><td>实心主按钮、用户气泡（配 <code>--md-on-brand</code> 白字）</td><td class="num-col">5.26 : 1</td></tr>
+      <tr><td><span class="tag t-ok">浅色阶</span></td><td class="mono">--md-brand-subtle #E6F9EF</td><td>hover 底、选中行底、plain 底、弱强调块</td><td class="num-col">装饰性</td></tr>
+    </tbody>
+  </table>
+  <div class="note bad">
+    <span class="n-h">实心按钮为什么不用 #07C160</span>
+    白字压在 #07C160 上只有 <strong>2.38:1</strong> —— 按钮文字是正文级字号（14px / 500），必须有 4.5:1。
+    所以「视觉上的品牌绿」和「能承载白字的绿」必须分开：实底按钮取 <code>#0E7C46</code>（5.26:1），
+    品牌绿继续负责不需要写字的地方。这条比「主色统一」重要。
+  </div>
+  <p>浅色阶不要自己拼 <code>rgba(7,193,96,.1)</code>：它是半透明混色，叠在不同底上颜色会变，且深色主题下方向是反的。</p>
+
+  <h3 id="s1-2">1.2 语义色四件套</h3>
+  <p>每个语义色给四个值，一一对应「底色 / 描边 / 文字」三种用法。<strong>success 复用品牌轨</strong> —— 全站只有一种绿。</p>
+  <table>
+    <thead><tr><th>语义</th><th class="mono">主色（填充）</th><th class="mono">浅底</th><th class="mono">描边</th><th class="mono">文字轨</th></tr></thead>
+    <tbody>
+      <tr><td>success</td><td class="mono">#07C160</td><td class="mono">#E6F9EF</td><td class="mono">#83E0B0</td><td class="mono">#0E7C46</td></tr>
+      <tr><td>warning</td><td class="mono">#E6A23C</td><td class="mono">#FDF5E6</td><td class="mono">#F5D3A8</td><td class="mono">#B45309</td></tr>
+      <tr><td>danger</td><td class="mono">#F56C6C</td><td class="mono">#FDECEA</td><td class="mono">#FBC4C4</td><td class="mono">#DC2626</td></tr>
+      <tr><td>info</td><td class="mono">#909399</td><td class="mono">#F4F5F8</td><td class="mono">#DCDFE6</td><td class="mono">#6B7280</td></tr>
+    </tbody>
+  </table>
+  <div class="note bad">
+    <span class="n-h">语义主色不能直接当文字色</span>
+    warning <code>#E6A23C</code> 白底 2.19、danger <code>#F56C6C</code> 2.90、info <code>#909399</code> 3.08 —— 全部不达 AA。
+    <strong>主色只能做底色和图标，写字一律走对应的「文字轨」</strong>（<code>--md-warning-text</code> 等）。
+  </div>
+
+  <h3 id="s1-3">1.3 中性色与表面阶梯</h3>
+  <p>文字分 4 级，表面分 4 级。表面对比度决定「卡片看不看得出边界」：</p>
+  <table>
+    <thead><tr><th class="mono">Token</th><th class="mono">值</th><th>用途</th><th class="num-col">对比度</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">--md-text-1</td><td class="mono">#303133</td><td>标题、主要正文</td><td class="num-col">13.02 : 1</td></tr>
+      <tr><td class="mono">--md-text-2</td><td class="mono">#606266</td><td>正文、表格内容</td><td class="num-col">6.11 : 1</td></tr>
+      <tr><td class="mono">--md-text-3</td><td class="mono">#6B7280</td><td>辅助文字、说明、时间戳</td><td class="num-col">4.83 : 1</td></tr>
+      <tr><td class="mono">--md-text-4</td><td class="mono">#A8ABB2</td><td>禁用、占位符（非正文）</td><td class="num-col">2.30 : 1</td></tr>
+      <tr><td class="mono">--md-surface-0</td><td class="mono">#EBEEF2</td><td>页面底</td><td class="num-col">1.16 : 1（对白卡）</td></tr>
+      <tr><td class="mono">--md-surface-1</td><td class="mono">#FFFFFF</td><td>卡片、面板、输入框</td><td class="num-col">—</td></tr>
+      <tr><td class="mono">--md-surface-2</td><td class="mono">#F5F7FA</td><td>次级块、表头、hover 底</td><td class="num-col">装饰性</td></tr>
+      <tr><td class="mono">--md-border</td><td class="mono">#DCDFE6</td><td>可交互控件边框</td><td class="num-col">装饰性</td></tr>
+      <tr><td class="mono">--md-border-weak</td><td class="mono">#E5E7EB</td><td>卡片 / 面板分割线</td><td class="num-col">装饰性</td></tr>
+    </tbody>
+  </table>
+  <div class="note warn">
+    <span class="n-h">页面底不要用「几乎和白色一样」的灰</span>
+    <code>#F5F7F9</code> 与白卡只有 <strong>1.07:1</strong>，肉眼分辨不出边界，会被当成「灰底丢了」。
+    本规范取 <code>#EBEEF2</code>（<strong>1.16:1</strong>）。可调档位：<code>#F2F4F7</code> 1.10 / <code>#EBEEF2</code> 1.16 / <code>#E8EBEF</code> 1.20；
+    到 <code>#E3E7EC</code>（1.24:1）就显灰重，不要越过。
+  </div>
+
+  <h3 id="s1-4">1.4 业务涨跌色（与品牌色隔离）</h3>
+  <p>只在「增减 / 流入流出 / 评分升降」类场景启用。遵循国内习惯：<strong>正 = 红、负 = 绿</strong>；负值的绿取偏青的 <code>#0E7490</code>，避免与品牌绿混为一谈。</p>
+  <table>
+    <thead><tr><th class="mono">变量</th><th class="mono">值</th><th>用途</th><th class="num-col">对比度</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">--md-up</td><td class="mono">#CF1322</td><td>增长、正数、得分上升</td><td class="num-col">5.57 : 1</td></tr>
+      <tr><td class="mono">--md-down</td><td class="mono">#0E7490</td><td>下降、负数</td><td class="num-col">5.36 : 1</td></tr>
+      <tr><td class="mono">--md-flat</td><td class="mono">#6B7280</td><td>持平、零值</td><td class="num-col">4.83 : 1</td></tr>
+    </tbody>
+  </table>
+  <div class="note warn">
+    <span class="n-h">与 danger / success 不是一回事</span>
+    涨跌色表达<strong>方向</strong>，danger / success 表达<strong>状态</strong>。不要因为「负数」就用 danger 红，也不要因为「评分上升」就用 success 绿 —— 那会让「成功」和「上升」混为一谈。
+  </div>
+
+  <h3 id="s1-5">1.5 题型分类色（本项目扩展）<span class="tag t-new">已定案</span></h3>
+  <p>「一题一卡」的左侧色条与题型标签需要区分题型：基础 / 场景设计 / 深挖 / 算法 / 排查。这是<strong>分类色</strong>，不是语义色 —— 它不表达好坏，所以不能借用 success / danger。</p>
+  <table>
+    <thead><tr><th>题型</th><th class="mono">主色（色条 / 徽标底 / 文字）</th><th class="mono">浅底</th><th class="num-col">白字</th><th class="num-col">浅底上文字</th></tr></thead>
+    <tbody>
+      <tr><td>基础概念</td><td class="mono">#2F5FD8</td><td class="mono">#EEF3FF</td><td class="num-col">5.65 : 1</td><td class="num-col">5.09 : 1</td></tr>
+      <tr><td>场景设计</td><td class="mono">#0A7D74</td><td class="mono">#ECFAF8</td><td class="num-col">5.00 : 1</td><td class="num-col">4.52 : 1</td></tr>
+      <tr><td>深挖追问</td><td class="mono">#6D3FD4</td><td class="mono">#F5F0FF</td><td class="num-col">6.24 : 1</td><td class="num-col">5.56 : 1</td></tr>
+      <tr><td>算法编码</td><td class="mono">#B25A00</td><td class="mono">#FFF5E8</td><td class="num-col">4.86 : 1</td><td class="num-col">4.58 : 1</td></tr>
+      <tr><td>排查诊断</td><td class="mono">#C0392B</td><td class="mono">#FDF0EE</td><td class="num-col">5.44 : 1</td><td class="num-col">4.87 : 1</td></tr>
+      <tr><td>未分类</td><td class="mono">#5A6172</td><td class="mono">#F4F5F8</td><td class="num-col">6.28 : 1</td><td class="num-col">5.76 : 1</td></tr>
+    </tbody>
+  </table>
+  <p>每个值同时满足两种用法：作徽标底（白字 ≥ 4.5:1）与作浅底上的文字（≥ 4.5:1），所以「色条色 == 文字色」只需要一个变量。
+  <strong>新增题型只能从这张表里挑</strong>，不要临时调一个新色号 —— 一旦色相接近，两个题型就分不出来了。</p>
+
+  <h3 id="s1-6">1.6 用色决策表</h3>
+  <table>
+    <thead><tr><th>我要表达</th><th>用什么</th><th>不要用</th></tr></thead>
+    <tbody>
+      <tr><td>这是主要操作（实心）</td><td class="mono">--md-brand-solid</td><td class="mono">--md-brand</td></tr>
+      <tr><td>这是绿色文字 / 链接</td><td class="mono">--md-brand-text</td><td class="mono">--md-brand</td></tr>
+      <tr><td>选中行 / 弱强调底</td><td class="mono">--md-brand-subtle</td><td>手拼 <code>rgba(7,193,96,.1)</code></td></tr>
+      <tr><td>成功状态</td><td>填充 <code>--md-success</code> / 文字 <code>--md-success-text</code></td><td><code>#67c23a</code></td></tr>
+      <tr><td>做题得分为正</td><td class="mono">--md-up</td><td class="mono">--md-danger</td></tr>
+      <tr><td>题型标签</td><td class="mono">--md-cat-{类型}</td><td class="mono">--md-success / --md-danger</td></tr>
+      <tr><td>禁用文字</td><td class="mono">--md-text-4</td><td>手写 <code>#c0c4cc</code></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ 2 ============ -->
+<section id="s2">
+  <h2><span class="num">2</span>字体与字号 <span class="tag t-ok">已落地</span></h2>
+
+  <h3>2.1 字体栈</h3>
+  <p>拉丁字符走 Helvetica，中文回落苹方 / 雅黑。<strong>不要改成纯中文栈</strong>，那会让英文与数字变胖：</p>
+  <pre><code>"Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB",
+"Microsoft YaHei", "微软雅黑", Arial, sans-serif   /* = --md-font-sans */</code></pre>
+  <p><strong>唯一例外是等宽场景</strong> —— 哈希、流水号、报文、代码。定长字符才能目视核对：</p>
+  <pre><code>.md-mono { font-family: var(--md-font-mono); }   /* Consolas, Monaco, "Courier New", monospace */</code></pre>
+  <p>数字要竖向比对时再加 <code>.md-num</code>（<code>font-variant-numeric: tabular-nums</code>）—— 否则等宽数字不成立，右对齐也没用。</p>
+
+  <h3>2.2 字号 6 档</h3>
+  <p>存量里的 <code>11 / 12.5 / 13 / 13.5 / 15 / 18 / 22</code> 按就近原则归并：11→12、12.5/13/13.5→14、15→16、18→20、22→24、34/46→只用于纯图形（emoji / 插画），不用于文字。</p>
+  <div class="note warn">
+    <span class="n-h">归并时注意撑破固定宽度</span>
+    13px → 14px 会让原本刚好放下的按钮、标签换行。这类位置先确认容器宽度是否 <code>min-width</code> 约束，再改字号。
+  </div>
+
+  <h3>2.3 字重只有 400 / 500</h3>
+  <p>中文字体没有真正的 700，浏览器会做<strong>伪加粗</strong>：笔画粘连、观感粗糙，反而比 500 更糊。</p>
+  <table>
+    <thead><tr><th style="width:130px">场景</th><th style="width:90px">字重</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>正文、气泡、表单</td><td class="mono">400</td><td>默认</td></tr>
+      <tr><td>标题、表头、强调</td><td class="mono">500</td><td>中文可用的最粗档</td></tr>
+      <tr><td>禁用</td><td class="mono">600 / 700 / bold</td><td>含 <code>&lt;b&gt;</code>、<code>&lt;strong&gt;</code>、内联 <code>fontWeight</code></td></tr>
+    </tbody>
+  </table>
+  <div class="note warn">
+    <span class="n-h">两个坑</span>
+    ① <code>&lt;b&gt;</code> / <code>&lt;strong&gt;</code> 浏览器默认就是 700，token 文件里用 <code>b, strong { font-weight: 500 }</code> 兜底；
+    ② 元素选择器<strong>压不过 class</strong>，内联 <code>style={{ fontWeight: 700 }}</code> 更压不过，这两类只能手改。
+  </div>
+</section>
+
+<!-- ============ 3 ============ -->
+<section id="s3">
+  <h2><span class="num">3</span>间距 / 圆角 / 阴影 / 动效 / 层级 <span class="tag t-ok">已落地</span></h2>
+
+  <h3>3.1 间距 7 档</h3>
+  <table>
+    <thead><tr><th class="mono">Token</th><th class="mono">值</th><th>典型用途</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">--md-space-1</td><td class="mono">4px</td><td>图标与文字、Tag 内部</td></tr>
+      <tr><td class="mono">--md-space-2</td><td class="mono">8px</td><td>按钮之间、表单项之间</td></tr>
+      <tr><td class="mono">--md-space-3</td><td class="mono">12px</td><td>卡片内区块、紧凑分组</td></tr>
+      <tr><td class="mono">--md-space-4</td><td class="mono">16px</td><td>对话气泡之间、栅格 gutter</td></tr>
+      <tr><td class="mono">--md-space-5</td><td class="mono">20px</td><td>卡片内边距</td></tr>
+      <tr><td class="mono">--md-space-6</td><td class="mono">24px</td><td>区块之间</td></tr>
+      <tr><td class="mono">--md-space-8</td><td class="mono">32px</td><td>页面级分节</td></tr>
+    </tbody>
+  </table>
+
+  <h3>3.2 圆角 7 档</h3>
+  <table>
+    <thead><tr><th class="mono">Token</th><th class="mono">值</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">--md-radius-xs</td><td class="mono">2px</td><td>小色块、进度内条</td></tr>
+      <tr><td class="mono">--md-radius-sm</td><td class="mono">4px</td><td>气泡尖角、Tag 内部色块</td></tr>
+      <tr><td class="mono">--md-radius-md</td><td class="mono">6px</td><td>小控件、行内 code</td></tr>
+      <tr><td class="mono">--md-radius-lg</td><td class="mono">8px</td><td>按钮、输入框、下拉、小卡片</td></tr>
+      <tr><td class="mono">--md-radius-xl</td><td class="mono">10px</td><td>气泡、上传区、代码块</td></tr>
+      <tr><td class="mono">--md-radius-2xl</td><td class="mono">14px</td><td>弹窗、大卡片</td></tr>
+      <tr><td class="mono">--md-radius-pill</td><td class="mono">999px</td><td>胶囊标签、头像、状态点</td></tr>
+    </tbody>
+  </table>
+  <div class="note">
+    <span class="n-h">为什么控件圆角是 8px 而不是 4px</span>
+    后台中台常见的 4px 是「表格密度优先」的选择。本产品是对话式界面，卡片与气泡占总面积大头，
+    控件统一取 8px 才能和 10px 的气泡、14px 的弹窗形成连续梯度。这是<strong>有意的偏离</strong>，不是漏改。
+  </div>
+
+  <h3>3.3 阴影 4 档</h3>
+  <table>
+    <thead><tr><th class="mono">Token</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">--md-shadow-1</td><td>卡片静置（几乎看不见，只为压住边缘）</td></tr>
+      <tr><td class="mono">--md-shadow-2</td><td>hover、可点击块悬浮</td></tr>
+      <tr><td class="mono">--md-shadow-3</td><td>下拉、浮层</td></tr>
+      <tr><td class="mono">--md-shadow-4</td><td>弹窗</td></tr>
+      <tr><td class="mono">--md-shadow-focus</td><td>聚焦光晕（输入框 focus、运行中面板）</td></tr>
+      <tr><td class="mono">--md-shadow-brand</td><td>可点击卡片的 hover（带品牌色）</td></tr>
+    </tbody>
+  </table>
+  <p>阴影<strong>不要叠加多层</strong>。既加 <code>box-shadow</code> 又加 1px 描边是正常做法（描边定义边界，阴影表达层级），但同一元素不要再套第二层阴影。</p>
+
+  <h3>3.4 动效 3 档</h3>
+  <table>
+    <thead><tr><th class="mono">Token</th><th class="mono">值</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">--md-dur-fast</td><td class="mono">0.12s</td><td>hover、focus、颜色 / 描边过渡</td></tr>
+      <tr><td class="mono">--md-dur-base</td><td class="mono">0.2s</td><td>展开折叠、位移</td></tr>
+      <tr><td class="mono">--md-dur-slow</td><td class="mono">0.3s</td><td>弹窗、toast</td></tr>
+    </tbody>
+  </table>
+  <p>缓动统一 <code>--md-ease</code>（<code>cubic-bezier(.2,0,0,1)</code>），入场用 <code>--md-ease-out</code>。
+  已经全局挂了 <code>prefers-reduced-motion</code> 兜底，动画时长会被强制压缩，无需各页处理。</p>
+
+  <h3>3.5 层级 6 档</h3>
+  <table>
+    <thead><tr><th class="mono">Token</th><th class="mono">值</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">--md-z-sticky</td><td class="mono">10</td><td>吸顶栏</td></tr>
+      <tr><td class="mono">--md-z-dropdown</td><td class="mono">50</td><td>下拉、气泡提示</td></tr>
+      <tr><td class="mono">--md-z-toast</td><td class="mono">90</td><td>轻提示</td></tr>
+      <tr><td class="mono">--md-z-modal</td><td class="mono">100</td><td>弹窗遮罩 + 弹窗</td></tr>
+      <tr><td class="mono">--md-z-modal-top</td><td class="mono">110</td><td>叠在弹窗之上的弹窗（如模型配置）</td></tr>
+    </tbody>
+  </table>
+  <p><strong>禁止手写 <code>z-index: 9999</code>。</strong> 一旦出现第一个 9999，后面所有人都只能往上加，层级体系当场失效。要新的层就加一档 token。</p>
+</section>
+
+<!-- ============ 4 ============ -->
+<section id="s4">
+  <h2><span class="num">4</span>按钮 <span class="tag t-ok">已落地</span></h2>
+
+  <h3>4.1 只按「操作优先级」上色，三档</h3>
+  <p>不按业务含义给按钮上色（新增用绿、导出用蓝、删除用红）。颜色表达<strong>优先级</strong>，这样它的含义才是稳定的：</p>
+  <table>
+    <thead><tr><th style="width:96px">优先级</th><th style="width:190px">类名</th><th style="width:170px">用于</th><th>约束</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tag t-ok">主操作</span></td><td class="mono">.btn-primary</td><td>确认生成、保存并轮询</td><td>一个区域<strong>最多一个</strong></td></tr>
+      <tr><td><span class="tag" style="background:#f0f1f3;color:#6b7280">次操作</span></td><td class="mono">.btn-ghost</td><td>测试连接、取消、重置</td><td>不加颜色</td></tr>
+      <tr><td><span class="tag t-bad">破坏性</span></td><td class="mono">.btn.danger</td><td>删除会话、清空对话</td><td>二次确认</td></tr>
+    </tbody>
+  </table>
+
+  <div class="card">
+    <p class="card-h">弹窗底部示例</p>
+    <div class="btn-row">
+      <span class="b b-default">取消</span>
+      <span class="b b-plain">测试连接</span>
+      <span class="b b-solid">保存并轮询</span>
+    </div>
+  </div>
+
+  <h3>4.2 形态四层：色相 3 个，形态 4 种</h3>
+  <p><code>plain</code> 不是第四种颜色，而是同一色相的浅色档。这正是它叫「次色调」却不算新颜色的原因：</p>
+  <table>
+    <thead><tr><th style="width:80px">色相</th><th style="width:150px">形态</th><th class="mono">实际值</th><th style="width:170px">用在哪</th></tr></thead>
+    <tbody>
+      <tr><td>绿</td><td class="mono">.btn-primary</td><td>底 <code>#0E7C46</code> + 白字 + hover <code>#0A6B3A</code></td><td>区域只有 1 个按钮时</td></tr>
+      <tr><td>绿</td><td class="mono">plain（tag / chip 选中）</td><td>底 <code>subtle</code> + 边 <code>#83E0B0</code> + 字 <code>#0E7C46</code></td><td>主操作（有多个按钮时）</td></tr>
+      <tr><td>无彩色</td><td class="mono">.btn-ghost</td><td>底 <code>#fff</code> + 边 <code>#DCDFE6</code> + 字 <code>#606266</code></td><td>次操作</td></tr>
+      <tr><td>红</td><td class="mono">.btn.danger</td><td>底 <code>#FDECEA</code> + 边 <code>#FBC4C4</code> + 字 <code>#DC2626</code></td><td>破坏性操作</td></tr>
+      <tr><td>透明</td><td class="mono">.b-link</td><td>底透明、无边框</td><td>行内操作、从属操作</td></tr>
+    </tbody>
+  </table>
+  <div class="note bad">
+    <span class="n-h">对照：为什么「导出」不再是绿色按钮</span>
+    主色改绿后，<code>success</code> 与 <code>primary</code> 是同一个绿，「新增」和「导出」会一模一样，反而分不清主次；
+    而且「导出」本身不是成功状态，用 success 语义就是错的。<strong>导出改为次操作 + 下载图标。</strong>
+  </div>
+
+  <h3>4.3 尺寸与状态</h3>
+  <table>
+    <thead><tr><th style="width:110px">项</th><th>规则</th></tr></thead>
+    <tbody>
+      <tr><td>高度</td><td>默认 <code>--md-control-h</code> 34px / 小号 28px / 大号 40px；不要在页面里单独调 <code>height</code></td></tr>
+      <tr><td>hover</td><td>主按钮 <code>--md-brand-solid-hover</code>；描边按钮只变 <code>border-color</code> + <code>color</code></td></tr>
+      <tr><td>disabled</td><td>底 <code>--md-surface-3</code> + 字 <code>--md-text-4</code>（<strong>中性灰，不要用浅绿底 + 白字</strong> —— 白字压 <code>#83E0B0</code> 只有 1.9:1，等于读不出按钮说什么）；批量操作无选中时 <code>disabled</code>，<strong>不要隐藏</strong></td></tr>
+      <tr><td>loading</td><td>耗时操作（生成、测试连接、轮询）必须禁用 + 文案改为进行时，不要只换个转圈图标</td></tr>
+      <tr><td>focus</td><td>统一交给 <code>:focus-visible</code> 焦点环（tokens.css），业务里不要自写 <code>outline</code></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ 5 ============ -->
+<section id="s5">
+  <h2><span class="num">5</span>表单 <span class="tag t-new">已定案</span></h2>
+
+  <h3>5.1 label 与结构</h3>
+  <ul>
+    <li>标签与控件<strong>上下排布</strong>（对话式弹窗宽度有限，左右排会把控件压得很窄）。</li>
+    <li>label 字号 <code>--md-fs-1</code> / 颜色 <code>--md-text-3</code>；控件内文字 <code>--md-fs-2</code> / <code>--md-text-1</code>。</li>
+    <li>两列栅格用 <code>.row2</code>（1fr 1fr + 10px 间隙），超过 2 列改为单列纵向。</li>
+    <li>筛选项超过 <strong>6 个</strong>时分组，用 <code>.section-title</code> 分节，不要一屏铺 12 个输入框。</li>
+  </ul>
+
+  <h3>5.2 校验与错误提示</h3>
+  <table>
+    <thead><tr><th style="width:130px">项</th><th>规则</th></tr></thead>
+    <tbody>
+      <tr><td>提示位置</td><td>字段下方 <code>.err-text</code>，颜色 <code>--md-danger-text</code>，字号 12px。<strong>不要用 toast 弹校验错误</strong></td></tr>
+      <tr><td>提交失败</td><td>滚动定位到第一个错误字段，弹窗<strong>不关闭</strong>（配置丢失是最伤的体验）</td></tr>
+      <tr><td>文案</td><td>「请输入模型 API 地址」「请选择代码平台」，不要出现字段英文名</td></tr>
+      <tr><td>成功提示</td><td>绿色 <code>.ok-text</code>，只在有实质结果时出现；纯查询不弹「操作成功」</td></tr>
+    </tbody>
+  </table>
+
+  <h3>5.3 必填 / 禁用 / 只读</h3>
+  <ul>
+    <li>必填在 label 后加 <code>*</code>，且颜色用 <code>--md-danger-text</code>（不要用主色绿，绿在这里不表意）。</li>
+    <li><strong>禁用</strong> = 不可编辑且置灰（当前状态不允许改）；<strong>只读</strong> = 纯文本展示（详情查看）。两者不要混用。</li>
+    <li>只读详情不要复用编辑表单 + <code>disabled</code>，改成描述列表（键值对）更清晰。</li>
+  </ul>
+</section>
+
+<!-- ============ 6 ============ -->
+<section id="s6">
+  <h2><span class="num">6</span>对话界面 <span class="tag t-ok">已落地</span></h2>
+  <p>这一节是本产品的核心界面，规范只管「视觉一致」，不改动已定案的交互逻辑。</p>
+
+  <h3>6.1 气泡</h3>
+  <div class="card">
+    <div class="demobubble"><div class="av">🤖</div><div class="bb">这个场景下，线程池的核心线程数应该怎么定？</div></div>
+    <div class="demobubble me"><div class="av">👤</div><div class="bb">按 CPU 核数 × (1 + 等待时间/计算时间) 来估。</div></div>
+  </div>
+  <table>
+    <thead><tr><th style="width:130px">项</th><th>规则</th></tr></thead>
+    <tbody>
+      <tr><td>AI 气泡</td><td>底 <code>--md-surface-1</code> + 1px <code>--md-border-weak</code>，尖角在左上（<code>--md-radius-sm</code>）</td></tr>
+      <tr><td>用户气泡</td><td>底 <code>--md-brand-solid</code> + 字 <code>--md-on-brand</code>，尖角在右上</td></tr>
+      <tr><td>行高</td><td><code>--md-lh-prose</code>（1.75）—— 连续阅读场景唯一允许偏离 22px 的地方</td></tr>
+      <tr><td>最大宽度</td><td>AI 92% / 用户 86%；<strong>不要 100%</strong>，否则看不出谁说的</td></tr>
+      <tr><td>头像</td><td>34px 圆形；AI 用品牌→青绿渐变，用户用 <code>--md-warning</code>；<strong>两色必须不同</strong>（现在主色是绿，AI 头像不再用蓝紫渐变）</td></tr>
+    </tbody>
+  </table>
+
+  <h3>6.2 一题一卡</h3>
+  <div class="card">
+    <div class="qcard">
+      <div class="qcard-h">
+        <span class="qno">Q1</span>
+        <span class="qtitle">线程池参数与任务提交路径</span>
+        <span class="qtag">基础概念</span>
+      </div>
+      <div class="qcard-b">
+        某银行核心系统的支付回调服务使用一个 ThreadPoolExecutor…
+        <div class="qfocus"><b>考察点</b><span>是否真正理解核心线程数、队列容量与拒绝策略的配合。</span></div>
+      </div>
+    </div>
+  </div>
+  <ul>
+    <li>左侧 3px 色条 = 题型色（§1.5），与右上标签<strong>同色</strong>；一卡一色，不要渐变。</li>
+    <li>题号徽标底用题型色、字用 <code>--md-on-cat</code>（浅色主题白字，深色主题深字）。</li>
+    <li>卡片头部背景用中性渐变（<code>surface-2 → surface-1</code>），<strong>不要用带色相的渐变</strong> —— 主色一换就会脏。</li>
+    <li>「考察点」说明条用 <code>--md-brand-subtle</code> 底 + <code>--md-brand-text</code> 字，与题目正文分层。</li>
+  </ul>
+
+  <h3>6.3 智能体协同面板</h3>
+  <table>
+    <thead><tr><th style="width:130px">状态</th><th>表现</th></tr></thead>
+    <tbody>
+      <tr><td>运行中</td><td>面板描边 <code>--md-brand-subtle-2</code> + <code>--md-shadow-focus</code>，当前环节文字 <code>--md-brand-text</code></td></tr>
+      <tr><td>已完成</td><td>圆点底 <code>--md-success-subtle</code>，文字 <code>--md-success-text</code></td></tr>
+      <tr><td>跳过</td><td>整行 <code>opacity: .45</code>，不加颜色</td></tr>
+      <tr><td>失败</td><td>圆点底 <code>--md-danger-subtle</code>，文字 <code>--md-danger-text</code></td></tr>
+    </tbody>
+  </table>
+  <p>耗时数字一律 <code>.md-num</code>（等宽数字），否则数字宽度跳动会让整列左右摆。</p>
+
+  <h3>6.4 代码块</h3>
+  <ul>
+    <li><strong>两种主题下都保持深色</strong>，不跟随主题反色 —— 反色会让语法高亮失真、代码块与正文对比反转。</li>
+    <li>底色 <code>--md-code-bg</code>、头部 <code>--md-code-head</code>、正文 <code>--md-code-text</code>、语言标签 <code>--md-code-dim</code>。</li>
+    <li>行内 code 用 <code>--md-code-inline-bg</code> + <code>--md-font-mono</code>，字号比正文小 1px。</li>
+    <li>复制按钮必须有，且复制成功后按钮文案变化 1.5s 再还原。</li>
+  </ul>
+</section>
+
+<!-- ============ 7 ============ -->
+<section id="s7">
+  <h2><span class="num">7</span>数据格式 <span class="tag t-new">已定案</span></h2>
+  <p>本产品的核心是「评分」和「风险结论」，格式不统一时用户无法快速比对。<strong>本节优先级高于任何视觉细节。</strong></p>
+
+  <h3>7.1 数值</h3>
+  <table>
+    <thead><tr><th style="width:150px">项</th><th>规则</th><th style="width:170px">示例</th></tr></thead>
+    <tbody>
+      <tr><td>小数位</td><td>同一列内必须一致；评分保留 1 位</td><td class="mono">8.5 / 7.0</td></tr>
+      <tr><td>百分比</td><td>保留 1 位，带 <code>%</code>；后端给小数则在前端转，只转一次</td><td class="mono">85.3%</td></tr>
+      <tr><td>对齐</td><td>数字列右对齐 + <code>.md-num</code></td><td>见 §8</td></tr>
+      <tr><td>大额缩写</td><td><strong>禁止</strong>（123.5 万 / 1.2k），给完整数字</td><td>✗ 1.2k</td></tr>
+      <tr><td>计数</td><td>纯整数，不加小数点</td><td class="mono">12 个 PR</td></tr>
+    </tbody>
+  </table>
+
+  <h3>7.2 日期时间</h3>
+  <table>
+    <thead><tr><th style="width:140px">场景</th><th class="mono">格式</th><th style="width:190px">示例</th></tr></thead>
+    <tbody>
+      <tr><td>会话列表</td><td class="mono">MM-DD HH:mm</td><td class="mono">11-02 21:46</td></tr>
+      <tr><td>详情 / 报告</td><td class="mono">YYYY-MM-DD HH:mm:ss</td><td class="mono">2026-11-02 21:46:52</td></tr>
+      <tr><td>仅日期</td><td class="mono">YYYY-MM-DD</td><td class="mono">2026-11-02</td></tr>
+      <tr><td>相对时间</td><td>只在「3 分钟前」这类列表摘要里用，详情页<strong>不用</strong></td><td>—</td></tr>
+    </tbody>
+  </table>
+  <p>禁止出现 <code>2026/11/02</code>、<code>11-2</code>、<code>2026年11月2日</code> 等变体。</p>
+
+  <h3>7.3 空值</h3>
+  <ul>
+    <li>统一用半角 <code>-</code>，不要用 <code>--</code>、<code>/</code>、<code>null</code>、<code>undefined</code> 或留空。</li>
+    <li>分数为空显示 <code>-</code>，<strong>不显示 <code>0.0</code></strong> —— 「0 分」和「没评分」是两件事。</li>
+    <li>不要用 <code>0</code> 兜底字符串字段。</li>
+  </ul>
+
+  <h3>7.4 长文本与编号</h3>
+  <ul>
+    <li>标题、PR 名<strong>单行截断</strong> + <code>title</code> 提示，不要换行撑高行高。</li>
+    <li>详情正文限制 <code>--md-prose-max</code>（720px），超过 80 字/行的阅读体验明显下降。</li>
+    <li>哈希 / commit sha / 流水号一律 <code>.md-mono</code>；超过 24 字符中间省略（前 10 … 后 8），完整值放 tooltip。</li>
+  </ul>
+</section>
+
+<!-- ============ 8 ============ -->
+<section id="s8">
+  <h2><span class="num">8</span>状态标识 <span class="tag t-ok">已落地</span></h2>
+
+  <h3>8.1 映射原则</h3>
+  <p>业务状态值<strong>不能直接决定颜色</strong>，先归到 5 个语义类，再由语义类决定颜色。这样同一个状态在任何位置都是同一个颜色。</p>
+  <table>
+    <thead><tr><th style="width:140px">语义类</th><th style="width:150px">Token</th><th>业务状态归档</th></tr></thead>
+    <tbody>
+      <tr><td>完成 / 正向</td><td class="mono">--md-success-*</td><td>已通过、已完成、正常、可合入</td></tr>
+      <tr><td>进行中 / 待办</td><td class="mono">--md-warning-*</td><td>审核中、待审、处理中、即将到期、建议先改</td></tr>
+      <tr><td>失败 / 负向</td><td class="mono">--md-danger-*</td><td>失败、异常、打回修改、超时</td></tr>
+      <tr><td>中性 / 终结</td><td class="mono">--md-info-*</td><td>草稿、已取消、未知、未审</td></tr>
+      <tr><td>强调 / 当前</td><td class="mono">--md-brand-*</td><td>当前会话、选中项、主仓库</td></tr>
+    </tbody>
+  </table>
+
+  <h3>8.2 现有映射（一张表收口）</h3>
+  <pre><code>// 风险等级 → 语义类，不要各组件各写一套
+const RISK = { high: 'danger', medium: 'warning', low: 'success' }
+// 合入结论 → 语义类
+const VERDICT = { block: 'danger', comment: 'warning', approve: 'success' }
+// 审核状态 → 语义类
+const REVIEW = { running: 'brand', pending: 'info', done: 'success', failed: 'danger' }</code></pre>
+  <div class="note warn">
+    <span class="n-h">同一个风险等级，三处出现过三种红</span>
+    PR 圆点 <code>#E5484D</code>、徽章文字 <code>#C0392B</code>、批量删除按钮 <code>#DC2626</code> —— 它们是同一个「高危」，
+    却用了三个红。现已统一：<strong>填充</strong>用 <code>--md-danger</code>，<strong>文字</strong>用 <code>--md-danger-text</code>，<strong>底</strong>用 <code>--md-danger-subtle</code>。
+  </div>
+
+  <h3>8.3 标签形态</h3>
+  <table>
+    <thead><tr><th style="width:140px">项</th><th>规则</th></tr></thead>
+    <tbody>
+      <tr><td>形态</td><td>浅底 + 深字（<code>subtle</code> + <code>*-text</code>）+ 1px <code>*-border</code>。<strong>不要用实底白字</strong>，一屏多个会很吵</td></tr>
+      <tr><td>尺寸</td><td>列表 / 卡片内 11px；详情页 12px。同一区域不要混用</td></tr>
+      <tr><td>文字长度</td><td>≤ 4 字。「建议先改」4 字已是上限，再长就缩短文案</td></tr>
+      <tr><td>数量</td><td>一行内同类标签不超过 1 个；多状态用竖排或合并</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ 9 ============ -->
+<section id="s9">
+  <h2><span class="num">9</span>弹窗与浮层 <span class="tag t-ok">已落地</span></h2>
+
+  <h3>9.1 尺寸四档</h3>
+  <table>
+    <thead><tr><th class="mono">宽度</th><th>用于</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">460px</td><td>模型配置（单列字段）</td></tr>
+      <tr><td class="mono">560px</td><td>确认框、单字段表单</td></tr>
+      <tr><td class="mono">640px</td><td>常规表单（2 列栅格）—— 面试配置 / 仓库配置</td></tr>
+      <tr><td class="mono">800px</td><td>明细查看、列表弹窗</td></tr>
+    </tbody>
+  </table>
+  <p>超过 800px 改用抽屉或独立页面。<strong>禁止用百分比</strong>（<code>80%</code>、<code>90%</code>）—— 分辨率变化时宽度会漂移，输入框跟着抖。</p>
+
+  <h3>9.2 footer 与关闭</h3>
+  <ul>
+    <li>主操作固定在弹窗底部 <code>.modal-foot</code>（<code>flex-shrink: 0</code>），<strong>表单再长也点得到</strong>。</li>
+    <li>顺序固定：<strong>取消 → 次操作 → 确认</strong>，右对齐；确认按钮可占满剩余宽度。</li>
+    <li>点遮罩<strong>关闭</strong>（本产品已定案）；有未保存修改时先 <code>confirm</code> 提示。</li>
+    <li>弹窗内再开弹窗不超过 <strong>2 层</strong>，第 3 层改为替换当前弹窗。</li>
+    <li>层级用 <code>--md-z-modal</code> / <code>--md-z-modal-top</code>，不要手写数字。</li>
+  </ul>
+</section>
+
+<!-- ============ 10 ============ -->
+<section id="s10">
+  <h2><span class="num">10</span>反馈与空态 <span class="tag t-new">已定案</span></h2>
+
+  <h3>10.1 三种反馈的判据</h3>
+  <table>
+    <thead><tr><th style="width:150px">形态</th><th style="width:190px">用在哪</th><th>约束</th></tr></thead>
+    <tbody>
+      <tr><td>toast（<code>#toast</code>）</td><td>操作结果、轻量提示</td><td>2~3 秒自动消失；<strong>同一操作只弹一条</strong></td></tr>
+      <tr><td>inline（<code>.err-text</code> / <code>.ok-text</code>）</td><td>表单校验、连接测试结果</td><td>贴着操作对象，不飘走</td></tr>
+      <tr><td>banner（<code>.banner</code>）</td><td>环境级问题（本地服务未启动）</td><td>页面顶部常驻，消失前不可关闭地挡视线</td></tr>
+    </tbody>
+  </table>
+
+  <h3>10.2 文案</h3>
+  <ul>
+    <li>成功提示<strong>只在有实质结果时出现</strong>（已保存、已生成、已回帖）。纯切换、纯查询不要弹「操作成功」。</li>
+    <li>失败提示必须说清<strong>发生了什么 + 下一步</strong>：「拉 PR 失败，请检查 Token 或代理设置」，而不是「操作失败」。</li>
+    <li>句末不加句号，不用感叹号。</li>
+  </ul>
+
+  <h3>10.3 loading / empty 的判据</h3>
+  <table>
+    <thead><tr><th style="width:150px">场景</th><th style="width:150px">用什么</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>消息流式输出</td><td>打字指示（三点脉冲）</td><td>已出现的卡片<strong>不重播入场动画</strong>，否则整屏闪</td></tr>
+      <tr><td>单题流式中</td><td>卡片右下脉冲点</td><td>表示「这道题还在出」，不是加载框</td></tr>
+      <tr><td>按钮触发的异步</td><td>按钮禁用 + 文案进行时</td><td>不要额外盖遮罩</td></tr>
+      <tr><td>列表首次加载</td><td>区域占位</td><td>保留标题，只占内容区</td></tr>
+      <tr><td>无数据</td><td>空状态块</td><td>区分「还没有」与「筛选无结果」两种文案</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ 11 ============ -->
+<section id="s11">
+  <h2><span class="num">11</span>图标 <span class="tag t-ok">已落地</span></h2>
+  <table>
+    <thead><tr><th style="width:110px">尺寸</th><th>用于</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">12px</td><td>标签内、紧凑说明</td></tr>
+      <tr><td class="mono">14px</td><td>按钮内、状态条</td></tr>
+      <tr><td class="mono">16px</td><td>默认（顶栏、工具栏）</td></tr>
+      <tr><td class="mono">20px</td><td>卡片标题、区块头</td></tr>
+      <tr><td class="mono">34px</td><td>空状态插画位</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>当前项目用 emoji 作图标（🎯 🛡️ ⚙️ 📄）。<strong>emoji 只用于「身份标识」</strong>（智能体、头像、空状态），
+    功能性图标（关闭、复制、删除、展开）不要用 emoji —— 各平台字形差异大，且无法着色。</li>
+    <li>图标颜色<strong>继承文字色</strong>，不要单独上色（状态图标除外）。</li>
+    <li>图标与文字间距 5px，写法统一 <code>gap: 5px</code>。</li>
+    <li>纯图标按钮必须带 <code>title</code> 或可访问名，否则读屏用户拿不到信息。</li>
+  </ul>
+</section>
+
+<!-- ============ 12 ============ -->
+<section id="s12">
+  <h2><span class="num">12</span>布局与尺寸骨架 <span class="tag t-ok">已落地</span></h2>
+
+  <h3>12.1 骨架尺寸</h3>
+  <table>
+    <thead><tr><th class="mono">Token</th><th class="mono">值</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">--md-header-h</td><td class="mono">56px</td><td>顶栏高度</td></tr>
+      <tr><td class="mono">--md-sidebar-w</td><td class="mono">264px</td><td>左侧会话栏宽度</td></tr>
+      <tr><td class="mono">--md-control-h</td><td class="mono">34px</td><td>按钮 / 输入框默认高</td></tr>
+      <tr><td class="mono">--md-prose-max</td><td class="mono">720px</td><td>长文最大宽度</td></tr>
+      <tr><td class="mono">--md-scrollbar-w</td><td class="mono">10px</td><td>滚动条宽度（Windows 默认太窄不好拖）</td></tr>
+    </tbody>
+  </table>
+
+  <h3>12.2 布局约束（有测试守着，别改）</h3>
+  <ul>
+    <li><code>#root</code> 撑满 <code>100vh</code>，<code>body</code> <code>overflow: hidden</code> —— 整页不参与滚动，只有消息区滚。</li>
+    <li><code>.chat-wrap</code> / <code>.chat-list</code> 必须有 <code>min-height: 0</code>。缺了它 flex 子项会按内容撑开，消息一长就把滚动条推出容器、拖不动。</li>
+    <li>同级区块（<code>.msg</code> / <code>.chat-input</code> / <code>.agent-trace</code>）一律 <code>flex-shrink: 0</code>，只有消息区 <code>flex: 1</code>。</li>
+    <li>折叠面板展开时<strong>内部限高滚动</strong>（<code>.agent-trace.is-open .trace-body</code> 限 <code>max-height</code>），不能压扁聊天区。</li>
+    <li>设计基准 <code>1440×900</code>，最低支持 <code>1280px</code>；低于 <code>900px</code> 侧栏转上方、智能体标签换行。</li>
+  </ul>
+
+  <h3>12.3 图表</h3>
+  <div class="note warn">
+    <span class="n-h">硬约束：ECharts 之类的图表库不解析 CSS 变量</span>
+    <code>color: 'var(--md-brand)'</code> 会直接不渲染（通常还不报错）。图表配色必须写成十六进制，
+    或在运行时用 <code>getComputedStyle(document.documentElement).getPropertyValue('--md-brand')</code> 读出来再传进去。
+    这是 §0 铁律 1 的唯一例外，且必须在代码里注释说明原因。
+  </div>
+</section>
+
+<!-- ============ 13 ============ -->
+<section id="s13">
+  <h2><span class="num">13</span>暗色模式 <span class="tag t-new">已定案</span></h2>
+
+  <h3>13.1 三层取值</h3>
+  <table>
+    <thead><tr><th class="mono">Token</th><th class="mono">亮色</th><th class="mono">暗色</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">--md-surface-0</td><td class="mono">#EBEEF2</td><td class="mono">#141414</td><td>页面底（最深）</td></tr>
+      <tr><td class="mono">--md-surface-1</td><td class="mono">#FFFFFF</td><td class="mono">#1D1E1F</td><td>卡片、面板（比底亮一级）</td></tr>
+      <tr><td class="mono">--md-surface-2</td><td class="mono">#F5F7FA</td><td class="mono">#262727</td><td>次级块、hover 底</td></tr>
+      <tr><td class="mono">--md-text-1</td><td class="mono">#303133</td><td class="mono">#E5EAF3</td><td>标题、主要正文</td></tr>
+      <tr><td class="mono">--md-text-2</td><td class="mono">#606266</td><td class="mono">#CFD3DC</td><td>正文</td></tr>
+      <tr><td class="mono">--md-brand-text</td><td class="mono">#0E7C46</td><td class="mono">#35D07F</td><td>绿色文字（8.4:1）</td></tr>
+      <tr><td class="mono">--md-brand-solid</td><td class="mono">#0E7C46</td><td class="mono">#07C160</td><td>实底按钮（配深字 <code>#04240F</code>）</td></tr>
+      <tr><td class="mono">--md-on-brand</td><td class="mono">#FFFFFF</td><td class="mono">#04240F</td><td>品牌实底上的前景色（会翻转）</td></tr>
+    </tbody>
+  </table>
+  <div class="note warn">
+    <span class="n-h">两条红线</span>
+    ① 内容区底色<strong>必须与页面同色</strong>，不能沿用浅灰底 —— 深色界面里一条亮灰色带非常刺眼。分层交给「卡片比底色亮一级 + 1px 描边」。
+    <br />② 文字轨<strong>必须整体换亮色版</strong>：浅色主题的深绿 <code>#0E7C46</code> 压在 <code>#1D1E1F</code> 上只有 3.5:1，不达 AA。
+  </div>
+
+  <h3>13.2 怎么开</h3>
+  <p>token 已经备好，目前<strong>未接入切换入口</strong>（属产品决策，不是样式缺失）。接入只需两步：</p>
+  <pre><code>// 1) 给根元素挂类（不要在中间 div 上挂）
+document.documentElement.classList.toggle('dark', isDark)
+
+// 2) 记住偏好，首屏前应用，避免闪白
+localStorage.setItem('theme', isDark ? 'dark' : 'light')
+
+// 3) 需要更细的偏好控制时加：
+//    &lt;meta name="color-scheme" content="light dark"&gt;</code></pre>
+  <div class="note bad">
+    <span class="n-h">踩过的坑：类必须挂在 &lt;html&gt; 上</span>
+    <code>:root</code> 里的映射变量（<code>--bg: var(--md-surface-0)</code>）在声明处就完成了替换。
+    只在某个后代 div 上覆盖基础 token，<strong>不会让映射变量重算</strong> —— 结果是「类加上了、颜色一个没变」。
+  </div>
+  <p>另外：<strong>不要自动跟随系统偏好</strong>。首屏观感被系统设置突然改掉属于意外行为，应由用户显式选择，系统偏好只作首次默认值。</p>
+
+  <h3>13.3 自检清单</h3>
+  <ul>
+    <li>两种主题各走一遍：文字在各自底色上是否可读；绿色是否走了文字轨。</li>
+    <li>容易漏的浮层：弹窗、下拉、toast、遮罩、空状态、骨架。</li>
+    <li>代码块：应当<strong>保持不变</strong>（深色），不是「也跟着变亮」。</li>
+    <li>分类徽标：底色变亮后，白字要翻成深字（<code>--md-on-cat</code>）。</li>
+    <li>新增颜色时两种主题都要看，别只在亮色下调。</li>
+  </ul>
+</section>
+
+<!-- ============ 14 ============ -->
+<section id="s14">
+  <h2><span class="num">14</span>落地方式 <span class="tag t-ok">已落地</span></h2>
+
+  <h3>14.1 文件与顺序</h3>
+  <table>
+    <thead><tr><th style="width:250px">文件</th><th>职责</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">web/src/styles/tokens.css</td><td>唯一 token 源。颜色 / 字号 / 间距 / 圆角 / 阴影 / 动效 / 层级 / 亮暗两套</td></tr>
+      <tr><td class="mono">web/src/styles.css</td><td>组件样式。只消费 token，不出现 <code>#hex</code></td></tr>
+      <tr><td class="mono">web/src/main.tsx</td><td>引入顺序：先 tokens，后 styles</td></tr>
+      <tr><td class="mono">docs/design-spec-v1.html</td><td>本文（规范正文）</td></tr>
+      <tr><td class="mono">docs/theme-demo.html</td><td>实时预览，可切深浅，直接引用 tokens.css</td></tr>
+    </tbody>
+  </table>
+  <pre><code>// main.tsx —— 顺序不能反
+import './styles/tokens.css';
+import './styles.css';</code></pre>
+
+  <h3>14.2 兼容别名层</h3>
+  <p><code>styles.css</code> 顶部的 <code>:root</code> 保留了旧变量名（<code>--bg</code> / <code>--panel</code> / <code>--primary</code> …），
+  它们都写成 <code>var(--md-*)</code> 的<strong>引用</strong>而不是取值，所以切暗色时会自动跟随。新代码不要再使用这一层。</p>
+  <div class="note bad">
+    <span class="n-h">已下线的旧语义</span>
+    <code>--primary-dark</code> 原本是「深一点的蓝」，改绿后语义变成「绿色文字轨」。
+    如果看到它被当作背景色使用，那是 bug —— 背景应该用 <code>--md-brand-solid</code>。
+  </div>
+
+  <h3>14.3 禁止事项</h3>
+  <ul class="rules" style="list-style:none">
+    <li><strong>不要再在业务代码里写 <code>#hex</code>。</strong>包括内联 <code>style={{ background: '#4f6ef7' }}</code> —— 这种写法最容易被漏掉，因为 grep 只搜 css 文件时看不见。</li>
+    <li><strong>不要改 <code>--md-fs-*</code> 的比例关系。</strong>行高与字号是成对定义的，单独改字号会得到拥挤或松散的段落。</li>
+    <li><b>不要用状态切换内联样式。</b>需要两个颜色的状态，写成两个类名（<code>.pr-dot.is-running</code>），不要 <code>style={running ? 'red' : 'gray'}</code>。</li>
+    <li><b>不要一次性全量改写业务组件。</b>按模块分批、每批单独提交，便于回滚与目视核对。</li>
+  </ul>
+</section>
+
+<!-- ============ 15 ============ -->
+<section id="s15">
+  <h2><span class="num">15</span>存量与整改</h2>
+  <p>2026-11-02 实测（<code>web/src</code>，共 24 个源文件；样式集中在 <code>styles.css</code> 656 行 / 327 条规则）。</p>
+  <table>
+    <thead><tr><th style="width:80px">优先级</th><th style="width:210px">问题</th><th style="width:190px">实测存量</th><th>处理方式</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tag t-ok">已完成</span></td><td>硬编码色值 → 语义 token</td><td>153 处 → <strong>0</strong></td><td>全部改挂 <code>--md-*</code>，选择器 327 条零增零减</td></tr>
+      <tr><td><span class="tag t-ok">已完成</span></td><td>品牌色双轨拆分</td><td>9 处文字 + 6 处填充</td><td>按「写字 / 填色」分流，实底按钮改 <code>#0E7C46</code></td></tr>
+      <tr><td><span class="tag t-ok">已完成</span></td><td>字重越级</td><td>16 处 → <strong>0</strong></td><td>600 / 700 全部压到 500</td></tr>
+      <tr><td><span class="tag t-ok">已完成</span></td><td>圆角取值散乱</td><td>10 种 → <strong>7 档 token</strong></td><td>5→6、12→10，其余就近归并</td></tr>
+      <tr><td><span class="tag t-ok">已完成</span></td><td>内联硬编码色</td><td>1 处 → <strong>0</strong></td><td><code>ReviewWorkbench</code> 的状态色改类名 <code>.pr-dot.is-running</code></td></tr>
+      <tr><td><span class="tag t-ok">已完成</span></td><td>同义色重复定义</td><td>高危红 3 种 / 审核绿 2 种</td><td>收敛到 danger / success 双轨</td></tr>
+      <tr><td><span class="tag t-warn">P1</span></td><td>字号字面值未 token 化</td><td><strong>84 处</strong> <code>font-size: Npx</code></td><td>按 §2.2 就近归并，注意撑破固定宽度</td></tr>
+      <tr><td><span class="tag t-warn">P1</span></td><td>间距非 4 倍数</td><td>padding / margin 中约 <strong>40 处</strong>（5px、7px、10px、22px…）</td><td>收益低，随页面迭代改</td></tr>
+      <tr><td><span class="tag t-warn">P2</span></td><td>暗色入口未接</td><td>token 已就绪</td><td>按 §13.2 两步接入，需先过自检清单</td></tr>
+      <tr><td><span class="tag t-warn">P2</span></td><td>兼容别名层未下线</td><td>8 个别名仍在使用</td><td>新代码直接用 <code>--md-*</code>，旧代码随迭代替换</td></tr>
+    </tbody>
+  </table>
+
+  <div class="card">
+    <p class="card-h">建议节奏</p>
+    <p style="margin:0;font-size:13px;color:var(--ink-2)">
+      ① 先在真实页面走一遍深浅两套观感，确认绿色与「一题一卡」的题型色不打架；
+      ② 接入暗色切换（一个按钮 + 一次 localStorage，半小时内）；
+      ③ 再按模块清字号字面值；
+      ④ 间距最后做 —— 它收益最低、回归风险最高。
+    </p>
+  </div>
+</section>
+
+<!-- ============ 16 ============ -->
+<section id="s16">
+  <h2><span class="num">附</span>对比度实测</h2>
+  <p>WCAG 2.1，白底（暗色主题的数值按 <code>#1D1E1F</code> 计算）。</p>
+  <table>
+    <thead><tr><th class="mono">色值</th><th>说明</th><th class="num-col">对比度</th><th style="width:110px">判定</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">#0E7C46</td><td>品牌文字轨 / 实底</td><td class="num-col">5.26 : 1</td><td><span class="tag t-ok">AA</span></td></tr>
+      <tr><td class="mono">#07C160</td><td>微信绿（填充轨）</td><td class="num-col">2.38 : 1</td><td><span class="tag t-warn">仅填充</span></td></tr>
+      <tr><td class="mono">#303133</td><td>主文字</td><td class="num-col">13.02 : 1</td><td><span class="tag t-ok">AAA</span></td></tr>
+      <tr><td class="mono">#606266</td><td>常规文字</td><td class="num-col">6.11 : 1</td><td><span class="tag t-ok">AA</span></td></tr>
+      <tr><td class="mono">#6B7280</td><td>辅助文字</td><td class="num-col">4.83 : 1</td><td><span class="tag t-ok">AA</span></td></tr>
+      <tr><td class="mono">#909399</td><td>info 填充</td><td class="num-col">3.08 : 1</td><td><span class="tag t-bad">不达正文</span></td></tr>
+      <tr><td class="mono">#E6A23C</td><td>warning 填充</td><td class="num-col">2.19 : 1</td><td><span class="tag t-bad">仅填充</span></td></tr>
+      <tr><td class="mono">#F56C6C</td><td>danger 填充</td><td class="num-col">2.90 : 1</td><td><span class="tag t-bad">仅填充</span></td></tr>
+      <tr><td class="mono">#B45309</td><td>warning 文字轨</td><td class="num-col">5.02 : 1</td><td><span class="tag t-ok">AA</span></td></tr>
+      <tr><td class="mono">#DC2626</td><td>danger 文字轨</td><td class="num-col">4.83 : 1</td><td><span class="tag t-ok">AA</span></td></tr>
+      <tr><td class="mono">#EBEEF2</td><td>页面底 vs 白卡</td><td class="num-col">1.16 : 1</td><td><span class="tag t-ok">可辨边界</span></td></tr>
+      <tr><td class="mono">#F5F7F9</td><td>对照：更浅的页面底</td><td class="num-col">1.07 : 1</td><td><span class="tag t-bad">边界看不出</span></td></tr>
+      <tr><td class="mono">#35D07F</td><td>暗色品牌文字</td><td class="num-col">8.40 : 1</td><td><span class="tag t-ok">AAA</span></td></tr>
+      <tr><td class="mono">#04240F</td><td>暗色实底上的深字</td><td class="num-col">6.74 : 1</td><td><span class="tag t-ok">AA</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3>版本</h3>
+  <table>
+    <thead><tr><th style="width:100px">版本</th><th style="width:110px">日期</th><th>内容</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">v1.0</td><td>2026-11-02</td><td>首版。主色由蓝 <code>#4F6EF7</code> 改微信绿 <code>#07C160</code>，引入四轨（填充 / 文字 / 实底 / 浅色阶）；建立 token 层并完成 153 处色值、16 处字重、10 种圆角的收敛；新增题型分类色与暗色主题两套取值</td></tr>
+    </tbody>
+  </table>
+
+  <div class="footer">
+    配套文件：<code>web/src/styles/tokens.css</code>（token 落地）· <code>web/src/styles.css</code>（组件样式）· <code>docs/theme-demo.html</code>（实时预览）
+  </div>
+</section>
+
+</main>
+</div>
+</body>
+</html>

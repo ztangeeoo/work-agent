@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>主题预览 · 全局样式主题标准 v1.0</title>
+<!-- 直接引用产品里的 token 源文件，预览与线上永远同源 -->
+<link rel="stylesheet" href="../web/src/styles/tokens.css" />
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--md-surface-0);
+    color: var(--md-text-1);
+    font-family: var(--md-font-sans);
+    font-size: var(--md-fs-2);
+    line-height: var(--md-lh-2);
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 1080px; margin: 0 auto; padding: var(--md-space-6) var(--md-space-6) var(--md-space-8); }
+
+  /* 顶栏 */
+  .top {
+    display: flex; align-items: center; gap: var(--md-space-3);
+    padding: var(--md-space-3) var(--md-space-5);
+    background: var(--md-surface-1);
+    border: 1px solid var(--md-border-weak);
+    border-radius: var(--md-radius-2xl);
+    box-shadow: var(--md-shadow-1);
+    margin-bottom: var(--md-space-6);
+    position: sticky; top: var(--md-space-3); z-index: var(--md-z-sticky);
+  }
+  .top h1 { font-size: var(--md-fs-3); font-weight: var(--md-fw-medium); margin: 0; }
+  .top .sub { font-size: var(--md-fs-1); color: var(--md-text-3); }
+  .top .spacer { flex: 1; }
+  .toggle {
+    display: inline-flex; align-items: center; gap: var(--md-space-2);
+    height: var(--md-control-h); padding: 0 var(--md-space-4);
+    border: 1px solid var(--md-border); border-radius: var(--md-radius-lg);
+    background: var(--md-surface-1); color: var(--md-text-2);
+    font-family: inherit; font-size: var(--md-fs-2); cursor: pointer;
+    transition: border-color var(--md-dur-fast), color var(--md-dur-fast), background var(--md-dur-fast);
+  }
+  .toggle:hover { border-color: var(--md-brand); color: var(--md-brand-text); }
+  .toggle[aria-pressed="true"] { border-color: var(--md-brand); background: var(--md-brand-subtle); color: var(--md-brand-text); }
+
+  /* 区块 */
+  section {
+    background: var(--md-surface-1);
+    border: 1px solid var(--md-border-weak);
+    border-radius: var(--md-radius-2xl);
+    padding: var(--md-space-5);
+    margin-bottom: var(--md-space-4);
+    box-shadow: var(--md-shadow-1);
+  }
+  section > h2 {
+    font-size: var(--md-fs-3); font-weight: var(--md-fw-medium);
+    margin: 0 0 var(--md-space-4);
+    padding-bottom: var(--md-space-3);
+    border-bottom: 1px solid var(--md-border-weak);
+    display: flex; align-items: baseline; gap: var(--md-space-2);
+  }
+  section > h2 code { font-size: var(--md-fs-1); font-weight: var(--md-fw-normal); color: var(--md-text-3); }
+  h3 { font-size: var(--md-fs-2); font-weight: var(--md-fw-medium); margin: var(--md-space-5) 0 var(--md-space-2); color: var(--md-text-2); }
+  h3:first-of-type { margin-top: 0; }
+  p.note { font-size: var(--md-fs-1); color: var(--md-text-3); margin: 0 0 var(--md-space-3); }
+
+  /* 色板 */
+  .sw-row { display: flex; flex-wrap: wrap; gap: var(--md-space-3); }
+  .sw { width: 116px; }
+  .sw .chip { height: 46px; border-radius: var(--md-radius-lg); border: 1px solid rgba(0,0,0,.08); }
+  .sw .lbl { margin-top: var(--md-space-1); font-size: 11px; line-height: 1.5; color: var(--md-text-3); font-family: var(--md-font-mono); }
+  html.dark .sw .chip { border-color: rgba(255,255,255,.1); }
+
+  /* 表格 */
+  table { width: 100%; border-collapse: collapse; font-size: var(--md-fs-1); }
+  th, td { padding: var(--md-space-2) var(--md-space-3); text-align: left; border-bottom: 1px solid var(--md-border-hair); }
+  th { font-weight: var(--md-fw-medium); color: var(--md-text-3); background: var(--md-surface-2); }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .mono { font-family: var(--md-font-mono); }
+
+  /* 字号 */
+  .type-row { display: flex; align-items: baseline; gap: var(--md-space-4); padding: var(--md-space-2) 0; border-bottom: 1px solid var(--md-border-hair); }
+  .type-row:last-child { border-bottom: none; }
+  .type-row .meta { flex: 0 0 150px; font-size: 11px; color: var(--md-text-3); font-family: var(--md-font-mono); }
+
+  /* 按钮 */
+  .btn-row { display: flex; flex-wrap: wrap; gap: var(--md-space-2); align-items: center; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+    height: var(--md-control-h); padding: 0 var(--md-space-4);
+    border: 1px solid transparent; border-radius: var(--md-radius-lg);
+    font-family: inherit; font-size: var(--md-fs-2); line-height: 1; cursor: pointer;
+    transition: background var(--md-dur-fast), border-color var(--md-dur-fast), color var(--md-dur-fast);
+  }
+  .btn-solid { background: var(--md-brand-solid); border-color: var(--md-brand-solid); color: var(--md-on-brand); }
+  .btn-solid:hover { background: var(--md-brand-solid-hover); border-color: var(--md-brand-solid-hover); }
+  .btn-plain { background: var(--md-brand-subtle); border-color: var(--md-brand-border); color: var(--md-brand-text); }
+  .btn-ghost { background: var(--md-surface-1); border-color: var(--md-border); color: var(--md-text-2); }
+  .btn-ghost:hover { border-color: var(--md-brand); color: var(--md-brand-text); }
+  .btn-danger { background: var(--md-danger-subtle); border-color: var(--md-danger-border); color: var(--md-danger-text); }
+  .btn-link { background: none; border: none; color: var(--md-brand-text); padding: 0 var(--md-space-1); }
+  .btn-sm { height: var(--md-control-h-sm); font-size: var(--md-fs-1); padding: 0 var(--md-space-3); }
+  .btn:disabled { background: var(--md-surface-3); border-color: var(--md-border-weak); color: var(--md-text-4); cursor: not-allowed; }
+
+  /* 表单 */
+  .field { margin-bottom: var(--md-space-3); max-width: 360px; }
+  .field label { display: block; font-size: var(--md-fs-1); color: var(--md-text-3); margin-bottom: var(--md-space-1); }
+  .field input, .field select {
+    width: 100%; height: var(--md-control-h); padding: 0 var(--md-space-3);
+    border: 1px solid var(--md-border); border-radius: var(--md-radius-lg);
+    background: var(--md-surface-1); color: var(--md-text-1);
+    font-family: inherit; font-size: var(--md-fs-2); outline: none;
+    transition: border-color var(--md-dur-fast), box-shadow var(--md-dur-fast);
+  }
+  .field input:focus, .field select:focus { border-color: var(--md-brand); box-shadow: var(--md-shadow-focus); }
+  .err { font-size: var(--md-fs-1); color: var(--md-danger-text); margin-top: var(--md-space-1); }
+
+  /* 气泡 */
+  .bubble-wrap { padding: var(--md-space-3); background: var(--md-surface-0); border-radius: var(--md-radius-xl); }
+  .msg { display: flex; gap: var(--md-space-3); margin-bottom: var(--md-space-3); max-width: 600px; }
+  .msg:last-child { margin-bottom: 0; }
+  .msg.user { flex-direction: row-reverse; margin-left: auto; }
+  .av {
+    width: 34px; height: 34px; border-radius: var(--md-radius-pill); flex: 0 0 34px;
+    display: flex; align-items: center; justify-content: center; font-size: 15px;
+    color: var(--md-on-accent);
+  }
+  .msg.ai .av { background: linear-gradient(135deg, var(--md-brand-solid), var(--md-cat-scenario)); }
+  .msg.user .av { background: var(--md-warning); }
+  .bubble {
+    padding: var(--md-space-3) var(--md-space-4);
+    border-radius: var(--md-radius-xl);
+    border-top-left-radius: var(--md-radius-sm);
+    font-size: var(--md-fs-2); line-height: var(--md-lh-prose);
+    background: var(--md-surface-1); border: 1px solid var(--md-border-weak);
+  }
+  .msg.user .bubble {
+    background: var(--md-brand-solid); color: var(--md-on-brand);
+    border: none; border-top-left-radius: var(--md-radius-xl); border-top-right-radius: var(--md-radius-sm);
+  }
+
+  /* 题目卡片 */
+  .qcard {
+    --qa: var(--md-cat-neutral);
+    border: 1px solid var(--md-border-weak); border-left: 3px solid var(--qa);
+    border-radius: var(--md-radius-xl); background: var(--md-surface-1);
+    margin-bottom: var(--md-space-3); overflow: hidden;
+    box-shadow: var(--md-shadow-1);
+    transition: box-shadow var(--md-dur-base);
+  }
+  .qcard:hover { box-shadow: var(--md-shadow-brand); }
+  .qcard-basic { --qa: var(--md-cat-basic); }
+  .qcard-scenario { --qa: var(--md-cat-scenario); }
+  .qcard-deep { --qa: var(--md-cat-deep); }
+  .qcard-algo { --qa: var(--md-cat-algo); }
+  .qcard-trouble { --qa: var(--md-cat-trouble); }
+  .qhead {
+    display: flex; align-items: center; gap: var(--md-space-2); flex-wrap: wrap;
+    padding: var(--md-space-2) var(--md-space-3);
+    background: linear-gradient(180deg, var(--md-surface-2), var(--md-surface-1));
+    border-bottom: 1px solid var(--md-border-weak);
+  }
+  .qno {
+    background: var(--qa); color: var(--md-on-cat);
+    font-size: 11px; font-weight: var(--md-fw-medium);
+    border-radius: var(--md-radius-md); padding: 2px var(--md-space-2);
+  }
+  .qtitle { font-size: var(--md-fs-2); font-weight: var(--md-fw-medium); flex: 1; min-width: 100px; }
+  .qbody { padding: var(--md-space-3); font-size: var(--md-fs-2); line-height: var(--md-lh-prose); color: var(--md-text-2); }
+  .qfocus {
+    margin-top: var(--md-space-3); padding-top: var(--md-space-2);
+    border-top: 1px dashed var(--md-border-weak);
+    display: flex; gap: var(--md-space-2); align-items: baseline;
+    font-size: var(--md-fs-1); color: var(--md-text-3);
+  }
+  .qfocus b { color: var(--md-brand-text); font-size: 11px; background: var(--md-brand-subtle); border-radius: var(--md-radius-md); padding: 1px 6px; flex: 0 0 auto; }
+
+  /* 标签 */
+  .tag { display: inline-block; font-size: 11px; font-weight: var(--md-fw-medium); padding: 1px var(--md-space-2); border-radius: var(--md-radius-pill); border: 1px solid transparent; }
+  .t-success { background: var(--md-success-subtle); color: var(--md-success-text); border-color: var(--md-success-border); }
+  .t-warning { background: var(--md-warning-subtle); color: var(--md-warning-text); border-color: var(--md-warning-border); }
+  .t-danger { background: var(--md-danger-subtle); color: var(--md-danger-text); border-color: var(--md-danger-border); }
+  .t-info { background: var(--md-info-subtle); color: var(--md-info-text); border-color: var(--md-info-border); }
+  .t-brand { background: var(--md-brand-subtle); color: var(--md-brand-text); border-color: var(--md-brand-border); }
+  .t-cat-basic { background: var(--md-cat-basic-bg); color: var(--md-cat-basic); border-color: var(--md-cat-basic-border); }
+  .t-cat-scenario { background: var(--md-cat-scenario-bg); color: var(--md-cat-scenario); border-color: var(--md-cat-scenario-border); }
+  .t-cat-deep { background: var(--md-cat-deep-bg); color: var(--md-cat-deep); border-color: var(--md-cat-deep-border); }
+  .t-cat-algo { background: var(--md-cat-algo-bg); color: var(--md-cat-algo); border-color: var(--md-cat-algo-border); }
+  .t-cat-trouble { background: var(--md-cat-trouble-bg); color: var(--md-cat-trouble); border-color: var(--md-cat-trouble-border); }
+  .tag-row { display: flex; flex-wrap: wrap; gap: var(--md-space-2); align-items: center; }
+
+  /* 状态点 */
+  .dot { width: 8px; height: 8px; border-radius: var(--md-radius-pill); display: inline-block; }
+  .dot-ok { background: var(--md-success); }
+  .dot-warn { background: var(--md-warning); }
+  .dot-bad { background: var(--md-danger); }
+  .dot-idle { background: var(--md-border); }
+
+  /* 代码 */
+  .code-block { border: 1px solid var(--md-code-border); border-radius: var(--md-radius-xl); overflow: hidden; }
+  .code-head { background: var(--md-code-head); color: var(--md-code-dim); font-size: 11px; padding: 5px var(--md-space-3); font-family: var(--md-font-mono); }
+  .code-block pre { margin: 0; padding: var(--md-space-3) var(--md-space-4); background: var(--md-code-bg); color: var(--md-code-text); font-family: var(--md-font-mono); font-size: 12.5px; line-height: 1.65; overflow-x: auto; }
+  .inline-code { font-family: var(--md-font-mono); font-size: 12.5px; background: var(--md-code-inline-bg); padding: 1px 5px; border-radius: var(--md-radius-sm); }
+
+  /* 阴影 */
+  .shadow-row { display: flex; flex-wrap: wrap; gap: var(--md-space-4); }
+  .shadow-box {
+    width: 120px; height: 72px; border-radius: var(--md-radius-xl);
+    background: var(--md-surface-1); border: 1px solid var(--md-border-weak);
+    display: flex; align-items: flex-end; padding: var(--md-space-2);
+    font-size: 11px; color: var(--md-text-3); font-family: var(--md-font-mono);
+  }
+  .s1 { box-shadow: var(--md-shadow-1); }
+  .s2 { box-shadow: var(--md-shadow-2); }
+  .s3 { box-shadow: var(--md-shadow-3); }
+  .s4 { box-shadow: var(--md-shadow-4); }
+
+  /* 间距演示 */
+  .space-row { display: flex; align-items: flex-end; gap: var(--md-space-3); }
+  .space-bar { background: var(--md-brand); border-radius: var(--md-radius-xs); width: 28px; }
+  .space-lbl { font-size: 11px; color: var(--md-text-3); font-family: var(--md-font-mono); text-align: center; margin-top: var(--md-space-1); }
+  .space-item { text-align: center; }
+
+  /* 圆角演示 */
+  .radius-row { display: flex; flex-wrap: wrap; gap: var(--md-space-3); }
+  .radius-box { width: 76px; height: 52px; background: var(--md-brand-subtle); border: 1px solid var(--md-brand-border); display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--md-brand-text); font-family: var(--md-font-mono); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="top">
+    <h1>主题预览</h1>
+    <span class="sub">全局样式主题标准 v1.0 · 直接引用 <code>web/src/styles/tokens.css</code></span>
+    <span class="spacer"></span>
+    <button class="toggle" id="toggle" aria-pressed="false" onclick="toggleTheme()">🌙 深色</button>
+  </div>
+
+  <!-- 颜色 -->
+  <section>
+    <h2>颜色 <code>--md-*</code></h2>
+
+    <h3>品牌四轨</h3>
+    <div class="sw-row">
+      <div class="sw"><div class="chip" style="background:var(--md-brand)"></div><div class="lbl">brand<br/>填充 · 2.38</div></div>
+      <div class="sw"><div class="chip" style="background:var(--md-brand-text)"></div><div class="lbl">brand-text<br/>文字 · 5.26</div></div>
+      <div class="sw"><div class="chip" style="background:var(--md-brand-solid)"></div><div class="lbl">brand-solid<br/>实底 · 白字5.26</div></div>
+      <div class="sw"><div class="chip" style="background:var(--md-brand-subtle)"></div><div class="lbl">brand-subtle<br/>弱底</div></div>
+      <div class="sw"><div class="chip" style="background:var(--md-brand-border)"></div><div class="lbl">brand-border<br/>plain 描边</div></div>
+    </div>
+
+    <h3>语义四件套</h3>
+    <div class="sw-row">
+      <div class="sw"><div class="chip" style="background:var(--md-success)"></div><div class="lbl">success</div></div>
+      <div class="sw"><div class="chip" style="background:var(--md-success-subtle)"></div><div class="lbl">success-subtle</div></div>
+      <div class="sw"><div class="chip" style="background:var(--md-warning)"></div><div class="lbl">warning · 2.19</div></div>
+      <div class="sw"><div class="chip" style="background:var(--md-warning-subtle)"></div><div class="lbl">warning-subtle</div></div>
+      <div class="sw"><div class="chip" style="background:var(--md-danger)"></div><div class="lbl">danger · 2.90</div></div>
+      <div class="sw"><div class="chip" style="background:var(--md-danger-subtle)"></div><div class="lbl">danger-subtle</div></div>
+      <div class="sw"><div class="chip" style="background:var(--md-info)"></div><div class="lbl">info · 3.08</div></div>
+      <div class="sw"><div class="chip" style="background:var(--md-info-subtle)"></div><div class="lbl">info-subtle</div></div>
+    </div>
+
+    <h3>表面阶梯与中性</h3>
+    <div class="sw-row">
+      <div class="sw"><div class="chip" style="background:var(--md-surface-0)"></div><div class="lbl">surface-0<br/>页面底</div></div>
+      <div class="sw"><div class="chip" style="background:var(--md-surface-1)"></div><div class="lbl">surface-1<br/>卡片</div></div>
+      <div class="sw"><div class="chip" style="background:var(--md-surface-2)"></div><div class="lbl">surface-2<br/>次级块</div></div>
+      <div class="sw"><div class="chip" style="background:var(--md-border)"></div><div class="lbl">border</div></div>
+      <div class="sw"><div class="chip" style="background:var(--md-border-weak)"></div><div class="lbl">border-weak</div></div>
+      <div class="sw"><div class="chip" style="background:var(--md-text-3)"></div><div class="lbl">text-3</div></div>
+      <div class="sw"><div class="chip" style="background:var(--md-text-1)"></div><div class="lbl">text-1</div></div>
+    </div>
+
+    <h3>题型分类色（白字 / 浅底文字 均 ≥4.5:1）</h3>
+    <div class="tag-row">
+      <span class="tag t-cat-basic">基础概念</span>
+      <span class="tag t-cat-scenario">场景设计</span>
+      <span class="tag t-cat-deep">深挖追问</span>
+      <span class="tag t-cat-algo">算法编码</span>
+      <span class="tag t-cat-trouble">排查诊断</span>
+      <span class="tag t-info">未分类</span>
+    </div>
+
+    <h3>涨跌</h3>
+    <div class="tag-row">
+      <span class="mono" style="color:var(--md-up);font-variant-numeric:tabular-nums">+12.50</span>
+      <span class="mono" style="color:var(--md-down);font-variant-numeric:tabular-nums">−3.20</span>
+      <span class="mono" style="color:var(--md-flat);font-variant-numeric:tabular-nums">0.00</span>
+    </div>
+  </section>
+
+  <!-- 字体 -->
+  <section>
+    <h2>字体与字号 <code>--md-fs-*</code></h2>
+    <div class="type-row"><span class="meta">fs-6 · 28/36 · 大屏</span><span style="font-size:var(--md-fs-6);line-height:var(--md-lh-6)">面试评分 8.5</span></div>
+    <div class="type-row"><span class="meta">fs-5 · 24/32 · 页面标题</span><span style="font-size:var(--md-fs-5);line-height:var(--md-lh-5)">智能体协同</span></div>
+    <div class="type-row"><span class="meta">fs-4 · 20/28 · 统计值</span><span style="font-size:var(--md-fs-4);line-height:var(--md-lh-4)">12 道题 · 3 个环节</span></div>
+    <div class="type-row"><span class="meta">fs-3 · 16/24 · 卡片标题</span><span style="font-size:var(--md-fs-3);line-height:var(--md-lh-3)">线程池参数与任务提交路径</span></div>
+    <div class="type-row"><span class="meta">fs-2 · 14/22 · 正文</span><span style="font-size:var(--md-fs-2);line-height:var(--md-lh-2)">这个场景下，核心线程数应该怎么定？</span></div>
+    <div class="type-row"><span class="meta">fs-1 · 12/18 · 辅助</span><span style="font-size:var(--md-fs-1);line-height:var(--md-lh-1)">2026-11-02 21:46 · 已完成 2 个环节</span></div>
+    <p class="note" style="margin-top:var(--md-space-3)">
+      字重只有 400 / 500：<span style="font-weight:var(--md-fw-normal)">正常 400</span> ·
+      <span style="font-weight:var(--md-fw-medium)">强调 500</span> ·
+      等宽 <span class="mono">0x7f3a…9c21</span> · 等宽数字 <span class="mono" style="font-variant-numeric:tabular-nums">1,234,567.89</span>
+    </p>
+  </section>
+
+  <!-- 间距 / 圆角 / 阴影 -->
+  <section>
+    <h2>间距 · 圆角 · 阴影</h2>
+    <h3>间距 7 档（4 的倍数）</h3>
+    <div class="space-row">
+      <div class="space-item"><div class="space-bar" style="height:var(--md-space-1)"></div><div class="space-lbl">4</div></div>
+      <div class="space-item"><div class="space-bar" style="height:var(--md-space-2)"></div><div class="space-lbl">8</div></div>
+      <div class="space-item"><div class="space-bar" style="height:var(--md-space-3)"></div><div class="space-lbl">12</div></div>
+      <div class="space-item"><div class="space-bar" style="height:var(--md-space-4)"></div><div class="space-lbl">16</div></div>
+      <div class="space-item"><div class="space-bar" style="height:var(--md-space-5)"></div><div class="space-lbl">20</div></div>
+      <div class="space-item"><div class="space-bar" style="height:var(--md-space-6)"></div><div class="space-lbl">24</div></div>
+      <div class="space-item"><div class="space-bar" style="height:var(--md-space-8)"></div><div class="space-lbl">32</div></div>
+    </div>
+
+    <h3>圆角 7 档</h3>
+    <div class="radius-row">
+      <div class="radius-box" style="border-radius:var(--md-radius-xs)">2</div>
+      <div class="radius-box" style="border-radius:var(--md-radius-sm)">4</div>
+      <div class="radius-box" style="border-radius:var(--md-radius-md)">6</div>
+      <div class="radius-box" style="border-radius:var(--md-radius-lg)">8</div>
+      <div class="radius-box" style="border-radius:var(--md-radius-xl)">10</div>
+      <div class="radius-box" style="border-radius:var(--md-radius-2xl)">14</div>
+      <div class="radius-box" style="border-radius:var(--md-radius-pill)">999</div>
+    </div>
+
+    <h3>阴影 4 档</h3>
+    <div class="shadow-row">
+      <div class="shadow-box s1">shadow-1</div>
+      <div class="shadow-box s2">shadow-2</div>
+      <div class="shadow-box s3">shadow-3</div>
+      <div class="shadow-box s4">shadow-4</div>
+    </div>
+  </section>
+
+  <!-- 按钮与表单 -->
+  <section>
+    <h2>按钮与表单</h2>
+    <h3>三档优先级</h3>
+    <div class="btn-row">
+      <button class="btn btn-ghost btn-sm">取消</button>
+      <button class="btn btn-plain btn-sm">测试连接</button>
+      <button class="btn btn-solid btn-sm">保存并轮询</button>
+      <button class="btn btn-danger btn-sm">删除</button>
+      <button class="btn btn-link">行内操作</button>
+    </div>
+    <h3>尺寸与状态</h3>
+    <div class="btn-row">
+      <button class="btn btn-solid btn-sm">small 28</button>
+      <button class="btn btn-solid">default 34</button>
+      <button class="btn btn-solid" disabled>disabled</button>
+      <button class="btn btn-ghost">hover 试试</button>
+    </div>
+
+    <h3>表单</h3>
+    <div class="field">
+      <label>模型 API 地址 <span style="color:var(--md-danger-text)">*</span></label>
+      <input type="text" value="https://api.deepseek.com/v1" />
+    </div>
+    <div class="field">
+      <label>技术方向</label>
+      <select><option>后端 · Java 并发</option><option>前端 · React</option></select>
+    </div>
+    <div class="field">
+      <label>仓库 Token</label>
+      <input type="text" placeholder="ghp_…" />
+      <div class="err">Token 无效，请检查是否过期</div>
+    </div>
+  </section>
+
+  <!-- 对话 -->
+  <section>
+    <h2>对话界面</h2>
+    <h3>气泡</h3>
+    <div class="bubble-wrap">
+      <div class="msg ai">
+        <div class="av">🤖</div>
+        <div class="bubble">这个场景下，支付回调服务的线程池核心线程数应该怎么定？先说说影响它的两个参数。</div>
+      </div>
+      <div class="msg user">
+        <div class="av">👤</div>
+        <div class="bubble">按 CPU 核数 ×（1 + 等待时间/计算时间）估算，再考虑队列长度。</div>
+      </div>
+    </div>
+
+    <h3>一题一卡（题型色条 + 徽标同色）</h3>
+    <div class="qcard qcard-basic">
+      <div class="qhead">
+        <span class="qno">Q1</span>
+        <span class="qtitle">线程池参数与任务提交路径</span>
+        <span class="tag t-cat-basic">基础概念</span>
+      </div>
+      <div class="qbody">
+        某银行核心系统的支付回调服务使用一个 ThreadPoolExecutor…
+        <div class="qfocus"><b>考察点</b><span>是否真正理解核心线程数、队列容量与拒绝策略的配合。</span></div>
+      </div>
+    </div>
+    <div class="qcard qcard-deep">
+      <div class="qhead">
+        <span class="qno">Q2</span>
+        <span class="qtitle">队列打满后的降级策略</span>
+        <span class="tag t-cat-deep">深挖追问</span>
+      </div>
+      <div class="qbody">如果队列容量设为无界，会发生什么？线上怎么发现这个问题？</div>
+    </div>
+
+    <h3>状态标签与状态点</h3>
+    <div class="tag-row">
+      <span class="tag t-success">已通过</span>
+      <span class="tag t-warning">审核中</span>
+      <span class="tag t-danger">打回修改</span>
+      <span class="tag t-info">草稿</span>
+      <span class="tag t-brand">当前</span>
+      <span style="margin-left:var(--md-space-2)"><span class="dot dot-ok"></span> <span class="dot dot-warn"></span> <span class="dot dot-bad"></span> <span class="dot dot-idle"></span></span>
+    </div>
+
+    <h3>代码块（两种主题下都保持深色）</h3>
+    <div class="code-block">
+      <div class="code-head">java</div>
+      <pre>ThreadPoolExecutor pool = new ThreadPoolExecutor(
+    coreSize, maxSize, 60L, TimeUnit.SECONDS,
+    new ArrayBlockingQueue&lt;&gt;(queueCapacity),
+    new ThreadPoolExecutor.CallerRunsPolicy());</pre>
+    </div>
+    <p class="note" style="margin-top:var(--md-space-3)">行内 <span class="inline-code">formatMoney(v)</span> 与 <span class="inline-code">statusType()</span> 用等宽 + 浅底。</p>
+  </section>
+
+  <p class="note" style="text-align:center">
+    本页只做视觉核对，交互逻辑与真实产品一致但未接后端。
+  </p>
+</div>
+
+<script>
+  // 暗色类必须挂在 <html> 上：:root 里的映射变量在声明处已完成替换，
+  // 挂在后代元素上不会让 --bg / --panel 这类别名重算。
+  const KEY = 'theme-demo';
+  const btn = document.getElementById('toggle');
+
+  function apply(dark) {
+    document.documentElement.classList.toggle('dark', dark);
+    btn.setAttribute('aria-pressed', String(dark));
+    btn.textContent = dark ? '☀️ 浅色' : '🌙 深色';
+  }
+
+  // 支持 ?theme=dark 直接深色打开（写进文档 / 分享链接时方便）
+  const forced = new URLSearchParams(location.search).get('theme');
+  apply(forced ? forced === 'dark' : localStorage.getItem(KEY) === 'dark');
+
+  function toggleTheme() {
+    const dark = !document.documentElement.classList.contains('dark');
+    localStorage.setItem(KEY, dark ? 'dark' : 'light');
+    apply(dark);
+  }
+</script>
+</body>
+</html>
