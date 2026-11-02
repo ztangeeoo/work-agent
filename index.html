@@ -1,0 +1,1565 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IT 面试出题官</title>
+<style>
+  :root {
+    --bg: #f5f6fa;
+    --panel: #ffffff;
+    --border: #e3e6ee;
+    --text: #1f2430;
+    --sub: #6b7280;
+    --primary: #4f6ef7;
+    --primary-dark: #3d5af1;
+    --primary-light: #eef1fe;
+    --danger: #e5484d;
+    --ok: #18a058;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "PingFang SC", "Microsoft YaHei", -apple-system, sans-serif;
+    background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column;
+  }
+
+  /* ===== 顶栏 ===== */
+  header {
+    height: 56px; background: var(--panel); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; padding: 0 20px; gap: 12px; flex-shrink: 0;
+  }
+  header .logo { font-size: 18px; font-weight: 700; }
+  header .logo span { color: var(--primary); }
+  header .sub { font-size: 12px; color: var(--sub); }
+  header .spacer { flex: 1; }
+  .conn-dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; display: inline-block; }
+  .conn-dot.ok { background: var(--ok); }
+  .conn-dot.err { background: var(--danger); }
+  #connText { font-size: 12px; color: var(--sub); }
+
+  /* ===== 右上角模型配置按钮 ===== */
+  .cfg-btn {
+    width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--border);
+    background: #fff; display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--sub); position: relative; transition: all .12s; flex-shrink: 0;
+  }
+  .cfg-btn:hover { border-color: var(--primary); color: var(--primary); }
+  .cfg-btn .conn-dot { position: absolute; top: 5px; right: 5px; border: 1.5px solid #fff; }
+
+  /* ===== 模型配置弹框 ===== */
+  .modal-mask {
+    display: none; position: fixed; inset: 0; background: rgba(20, 24, 40, .45);
+    z-index: 100; align-items: flex-start; justify-content: center; padding: 12vh 16px 16px;
+  }
+  .modal-mask.show { display: flex; }
+  .modal {
+    width: 460px; max-width: 100%; background: var(--panel); border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(20, 24, 40, .18); max-height: 76vh;
+    display: flex; flex-direction: column; animation: pop .18s ease;
+  }
+  @keyframes pop { from { opacity: 0; transform: translateY(-8px) scale(.98); } to { opacity: 1; transform: none; } }
+  .modal-head {
+    display: flex; align-items: center; padding: 14px 18px;
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .modal-title { font-size: 14px; font-weight: 600; flex: 1; }
+  .modal-close {
+    border: none; background: none; font-size: 13px; cursor: pointer; color: var(--sub);
+    padding: 4px 8px; border-radius: 6px; line-height: 1;
+  }
+  .modal-close:hover { background: #f0f2f8; color: var(--text); }
+  .modal-body { padding: 6px 18px 20px; overflow-y: auto; }
+  .modal-body .field:first-child { margin-top: 14px; }
+  .conn-row { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
+  .conn-row .conn-dot { position: static; }
+  .modal-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .modal-actions .btn-primary { flex: 1; }
+
+  /* ===== 面试配置弹框（宽） ===== */
+  .modal-wide { width: 640px; }
+  #cfgModal { z-index: 110; }   /* 模型配置弹框可叠在面试配置弹框之上 */
+  .convo-list { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+  .convo-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    border: 1px solid var(--border); border-radius: 10px; cursor: pointer; transition: all .12s;
+  }
+  .convo-item:hover { border-color: var(--primary); background: var(--primary-light); }
+  .convo-item.active { border-color: var(--primary); background: var(--primary-light); }
+  .convo-main { flex: 1; min-width: 0; }
+  .convo-title { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .convo-meta { font-size: 11px; color: var(--sub); margin-top: 2px; }
+  .convo-del {
+    border: none; background: none; color: var(--sub); cursor: pointer; font-size: 12px;
+    padding: 4px 6px; border-radius: 6px; flex-shrink: 0; line-height: 1;
+  }
+  .convo-del:hover { color: var(--danger); background: #fdecec; }
+  .convo-empty { text-align: center; color: var(--sub); font-size: 12px; padding: 24px 0; }
+
+  /* ===== 主体 ===== */
+  main { flex: 1; display: flex; overflow: hidden; }
+
+  /* ---- 左侧历史会话栏 ---- */
+  aside {
+    width: 264px; background: var(--panel); border-right: 1px solid var(--border);
+    overflow-y: auto; padding: 18px 14px 40px; flex-shrink: 0;
+  }
+  .side-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+  .side-head .section-title { margin-bottom: 0; }
+  aside h2 { font-size: 14px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .section { margin-bottom: 22px; }
+  .section-title {
+    font-size: 13px; font-weight: 600; color: var(--sub); margin-bottom: 10px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .section-title::before { content: ""; width: 3px; height: 14px; background: var(--primary); border-radius: 2px; }
+  label.field { display: block; font-size: 12px; color: var(--sub); margin: 10px 0 4px; }
+  input[type="text"], input[type="password"], input[type="url"], select, textarea {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 13px; outline: none; background: #fff; transition: border .15s;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--primary); }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .hint { font-size: 11px; color: var(--sub); margin-top: 4px; line-height: 1.6; }
+  .chip-group { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px;
+    font-size: 12px; cursor: pointer; user-select: none; background: #fff; transition: all .12s;
+  }
+  .chip:hover { border-color: var(--primary); }
+  .chip.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+  /* 简历上传 */
+  .upload-box {
+    border: 1.5px dashed var(--border); border-radius: var(--radius); padding: 16px;
+    text-align: center; cursor: pointer; transition: all .15s; font-size: 12px; color: var(--sub);
+  }
+  .upload-box:hover, .upload-box.drag { border-color: var(--primary); background: var(--primary-light); }
+  .upload-box .icon { font-size: 22px; margin-bottom: 6px; }
+  .file-badge {
+    margin-top: 10px; display: flex; align-items: center; gap: 8px; background: var(--primary-light);
+    border-radius: 8px; padding: 8px 10px; font-size: 12px; color: var(--text);
+  }
+  .file-badge .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-badge .del { cursor: pointer; color: var(--danger); font-weight: 700; }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; cursor: pointer;
+    transition: all .12s;
+  }
+  .btn-primary { background: var(--primary); color: #fff; width: 100%; }
+  .btn-primary:hover { background: var(--primary-dark); }
+  .btn-primary:disabled { background: #b8c0e0; cursor: not-allowed; }
+  .btn-ghost { background: #fff; border: 1px solid var(--border); color: var(--text); }
+  .btn-ghost:hover { border-color: var(--primary); color: var(--primary); }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+  .qcount { display: flex; align-items: center; gap: 10px; }
+  .qcount input { width: 70px; text-align: center; }
+
+  /* ---- 右侧对话区 ---- */
+  .chat-wrap { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .chat-head {
+    padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  }
+  .chat-head .title { font-weight: 600; font-size: 14px; }
+  .chat-head .meta { font-size: 12px; color: var(--sub); }
+  .chat-head .spacer { flex: 1; }
+  .chat-list { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+
+  .msg { display: flex; gap: 10px; max-width: 86%; animation: fadeUp .25s ease; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; } }
+  .msg.user { align-self: flex-end; flex-direction: row-reverse; }
+  .avatar {
+    width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 15px; color: #fff;
+  }
+  .msg.ai .avatar { background: linear-gradient(135deg, #4f6ef7, #7c5cf5); }
+  .msg.user .avatar { background: #ff8a4c; }
+  .bubble {
+    padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.75;
+    word-break: break-word; white-space: pre-wrap;
+  }
+  .msg.ai .bubble { background: var(--panel); border: 1px solid var(--border); border-top-left-radius: 4px; }
+  .msg.user .bubble { background: var(--primary); color: #fff; border-top-right-radius: 4px; }
+
+  .typing { display: inline-flex; gap: 4px; align-items: center; padding: 4px 0; }
+  .typing i { width: 6px; height: 6px; background: #aab; border-radius: 50%; animation: blink 1.2s infinite; }
+  .typing i:nth-child(2) { animation-delay: .2s; }
+  .typing i:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%,80%,100% { opacity: .25; } 40% { opacity: 1; } }
+
+  /* ---- 智能体栏（聊天框上方） ---- */
+  .agent-bar {
+    display: flex; align-items: center; gap: 10px; padding: 10px 20px;
+    background: var(--panel); border-top: 1px solid var(--border); flex-shrink: 0;
+  }
+  .agent-card {
+    flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px;
+    padding: 9px 14px; border: 1.5px solid var(--border); border-radius: 12px;
+    cursor: pointer; transition: all .15s; background: linear-gradient(135deg, #f7f9ff, #ffffff);
+  }
+  .agent-card:hover { border-color: var(--primary); box-shadow: 0 2px 10px rgba(79, 110, 247, .14); }
+  .agent-card.active { border-color: var(--primary); background: var(--primary-light); }
+  .agent-icon {
+    width: 38px; height: 38px; border-radius: 10px; flex-shrink: 0;
+    background: linear-gradient(135deg, #4f6ef7, #7c5cf5);
+    display: flex; align-items: center; justify-content: center; font-size: 18px;
+  }
+  .agent-info { flex: 1; min-width: 0; }
+  .agent-name { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .agent-badge {
+    font-size: 10px; font-weight: 500; color: var(--primary); background: #fff;
+    border: 1px solid var(--primary); border-radius: 999px; padding: 1px 8px; line-height: 1.4;
+  }
+  .agent-desc {
+    font-size: 11px; color: var(--sub); margin-top: 2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* 输入区 */
+  .chat-input {
+    padding: 14px 20px; background: var(--panel); border-top: 1px solid var(--border);
+    display: flex; gap: 10px; flex-shrink: 0;
+  }
+  .chat-input textarea {
+    flex: 1; resize: none; height: 46px; max-height: 140px; line-height: 1.5; padding: 12px 14px;
+    border-radius: 10px;
+  }
+  .send-btn {
+    background: var(--primary); color: #fff; border: none; border-radius: 10px;
+    padding: 0 22px; font-size: 14px; cursor: pointer;
+  }
+  .send-btn:disabled { background: #b8c0e0; cursor: not-allowed; }
+
+  /* 空状态 */
+  .empty-state {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: var(--sub); gap: 10px;
+  }
+  .empty-state .big { font-size: 46px; }
+  .empty-state p { font-size: 13px; }
+
+  .err-text { color: var(--danger); font-size: 12px; margin-top: 6px; display: none; }
+
+  /* 未启动本地服务提示条 */
+  .banner {
+    display: none; background: #fff7e6; border: 1px solid #f5d9a8; color: #8a5a00;
+    border-radius: 10px; padding: 10px 12px; font-size: 12px; line-height: 1.7; margin-bottom: 16px;
+  }
+  .banner.show { display: block; }
+  .banner code { background: #fdeccf; padding: 1px 5px; border-radius: 4px; }
+
+  /* markdown 简易样式 */
+  .bubble b, .bubble strong { color: var(--primary-dark); }
+  .bubble code {
+    background: #f0f2f8; padding: 1px 6px; border-radius: 4px; font-family: Consolas, monospace; font-size: 13px;
+  }
+  .bubble h3, .bubble h4, .bubble h5 { font-size: 14px; margin: 10px 0 6px; color: var(--primary-dark); }
+  .bubble ul, .bubble ol { margin: 6px 0; padding-left: 22px; }
+  .bubble li { margin: 3px 0; }
+  .bubble table { border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+  .bubble th, .bubble td { border: 1px solid var(--border); padding: 5px 10px; }
+  .bubble th { background: #f0f2f8; font-weight: 600; }
+  .bubble blockquote {
+    border-left: 3px solid var(--primary); margin: 8px 0; padding: 6px 12px;
+    background: #f7f9ff; border-radius: 0 8px 8px 0; color: var(--sub);
+  }
+  .bubble p { margin: 0; }
+  .bubble p + p { margin-top: 8px; }
+
+  /* ---- 代码块 ---- */
+  .code-block { margin: 10px 0; border-radius: 10px; overflow: hidden; border: 1px solid #2a2f3a; }
+  .code-head {
+    background: #2a2f3a; color: #aab; font-size: 11px; padding: 5px 12px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .code-lang { font-family: Consolas, monospace; }
+  .code-copy {
+    background: none; border: 1px solid #4a5060; color: #aab; border-radius: 5px;
+    font-size: 11px; padding: 1px 8px; cursor: pointer;
+  }
+  .code-copy:hover { color: #fff; border-color: #8a92a8; }
+  .code-block pre { background: #1f2430; margin: 0; padding: 12px 14px; overflow-x: auto; }
+  .code-block pre code {
+    background: none; padding: 0; color: #e6e9f0;
+    font-family: Consolas, Monaco, monospace; font-size: 12.5px; line-height: 1.65; white-space: pre;
+  }
+
+  /* ---- 题目卡片：一题一卡 ---- */
+  .msg.ai { max-width: 92%; }
+  .ai-plain { font-size: 14px; line-height: 1.75; }
+  .q-card {
+    border: 1px solid var(--border); border-left: 3px solid var(--primary);
+    border-radius: 12px; background: #fff; margin: 10px 0; overflow: hidden;
+    transition: box-shadow .15s; animation: fadeUp .25s ease;
+  }
+  .q-card:first-child { margin-top: 0; }
+  .q-card:hover { box-shadow: 0 3px 14px rgba(79, 110, 247, .12); }
+  .q-card-head {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 9px 14px; background: linear-gradient(135deg, #f7f9ff, #ffffff);
+    border-bottom: 1px solid var(--border);
+  }
+  .q-no {
+    background: linear-gradient(135deg, #4f6ef7, #7c5cf5); color: #fff;
+    font-size: 11px; font-weight: 700; border-radius: 6px; padding: 2px 8px; flex-shrink: 0;
+  }
+  .q-title { font-size: 13px; font-weight: 600; flex: 1; min-width: 120px; }
+  .q-tag {
+    font-size: 10px; font-weight: 500; border-radius: 999px; padding: 1px 8px;
+    border: 1px solid; flex-shrink: 0; line-height: 1.5;
+  }
+  .q-tag.t-blue   { color: #2f5fd8; border-color: #b9cbf5; background: #eef3ff; }
+  .q-tag.t-teal   { color: #0a7d74; border-color: #a5e2dc; background: #ecfaf8; }
+  .q-tag.t-purple { color: #6d3fd4; border-color: #d3c2f5; background: #f5f0ff; }
+  .q-tag.t-orange { color: #b25a00; border-color: #f5d3a8; background: #fff5e8; }
+  .q-tag.t-red    { color: #c0392b; border-color: #f2c1bb; background: #fdf0ee; }
+  .q-tag.t-gray   { color: #5a6172; border-color: #d4d8e2; background: #f4f5f8; }
+  .q-card-body { padding: 12px 14px; font-size: 14px; line-height: 1.75; }
+  .q-followup {
+    margin-top: 10px; background: #fffbe8; border: 1px solid #f0e0a0; border-radius: 8px;
+    padding: 8px 12px; font-size: 13px;
+  }
+  .q-followup b { color: #8a6d00; }
+
+  /* toast */
+  #toast {
+    position: fixed; top: 70px; left: 50%; transform: translateX(-50%);
+    background: #2a2f3a; color: #fff; padding: 10px 20px; border-radius: 10px;
+    font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .25s; z-index: 99;
+  }
+  #toast.show { opacity: .95; }
+
+  @media (max-width: 860px) {
+    main { flex-direction: column; }
+    aside { width: 100%; border-right: none; border-bottom: 1px solid var(--border); max-height: 45vh; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🎯 IT<span>面试出题官</span></div>
+  <div class="sub">AI Interviewer · 按方向 / 级别 / 经验 / 简历智能出题</div>
+  <div class="spacer"></div>
+  <button class="cfg-btn" id="btnCfg" title="模型配置">
+    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.08a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.08a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.08a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    <span class="conn-dot" id="connDot"></span>
+  </button>
+</header>
+
+<main>
+  <!-- ============ 左侧：历史会话 ============ -->
+  <aside>
+    <!-- 本地服务提示 -->
+    <div class="banner" id="proxyBanner">
+      ⚠️ 未检测到本地服务，模型请求会失败（CORS）。<br>
+      请在项目目录双击 <code>start.bat</code>，或执行 <code>node server.js</code>，
+      然后访问 <code>http://localhost:8787</code>
+    </div>
+
+    <div class="side-head">
+      <div class="section-title">历史会话</div>
+      <button class="btn btn-ghost btn-sm" id="btnNewConvoSide" title="新建空白会话">＋ 新建</button>
+    </div>
+    <div class="convo-list" id="convoList"></div>
+  </aside>
+
+  <!-- ============ 右侧对话 ============ -->
+  <div class="chat-wrap">
+    <div class="chat-head">
+      <div>
+        <div class="title" id="chatTitle">面试对话</div>
+        <div class="meta" id="chatMeta">点击下方「面试出题官」卡片开始</div>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn btn-ghost btn-sm" id="btnClear">清空对话</button>
+    </div>
+    <div class="chat-list" id="chatList">
+      <div class="empty-state" id="emptyState">
+        <div class="big">🎯</div>
+        <p>点击下方「面试出题官」卡片，新建面试会话</p>
+        <p>填写面试配置（方向 / 级别 / 经验 / 简历）并确认，即可生成面试题</p>
+      </div>
+    </div>
+    <!-- 智能体栏：位于聊天框上方 -->
+    <div class="agent-bar">
+      <div class="agent-card" id="agentCard" title="点击切换到该智能体，并新建一个会话"></div>
+      <button class="btn btn-ghost btn-sm" id="btnAgentCfg">⚙️ 面试配置</button>
+    </div>
+    <div class="chat-input">
+      <textarea id="inputBox" placeholder="输入消息…（Enter 发送，Shift+Enter 换行）"></textarea>
+      <button class="send-btn" id="btnSend">发送</button>
+    </div>
+  </div>
+</main>
+
+<!-- ============ 模型配置弹框 ============ -->
+<div class="modal-mask" id="cfgModal">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title">模型配置</span>
+      <button class="modal-close" id="btnCfgClose" title="关闭">✕</button>
+    </div>
+    <div class="modal-body">
+      <label class="field">API 地址（OpenAI 兼容）</label>
+      <input type="url" id="cfgBase" placeholder="https://api.deepseek.com/v1">
+      <div class="hint">常见：DeepSeek <code>https://api.deepseek.com/v1</code> · 通义 <code>https://dashscope.aliyuncs.com/compatible-mode/v1</code> · Kimi <code>https://api.moonshot.cn/v1</code> · Ollama <code>http://localhost:11434/v1</code></div>
+      <label class="field">API Key</label>
+      <input type="password" id="cfgKey" placeholder="sk-...（Ollama 本地模型可留空）">
+      <label class="field">模型名称</label>
+      <input type="text" id="cfgModel" list="modelOptions" placeholder="deepseek-chat">
+      <datalist id="modelOptions"></datalist>
+      <div class="hint">DeepSeek: <code>deepseek-chat</code> · 通义: <code>qwen-plus</code> · Kimi: <code>moonshot-v1-8k</code> · Ollama: <code>llama3.1</code></div>
+      <div class="conn-row">
+        <span id="connText">未连接模型</span>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost btn-sm" id="btnModels">拉取模型列表</button>
+        <button class="btn btn-ghost btn-sm" id="btnSaveCfg">保存配置</button>
+        <button class="btn btn-primary btn-sm" id="btnTest">测试连接</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 面试配置弹框（智能体配置） ============ -->
+<div class="modal-mask" id="agentModal">
+  <div class="modal modal-wide">
+    <div class="modal-head">
+      <span class="modal-title">🎯 面试出题官 · 面试配置</span>
+      <button class="modal-close" id="btnAgentClose" title="关闭">✕</button>
+    </div>
+    <div class="modal-body">
+      <label class="field">技术方向</label>
+      <div class="chip-group" id="chipTrack"></div>
+      <label class="field">细分方向（可不选，默认随机）</label>
+      <div class="chip-group" id="chipSub"></div>
+      <div class="row2">
+        <div>
+          <label class="field">级别</label>
+          <div class="chip-group" id="chipLevel"></div>
+        </div>
+        <div>
+          <label class="field">工作经验</label>
+          <div class="chip-group" id="chipExp"></div>
+        </div>
+      </div>
+      <label class="field">行业背景</label>
+      <div class="chip-group" id="chipIndustry"></div>
+      <div class="row2" style="margin-top:12px">
+        <div>
+          <label class="field">题目数量</label>
+          <div class="qcount"><input type="text" id="cfgCount" value="5"> <span class="hint">道</span></div>
+        </div>
+        <div>
+          <label class="field">出题语言</label>
+          <select id="cfgLang">
+            <option>中文</option>
+            <option>英文</option>
+            <option>中英混合</option>
+          </select>
+        </div>
+      </div>
+      <label class="field">补充要求（可选）</label>
+      <input type="text" id="cfgNote" placeholder="如：偏重项目实战、侧重系统设计…">
+      <label class="field">候选人简历（可选）</label>
+      <div class="upload-box" id="uploadBox">
+        <div class="icon">📄</div>
+        <div>点击或拖拽上传简历<br><span style="font-size:11px">支持 .pdf / .docx / .txt / .md / 图片(.png .jpg)</span></div>
+      </div>
+      <input type="file" id="fileInput" accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.webp,.bmp" style="display:none">
+      <div id="fileBadge" class="file-badge" style="display:none">
+        <span>📄</span><span class="name" id="fileName"></span><span class="del" id="fileDel">✕</span>
+      </div>
+      <div class="hint" id="resumeHint">上传简历后，AI 将结合简历内容针对性出题</div>
+      <div class="err-text" id="genErr"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost btn-sm" id="btnAgentCancel">取消</button>
+      <button class="btn btn-primary btn-sm" id="btnAgentConfirm">🚀 确认并生成面试题</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ================= 配置与状态 ================= */
+const LS_CFG = 'interviewer_cfg_v1';
+const LS_HIST = 'interviewer_history_v1';
+
+const TRACK_SUBS = {
+  '前端开发': ['JavaScript/TS', 'React', 'Vue', '浏览器与网络', 'CSS/布局', '工程化构建', '性能优化'],
+  '后端开发': ['Java/JVM', 'Go', 'Python', 'Node.js', '数据库与SQL', '缓存与消息队列', '微服务与分布式', '高并发设计', 'API 设计'],
+  '全栈': ['前后端综合', '系统设计', '数据库设计', '部署与运维'],
+  '算法': ['数据结构', '动态规划', '图论', '字符串', '排序与查找', '复杂度分析'],
+  '大数据': ['Hadoop/Spark', 'Flink 实时计算', 'Hive/数仓建模', 'Kafka', '数据治理'],
+  '测试': ['自动化测试', '接口测试', '性能测试', '测试框架', '质量体系'],
+  '运维/DevOps': ['Linux', 'Docker/K8s', 'CI/CD', '监控告警', '云原生', 'Shell 脚本'],
+  '移动端': ['Android', 'iOS', 'Flutter', 'React Native', '移动性能优化'],
+  'AI/机器学习': ['深度学习', 'NLP', 'CV', 'LLM/RAG', '模型部署', '特征工程'],
+  '安全': ['Web 安全', '渗透测试', '密码学', '应急响应', '代码审计'],
+  '架构师': ['分布式架构', '高可用设计', '领域建模', '技术选型', '容量与性能']
+};
+const TRACKS = Object.keys(TRACK_SUBS);
+const LEVELS  = ['初级','中级','高级','专家'];
+const EXPS    = ['应届/实习','1-3年','3-5年','5-10年','10年以上'];
+const INDUSTRIES = ['不限','互联网/电商','金融/银行','证券/基金','游戏','在线教育','医疗健康','智能制造','汽车/自动驾驶','云计算/SaaS','社交/内容','物流/供应链','政务/国企','通信/运营商'];
+
+/* 智能体列表：面试出题官作为一个智能体（可扩展） */
+const AGENTS = [
+  { id:'interviewer', name:'面试出题官', icon:'🎯', desc:'按方向 / 级别 / 经验 / 简历智能出题' }
+];
+
+const state = {
+  activeAgent: 'interviewer',   // 当前智能体
+  track: '前端开发', sub: '随机', level: '中级', exp: '1-3年', industry: '不限',
+  count: 5, lang: '中文',
+  resumeText: '', resumeName: '',
+  history: [],   // {role, content}
+  convoId: '',   // 当前会话 id
+  busy: false,
+  proxyOk: false,
+};
+
+/* ================= 工具 ================= */
+const $ = id => document.getElementById(id);
+function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),2200); }
+function esc(s){ return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function mdLite(s){
+  let h = esc(s);
+  h = h.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  h = h.replace(/`([^`\n]+?)`/g, '<code>$1</code>');
+  h = h.replace(/^\s*###\s*(.+)$/gm, '<b>$1</b>');
+  h = h.replace(/^\s*##\s*(.+)$/gm, '<b>$1</b>');
+  h = h.replace(/^\s*[-*]\s+(.+)$/gm, '• $1');
+  h = h.replace(/\n/g, '<br>');
+  return h;
+}
+
+/* ================= Markdown 富渲染 + 题目卡片（借鉴 assistant-ui 消息原语 / lobe-chat 卡片视觉，原生实现） ================= */
+/* 完整 markdown：代码块 / 行内代码 / 标题 / 加粗斜体 / 表格 / 引用 / 列表 */
+function mdRich(s){
+  if(s == null) return '';
+  const blocks = [];
+  let h = String(s).replace(/```(\w*)\n?([\s\S]*?)(?:```|$)/g, (m, lang, code)=>{
+    blocks.push({ lang: lang || '', code: code.replace(/\n$/, '') });
+    return '\u0000CB' + (blocks.length - 1) + '\u0000';
+  });
+  h = esc(h);
+  h = h.replace(/`([^`\n]+?)`/g, '<code>$1</code>');
+  h = h.replace(/^\s*####\s*(.+)$/gm, '<h5>$1</h5>');
+  h = h.replace(/^\s*###\s*(.+)$/gm, '<h4>$1</h4>');
+  h = h.replace(/^\s*##\s*(.+)$/gm, '<h3>$1</h3>');
+  h = h.replace(/^\s*#\s*(.+)$/gm, '<h3>$1</h3>');
+  h = h.replace(/\*\*([^*]+?)\*\*/g, '<b>$1</b>');
+  h = h.replace(/(^|[^*\w])\*([^*\n]+?)\*(?!\*)/g, '$1<i>$2</i>');
+  h = h.replace(/((?:^\s*\|.*\|\s*$\n?)+)/gm, (m)=>{
+    const rows = m.trim().split('\n').map(r=>r.trim().replace(/^\||\|$/g, '').split('|').map(c=>c.trim()));
+    let out = '<table>', head = true;
+    rows.forEach(cells=>{
+      if(cells.every(c=>/^:?-{2,}:?$/.test(c))) return;
+      const tag = head ? 'th' : 'td'; head = false;
+      out += '<tr>' + cells.map(c=>'<' + tag + '>' + c + '</' + tag + '>').join('') + '</tr>';
+    });
+    return out + '</table>';
+  });
+  h = h.replace(/^\s*&gt;\s?(.+)$/gm, '<blockquote>$1</blockquote>');
+  h = h.replace(/((?:^[ \t]*(?:[-*]|\d+\.)[ \t]+.*$\n?)+)/gm, (m)=>{
+    const ordered = /^[ \t]*\d+\./.test(m);
+    const items = m.trim().split('\n').map(r=>r.replace(/^[ \t]*(?:[-*]|\d+\.)[ \t]+/, ''));
+    return '<' + (ordered ? 'ol' : 'ul') + '>' + items.map(i=>'<li>' + i + '</li>').join('') + '</' + (ordered ? 'ol' : 'ul') + '>';
+  });
+  h = h.replace(/\n{2,}/g, '</p><p>').replace(/\n/g, '<br>');
+  h = '<p>' + h + '</p>';
+  h = h.replace(/\u0000CB(\d+)\u0000/g, (m, i)=>{
+    const b = blocks[+i];
+    return '<div class="code-block"><div class="code-head"><span class="code-lang">' + esc(b.lang || 'code') +
+      '</span><button type="button" class="code-copy">复制</button></div><pre><code>' + esc(b.code) + '</code></pre></div>';
+  });
+  return h;
+}
+/* 流式传输专用：未闭合的代码块按「正在输入」状态渲染，避免半个代码块闪烁 */
+function mdRichStreaming(s){
+  const fences = (s.match(/```/g) || []).length;
+  if(fences % 2 === 1){
+    const idx = s.lastIndexOf('```');
+    return mdRich(s.slice(0, idx)) +
+      '<div class="code-block"><div class="code-head"><span class="code-lang">…</span></div><pre><code>' +
+      esc(s.slice(idx + 3)) + '</code></pre></div>';
+  }
+  return mdRich(s);
+}
+/* 把一段 AI 回复按「题目」边界拆开：支持 第N题 / 题N / 问题N / QN 等写法 */
+function splitQuestions(text){
+  const lines = String(text == null ? '' : text).split('\n');
+  const qRe = /^\s*(?:\*\*|__)?\s*(?:第\s*(\d+)\s*题|题\s*(\d+)|问题\s*(\d+)|Q\s*(\d+))\s*(?:\*\*|__)?\s*[:：.、]?\s*(.*)$/i;
+  const segs = [];
+  let cur = null;
+  const push = ()=>{ if(cur){ segs.push(cur); cur = null; } };
+  for(const ln of lines){
+    const m = ln.match(qRe);
+    if(m){
+      push();
+      cur = { no: +(m[1] || m[2] || m[3] || m[4] || 0), head: (m[5] || '').trim(), lines: [] };
+      continue;
+    }
+    if(!cur) cur = { no: 0, head: '', lines: [] };
+    cur.lines.push(ln);
+  }
+  push();
+  return segs.map(s=>({ no: s.no, head: s.head.replace(/^\*\*|\*\*$/g, '').trim(), body: s.lines.join('\n').trim() }))
+             .filter(s=>s.no || s.body);
+}
+function qTagClass(t){
+  if(/基础|简单|初阶|概念|难度·(简单|基础|初阶)/.test(t)) return 't-blue';
+  if(/场景|设计|架构/.test(t)) return 't-teal';
+  if(/深挖|进阶|高阶|原理/.test(t)) return 't-purple';
+  if(/算法|编码|代码|手写/.test(t)) return 't-orange';
+  if(/排查|故障|线上|应急/.test(t)) return 't-red';
+  return 't-gray';
+}
+function headInline(h){ return esc(h).replace(/\*\*([^*]+?)\*\*/g, '<b>$1</b>'); }
+function qCardHtml(s){
+  let head = s.head || '';
+  const tags = [];
+  let m;
+  while((m = head.match(/【([^】]{1,14})】|\[([^\]]{1,14})\]/))){
+    tags.push(m[1] || m[2]);
+    head = head.replace(m[0], ' ').trim();
+  }
+  let body = s.body;
+  /* body 里的【考察点】行提取为卡片标签（该行不再重复展示） */
+  body = body.replace(/^[ \t]*【([^】]{1,14})】[ \t]*[:：]?[ \t]*(.*)$/gm, (mm, tag, rest)=>{
+    tags.push(tag);
+    return (rest || '').trim();
+  });
+  const dm = body.match(/难度\s*[:：]?\s*([一-龥A-Za-z]{1,6})/);
+  if(dm && /简单|中等|困难|进阶|高阶|基础|初级|中级|高级|easy|medium|hard/i.test(dm[1])) tags.push('难度·' + dm[1]);
+  /* 追问块用哨兵包住，mdRich 之后再换成高亮 div */
+  body = body.replace(/(^|\n)([ \t]*(?:[-*]\s*)?(?:\*\*)?追问(?:\*\*)?\s*[:：][\s\S]*?)(?=\n[ \t]*\n|$)/g,
+    (mm, br, p1)=> br + '\u0001' + p1.trim() + '\u0001');
+  if(!head){
+    const first = body.split('\n').find(l=>l.trim() && !/^\s*[#>\-*|]/.test(l));
+    head = (first || '').replace(/[#*`\s]/g, '').slice(0, 50) || '面试题';
+  }
+  const bodyHtml = mdRich(body).replace(/\u0001([\s\S]*?)\u0001/g, (mm, inner)=>
+    '<div class="q-followup"><b>💬 追问</b>' +
+    mdRich(inner.replace(/^[ \t]*(?:[-*]\s*)?(?:\*\*)?追问(?:\*\*)?\s*[:：]\s*/, '')) + '</div>');
+  const tagHtml = tags.map(t=>'<span class="q-tag ' + qTagClass(t) + '">' + esc(t) + '</span>').join('');
+  return '<div class="q-card"><div class="q-card-head"><span class="q-no">Q' + s.no +
+    '</span><span class="q-title">' + headInline(head) + '</span>' + tagHtml +
+    '</div><div class="q-card-body">' + bodyHtml + '</div></div>';
+}
+/* AI 消息统一入口：含题目 → 卡片化；否则整段富文本 */
+function renderAiInto(bubble, text){
+  const segs = splitQuestions(text);
+  const qCount = segs.filter(s=>s.no).length;
+  if(qCount >= 1){
+    let html = '';
+    segs.forEach(s=>{
+      if(s.no) html += qCardHtml(s);
+      else if(s.body) html += '<div class="ai-plain">' + mdRich(s.body) + '</div>';
+    });
+    bubble.innerHTML = html;
+  }else{
+    bubble.innerHTML = mdRich(text);
+  }
+  bindCodeCopy(bubble);
+}
+function bindCodeCopy(bubble){
+  bubble.querySelectorAll('.code-block').forEach(cb=>{
+    const btn = cb.querySelector('.code-copy');
+    if(btn && !btn._bound){
+      btn._bound = true;
+      btn.addEventListener('click', ()=>{
+        const code = cb.querySelector('code');
+        if(navigator.clipboard) navigator.clipboard.writeText(code ? code.textContent : '')
+          .then(()=>{ btn.textContent = '已复制'; setTimeout(()=>btn.textContent = '复制', 1500); });
+      });
+    }
+  });
+}
+
+/* ================= 简历解析 ================= */
+const IMG_EXT = ['png','jpg','jpeg','webp','bmp','gif'];
+
+async function parseResume(file){
+  const ext = file.name.split('.').pop().toLowerCase();
+  if(ext==='txt' || ext==='md'){
+    return await file.text();
+  }
+  if(IMG_EXT.includes(ext)){
+    return await imageToText(file);
+  }
+  if(ext==='pdf'){
+    // 简易 PDF 文本提取：利用 pdf.js CDN
+    await loadScript('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js');
+    const buf = await file.arrayBuffer();
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+    const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+    let text = '';
+    for(let i=1;i<=pdf.numPages;i++){
+      const page = await pdf.getPage(i);
+      const c = await page.getTextContent();
+      text += c.items.map(it=>it.str).join(' ') + '\n';
+    }
+    return text;
+  }
+  if(ext==='docx'){
+    // mammoth.js 提取 docx 纯文本
+    await loadScript('https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js');
+    const buf = await file.arrayBuffer();
+    const r = await mammoth.extractRawText({arrayBuffer: buf});
+    return r.value;
+  }
+  throw new Error('不支持的文件类型');
+}
+function loadScript(src){
+  return new Promise((res, rej)=>{
+    if(document.querySelector(`script[src="${src}"]`)) return res();
+    const s = document.createElement('script');
+    s.src = src; s.onload = res; s.onerror = ()=>rej(new Error('脚本加载失败（需联网）'));
+    document.head.appendChild(s);
+  });
+}
+
+/* ---------- 图片简历：压缩 + 视觉模型识别（失败回退本地 OCR） ---------- */
+function compressImage(file, maxSide = 1600, quality = 0.82){
+  return new Promise((resolve, reject)=>{
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = ()=>{
+      let w = img.naturalWidth, h = img.naturalHeight;
+      const scale = Math.min(1, maxSide / Math.max(w, h));
+      w = Math.round(w * scale); h = Math.round(h * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';          // 透明背景转白，避免识别不准
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = ()=>{ URL.revokeObjectURL(url); reject(new Error('图片读取失败')); };
+    img.src = url;
+  });
+}
+
+async function imageToText(file){
+  if(!state.proxyOk && !(await checkHealth())){
+    throw new Error('本地服务未启动，无法识别图片');
+  }
+  const cfg = loadCfg();
+  if(!cfg.base || !cfg.model){
+    throw new Error('图片识别需要先配置模型（建议使用支持视觉的模型，如 gpt-4o、qwen-vl-max）');
+  }
+
+  const dataUrl = await compressImage(file);
+  $('resumeHint').textContent = '正在用模型识别图片文字…';
+
+  try{
+    const res = await fetch(API + '/api/chat', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        base: cfg.base, key: cfg.key, model: cfg.model,
+        stream: false, temperature: 0, max_tokens: 3000,
+        messages: [
+          {role:'system', content:'你是简历文字提取工具。只输出图片中的原始文字，保留换行与分节结构，不要总结、不要解释、不要加任何前后缀。'},
+          {role:'user', content:[
+            {type:'text', text:'请提取这张简历图片中的全部文字内容。'},
+            {type:'image_url', image_url:{ url: dataUrl }}
+          ]}
+        ]
+      })
+    });
+    if(res.ok){
+      const j = await res.json();
+      const text = (j.choices?.[0]?.message?.content || '').trim();
+      if(text.length >= 20) return text;
+      throw new Error('模型未返回有效文字（当前模型可能不支持图片输入）');
+    }
+    let msg = 'HTTP ' + res.status;
+    try{ const e = await res.json(); msg = e.error?.message || msg; }catch(_){}
+    throw new Error(msg);
+  }catch(err){
+    // 兜底：本地 OCR
+    toast('模型识别失败，改用本地 OCR…');
+    $('resumeHint').textContent = '正在本地 OCR 识别（首次需下载语言包，请稍候）…';
+    try{
+      return await ocrImage(file);
+    }catch(e2){
+      throw new Error('图片识别失败。模型原因：' + err.message + '；OCR 原因：' + e2.message);
+    }
+  }
+}
+
+async function ocrImage(file){
+  await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js');
+  if(typeof Tesseract === 'undefined') throw new Error('OCR 组件加载失败（需联网）');
+  const url = URL.createObjectURL(file);
+  try{
+    const r = await Tesseract.recognize(url, 'chi_sim+eng', {
+      logger: m=>{
+        if(m.status === 'recognizing text'){
+          $('resumeHint').textContent = 'OCR 识别中 ' + Math.round((m.progress || 0) * 100) + '%';
+        }
+      }
+    });
+    const text = (r?.data?.text || '').trim();
+    if(!text) throw new Error('未识别到文字');
+    return text;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/* ================= 聊天 UI ================= */
+function renderMsg(role, content){
+  $('emptyState') && $('emptyState').remove();
+  const div = document.createElement('div');
+  div.className = 'msg ' + (role==='user' ? 'user' : 'ai');
+  const who = role==='user' ? '🧑' : '🎯';
+  div.innerHTML = `<div class="avatar">${who}</div><div class="bubble"></div>`;
+  $('chatList').appendChild(div);
+  const bubble = div.querySelector('.bubble');
+  if(role === 'user'){
+    bubble.innerHTML = esc(content).replace(/\n/g, '<br>');
+  }else{
+    renderAiInto(bubble, content);
+  }
+  $('chatList').scrollTop = 1e9;
+  return bubble;
+}
+function renderTyping(){
+  const div = document.createElement('div');
+  div.className = 'msg ai';
+  div.id = 'typingMsg';
+  div.innerHTML = `<div class="avatar">🎯</div><div class="bubble"><span class="typing"><i></i><i></i><i></i></span></div>`;
+  $('chatList').appendChild(div);
+  $('chatList').scrollTop = 1e9;
+}
+function removeTyping(){ const t=$('typingMsg'); t && t.remove(); }
+
+/* ================= LLM 调用 ================= */
+function buildSystemPrompt(){
+  const expYears = state.exp;
+  return `你是一位资深 IT 技术面试官。请根据候选人信息出面试题并点评。
+
+候选人画像：
+- 技术方向：${state.track}
+- 细分方向：${state.sub === '随机' ? `随机（请在该方向的不同子领域间均衡分布，可参考：${(TRACK_SUBS[state.track]||[]).join('、')}）` : state.sub}
+- 级别：${state.level}
+- 工作经验：${expYears}
+- 行业背景：${state.industry}
+- 出题语言：${state.lang}
+${state.resumeText ? `\n候选人简历摘要（出题时请针对简历中的技术栈和项目经历提问）：\n<<<\n${state.resumeText.slice(0, 3000)}\n>>>` : ''}
+
+出题要求：
+1. 题目难度必须匹配级别和经验（${state.level} / ${expYears}）。
+2. 如有简历，优先围绕简历中的技术栈、项目深挖提问（项目细节、技术选型原因、难点与方案）。
+3. 涵盖：基础知识、场景设计、排查定位、深挖追问等类型，避免纯背书题。
+4. 用 ${state.lang} 回答；使用 Markdown 排版。每道题必须单独成段，以「**第 N 题：一句标题**」开头（N 从 1 连续编号），题与题之间空一行。
+5. 每道题后附上【考察点】一行说明。
+6. ${state.industry === '不限'
+      ? '行业不限：使用通用互联网业务场景即可。'
+      : `题目需结合「${state.industry}」行业的真实业务场景与约束（如数据规模、合规要求、稳定性/实时性诉求），场景题要具体可信，避免脱离行业的教科书式提问。`}`;
+}
+
+async function callLLM(userMsg, {stream=true, temperature=0.7}={}){
+  const cfg = loadCfg();
+  if(!cfg.base || !cfg.model){ throw new Error('请先点击右上角齿轮图标配置模型（API 地址 / 模型名称）'); }
+
+  state.history.push({role:'user', content:userMsg});
+  const messages = [
+    {role:'system', content: buildSystemPrompt()},
+    ...state.history.slice(-20)
+  ];
+
+  let res;
+  try{
+    // 统一走本地代理 /api/chat，由 server.js 转发给 AgentScope 智能体服务，避免浏览器 CORS
+    res = await fetch(API + '/api/chat', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        base: cfg.base, key: cfg.key, model: cfg.model,
+        messages, temperature, stream,
+        // 结构化画像：AgentScope 服务端据此构建「策划官/面试官/评分官」的提示词
+        profile: {
+          track: state.track, sub: state.sub, level: state.level, exp: state.exp,
+          industry: state.industry, count: state.count, lang: state.lang,
+          note: state.note, resumeText: state.resumeText
+        }
+      })
+    });
+  }catch(_){
+    state.history.pop();
+    throw new Error('无法连接本地服务（server.js 未启动）。\n请在项目目录运行 node server.js，并访问 http://localhost:8787');
+  }
+
+  if(!res.ok){
+    state.history.pop();
+    let msg = '', raw = '';
+    try{ raw = await res.text(); }catch(_){}
+    try{ const j = JSON.parse(raw); msg = j.error?.message || j.message || ''; }catch(_){}
+    if(!msg && res.status === 404){
+      msg = '当前页面没有连到本地服务（/api/chat 返回 404）。\n请用 http://localhost:8787 打开本页面。\n当前地址：' + location.origin;
+    }
+    if(!msg) msg = 'HTTP ' + res.status + (raw ? ' · ' + raw.slice(0, 200) : '');
+    throw new Error(msg);
+  }
+
+  if(stream && res.body){
+    return res; // 由调用方读流
+  }
+  const data = await res.json();
+  const content = data.choices?.[0]?.message?.content || '(空响应)';
+  state.history.push({role:'assistant', content});
+  saveHistory();
+  return content;
+}
+
+/* 流式读取 */
+async function streamChat(userMsg){
+  // 先确认本地服务可用，避免出现莫名其妙的 404 / Failed to fetch
+  if(!state.proxyOk && !(await checkHealth())){
+    renderMsg('user', userMsg);
+    renderMsg('assistant', '⚠️ 无法请求模型：本地服务没有运行。\n\n请双击项目里的 start.bat（同时启动智能体服务与页面服务），启动后刷新本页即可。');
+    return;
+  }
+
+  renderMsg('user', userMsg);
+  renderTyping();
+  state.busy = true; setBusy(true);
+
+  let full = '';
+  try{
+    const res = await callLLM(userMsg, {stream:true});
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    while(true){
+      const {done, value} = await reader.read();
+      if(done) break;
+      buf += dec.decode(value, {stream:true});
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for(const line of lines){
+        const s = line.trim();
+        if(!s.startsWith('data:')) continue;
+        const payload = s.slice(5).trim();
+        if(payload === '[DONE]') continue;
+        try{
+          const j = JSON.parse(payload);
+          const d = j.choices?.[0]?.delta?.content;
+          if(d){
+            full += d;
+            removeTyping();
+            if(!window._curBubble){
+              window._curBubble = renderMsg('assistant', '');
+            }
+            window._curBubble.innerHTML = mdRichStreaming(full);
+            $('chatList').scrollTop = 1e9;
+          }
+        }catch(_){}
+      }
+    }
+    if(window._curBubble){ renderAiInto(window._curBubble, full); }   // 流式结束后正式卡片化重渲染
+    window._curBubble = null;
+    if(!full) full = '(模型未返回内容)';
+    state.history.push({role:'assistant', content: full});
+    saveHistory();
+  }catch(err){
+    removeTyping();
+    window._curBubble = null;
+    renderMsg('assistant', '❌ ' + err.message + '\n\n排查顺序：\n1. 本地服务是否已启动（双击 start.bat → http://localhost:8787）\n2. API 地址与模型名是否正确\n3. API Key 是否有效、额度是否充足\n4. 本地模型（Ollama）是否已启动');
+  } finally {
+    state.busy = false; setBusy(false);
+  }
+}
+
+/* ================= 出题 ================= */
+async function generate(){
+  const cfg = loadCfg();
+  if(!cfg.base || !cfg.model){
+    $('genErr').textContent = '请先点击右上角齿轮图标完成「模型配置」';
+    $('genErr').style.display = 'block';
+    return;
+  }
+  $('genErr').style.display = 'none';
+
+  const q = state.count;
+  const subText = state.sub === '随机' ? '' : `（重点考察 ${state.sub}）`;
+  const subRule = state.sub === '随机'
+    ? `细分方向随机：请在 ${state.track} 的不同子领域间均衡分布题目。`
+    : `细分方向固定为 ${state.sub}：请围绕该子领域出题，深度优先于广度。`;
+
+  let prompt;
+  const indText = state.industry === '不限' ? '' : `，行业背景为${state.industry}`;
+  if(state.resumeText){
+    prompt = `请根据候选人简历，为${state.track}方向${subText}的${state.level}（${state.exp}经验${indText}）候选人出 ${q} 道针对性面试题。优先深挖简历中的项目与技术栈，题目需考察真实能力而非背书。${subRule}`;
+  }else{
+    prompt = `请为${state.track}方向${subText}的${state.level}（${state.exp}经验${indText}）候选人出 ${q} 道面试题。涵盖基础、场景、排查与深挖追问。${subRule}`;
+  }
+  if(state.note) prompt += `\n补充要求：${state.note}`;
+
+  updateTitle();
+
+  await streamChat(prompt);
+}
+
+/* ================= 多会话持久化 ================= */
+const LS_CONVOS = 'interviewer_convos_v1';
+function loadCfg(){
+  try{ return JSON.parse(localStorage.getItem(LS_CFG)||'{}'); }catch(_){ return {}; }
+}
+function saveCfg(){
+  const cfg = { base:$('cfgBase').value.trim(), key:$('cfgKey').value.trim(), model:$('cfgModel').value.trim() };
+  localStorage.setItem(LS_CFG, JSON.stringify(cfg));
+  toast('✅ 配置已保存');
+  return cfg;
+}
+function genId(){ return 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function fmtTime(ts){
+  const diff = Date.now() - (ts || Date.now());
+  if(diff < 60e3) return '刚刚';
+  if(diff < 3600e3) return Math.floor(diff/60e3) + ' 分钟前';
+  if(diff < 86400e3) return Math.floor(diff/3600e3) + ' 小时前';
+  const d = new Date(ts);
+  return (d.getMonth()+1) + '/' + d.getDate();
+}
+function titleFromMessages(msgs){
+  const u = (msgs||[]).find(m=>m.role==='user');
+  if(!u) return '新会话';
+  const t = String(u.content).replace(/\s+/g,' ').trim();
+  return t.length > 24 ? t.slice(0, 24) + '…' : t;
+}
+function snapshotProfile(){
+  return { track: state.track, sub: state.sub, level: state.level, exp: state.exp,
+           industry: state.industry, resumeName: state.resumeName,
+           resumeText: (state.resumeText || '').slice(0, 8000) };
+}
+/* 读取会话列表；兼容旧版单会话历史（interviewer_history_v1） */
+function loadConvos(){
+  try{
+    const raw = localStorage.getItem(LS_CONVOS);
+    if(raw){
+      const d = JSON.parse(raw);
+      return { activeId: d.activeId || '', list: Array.isArray(d.list) ? d.list : [] };
+    }
+  }catch(_){}
+  let list = [];
+  try{
+    const h = JSON.parse(localStorage.getItem(LS_HIST) || '[]');
+    if(Array.isArray(h) && h.length){
+      list.push({ id: genId(), title: titleFromMessages(h), createdAt: Date.now(),
+                  updatedAt: Date.now(), messages: h.slice(-40), profile: null });
+    }
+  }catch(_){}
+  return { activeId: list.length ? list[0].id : '', list };
+}
+function persistConvos(d){
+  try{ localStorage.setItem(LS_CONVOS, JSON.stringify(d)); }catch(_){}
+}
+/* 把当前 state.history 写回当前会话（upsert） */
+function saveHistory(){
+  const d = loadConvos();
+  let conv = d.list.find(c=>c.id===state.convoId);
+  if(!conv){
+    conv = { id: state.convoId, title: '新会话', createdAt: Date.now(), updatedAt: Date.now(),
+             messages: [], profile: snapshotProfile() };
+    d.list.unshift(conv);
+  }
+  conv.messages = state.history.slice(-40);
+  conv.updatedAt = Date.now();
+  if(!conv.title || conv.title === '新会话') conv.title = titleFromMessages(conv.messages);
+  conv.profile = snapshotProfile();
+  d.activeId = state.convoId;
+  d.list.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  d.list = d.list.slice(0, 30);   // 最多保留 30 个会话
+  persistConvos(d);
+  renderConvoList();              // 左侧列表实时刷新标题/时间
+}
+/* 重绘整个对话区（切换/恢复会话时用） */
+function renderConversation(){
+  const list = $('chatList');
+  list.innerHTML = '';
+  if(!state.history.length){
+    list.innerHTML = `<div class="empty-state" id="emptyState"><div class="big">🎯</div><p>点击下方「面试出题官」卡片，新建面试会话</p><p>填写面试配置（方向 / 级别 / 经验 / 简历）并确认，即可生成面试题</p><p>也可以直接在下方输入任何指令，例如"再出 3 道算法题"</p></div>`;
+    return;
+  }
+  state.history.forEach(m=>renderMsg(m.role==='user'?'user':'assistant', m.content));
+}
+/* 应用会话保存的配置快照（方向/级别/经验/行业），并重画 chips */
+function redrawChips(){
+  ['chipTrack','chipSub','chipLevel','chipExp','chipIndustry'].forEach(id=>{ $(id).innerHTML = ''; });
+  makeChips($('chipTrack'), TRACKS, 'track');
+  makeChips($('chipLevel'), LEVELS, 'level');
+  makeChips($('chipExp'), EXPS, 'exp');
+  makeChips($('chipIndustry'), INDUSTRIES, 'industry');
+  renderSubChips();
+}
+function updateResumeBadge(){
+  if(state.resumeName){
+    $('fileBadge').style.display = 'flex';
+    $('fileName').textContent = state.resumeText
+      ? `${state.resumeName}（${state.resumeText.length} 字）`
+      : `${state.resumeName}（原文未保留，请重新上传）`;
+  }else{
+    $('fileBadge').style.display = 'none';
+  }
+}
+function applyProfile(p){
+  if(!p) return;
+  if(p.track && TRACK_SUBS[p.track]) state.track = p.track;
+  state.sub = p.sub || '随机';
+  if(p.level) state.level = p.level;
+  if(p.exp) state.exp = p.exp;
+  if(p.industry) state.industry = p.industry;
+  state.resumeName = p.resumeName || '';
+  state.resumeText = p.resumeText || '';
+  redrawChips();
+  updateResumeBadge();
+  updateTitle();
+}
+/* 启动时恢复：迁移旧数据 → 恢复当前会话 */
+function restoreHistory(){
+  const d = loadConvos();
+  let conv = d.list.find(c=>c.id===d.activeId) || d.list[0];
+  if(!conv){
+    conv = { id: genId(), title: '新会话', createdAt: Date.now(), updatedAt: Date.now(),
+             messages: [], profile: null };
+    d.list.unshift(conv);
+    d.activeId = conv.id;
+  }
+  persistConvos(d);   // 统一落盘：迁移/新建的空会话也要写回，避免旧数据只留在内存
+  state.convoId = conv.id;
+  state.history = (conv.messages || []).slice(-40);
+  renderConversation();
+  if(conv.profile) applyProfile(conv.profile);
+  if(state.history.length) $('chatMeta').textContent = `已恢复 ${state.history.length} 条对话 · ${conv.title}`;
+  localStorage.removeItem(LS_HIST);   // 旧版 key 已迁移，清理
+}
+
+/* ---------- 历史会话列表 / 切换 / 删除 / 新建 ---------- */
+function renderConvoList(){
+  const d = loadConvos();
+  const el = $('convoList');
+  const keepScroll = el.scrollTop;
+  if(!d.list.length){ el.innerHTML = '<div class="convo-empty">暂无历史会话</div>'; return; }
+  el.innerHTML = d.list.map(c=>{
+    const meta = [
+      fmtTime(c.updatedAt || c.createdAt),
+      (c.messages || []).length + ' 条消息',
+      c.profile ? (c.profile.track + (c.profile.sub && c.profile.sub !== '随机' ? ' / ' + c.profile.sub : '')) : ''
+    ].filter(Boolean).join(' · ');
+    return `<div class="convo-item${c.id===state.convoId?' active':''}" data-id="${c.id}">
+      <div class="convo-main">
+        <div class="convo-title">${esc(c.title || '新会话')}</div>
+        <div class="convo-meta">${esc(meta)}</div>
+      </div>
+      <button class="convo-del" data-del="${c.id}" title="删除此会话">✕</button>
+    </div>`;
+  }).join('');
+  el.querySelectorAll('.convo-item').forEach(item=>{
+    item.onclick = ()=>switchConvo(item.dataset.id);
+  });
+  el.querySelectorAll('.convo-del').forEach(b=>{
+    b.onclick = (e)=>{ e.stopPropagation(); deleteConvo(b.dataset.del); };
+  });
+  el.scrollTop = keepScroll;
+}
+function switchConvo(id){
+  if(state.busy || id === state.convoId){ return; }
+  saveHistory();                      // 先保存当前会话
+  const d = loadConvos();
+  const conv = d.list.find(c=>c.id===id);
+  if(!conv) return;
+  state.convoId = conv.id;
+  state.history = (conv.messages || []).slice(-40);
+  d.activeId = conv.id;
+  persistConvos(d);
+  renderConversation();
+  if(conv.profile) applyProfile(conv.profile);
+  $('chatMeta').textContent = `已恢复 ${state.history.length} 条对话 · ${conv.title}`;
+  renderConvoList();
+  toast('已切换会话：' + conv.title);
+}
+function deleteConvo(id){
+  const d = loadConvos();
+  d.list = d.list.filter(c=>c.id!==id);
+  if(d.activeId === id) d.activeId = d.list.length ? d.list[0].id : '';
+  persistConvos(d);
+  if(id === state.convoId){
+    const next = d.list.find(c=>c.id===d.activeId);
+    if(next){
+      state.convoId = next.id;
+      state.history = (next.messages || []).slice(-40);
+      if(next.profile) applyProfile(next.profile);
+    }else{
+      state.convoId = genId();
+      state.history = [];
+    }
+    renderConversation();
+  }
+  renderConvoList();
+  toast('已删除会话');
+}
+function newConvo(opts = {}){
+  if(state.busy) return;
+  saveHistory();                      // 保存当前会话后开新的
+  const id = genId();
+  const d = loadConvos();
+  d.list.unshift({ id, title: '新会话', createdAt: Date.now(), updatedAt: Date.now(),
+                   messages: [], profile: snapshotProfile() });
+  d.activeId = id;
+  d.list = d.list.slice(0, 30);
+  persistConvos(d);
+  state.convoId = id;
+  state.history = [];
+  renderConversation();
+  renderConvoList();
+  if(!opts.silent) toast('已创建新会话');
+}
+
+/* ================= 智能体栏（聊天框上方） ================= */
+function renderAgentBar(){
+  const el = $('agentCard');
+  const ag = AGENTS.find(a=>a.id===state.activeAgent) || AGENTS[0];
+  el.innerHTML = `
+    <span class="agent-icon">${ag.icon}</span>
+    <div class="agent-info">
+      <div class="agent-name">${esc(ag.name)}<span class="agent-badge">当前</span></div>
+      <div class="agent-desc">${esc(ag.desc)} · 点击卡片切换到该智能体并新建会话</div>
+    </div>`;
+}
+/* 点击智能体卡片：切换到该智能体 → 新建会话 → 弹出面试配置等待用户填写 */
+function activateAgent(id){
+  if(state.busy) return;
+  state.activeAgent = id;
+  renderAgentBar();
+  if(state.history.length) newConvo({silent:true});   // 当前会话已有内容才新建，避免堆积空会话
+  openAgentModal();
+  const ag = AGENTS.find(a=>a.id===id) || AGENTS[0];
+  toast('已切换到「' + ag.name + '」，请填写面试配置');
+}
+$('agentCard').onclick = ()=>activateAgent(state.activeAgent);
+
+/* ================= 面试配置弹框 ================= */
+const agentModal = $('agentModal');
+function openAgentModal(){ agentModal.classList.add('show'); }
+function closeAgentModal(){ agentModal.classList.remove('show'); }
+$('btnAgentCfg').onclick = openAgentModal;
+$('btnAgentClose').onclick = closeAgentModal;
+$('btnAgentCancel').onclick = closeAgentModal;
+agentModal.addEventListener('click', (e)=>{ if(e.target===agentModal) closeAgentModal(); });
+/* 确认：先校验模型配置 → 关闭弹框 → 生成面试题 */
+$('btnAgentConfirm').onclick = ()=>{
+  const cfg = loadCfg();
+  if(!cfg.base || !cfg.model){
+    $('genErr').textContent = '请先点击右上角齿轮图标完成「模型配置」';
+    $('genErr').style.display = 'block';
+    openCfgModal();      // 顺手打开模型配置弹框（z-index 更高，叠在本弹框之上）
+    return;              // 不关闭面试配置，用户配好模型后可直接再点确认
+  }
+  $('genErr').style.display = 'none';
+  closeAgentModal();
+  generate();
+};
+
+/* ================= 初始化 UI ================= */
+function updateTitle(){
+  const sub = state.sub && state.sub !== '随机' ? ' / ' + state.sub : '';
+  $('chatTitle').textContent = `${state.track}${sub} · ${state.level} · ${state.exp}`;
+  const ind = state.industry === '不限' ? '行业不限' : state.industry;
+  $('chatMeta').textContent = state.resumeName
+    ? `已加载简历：${state.resumeName} · ${ind}`
+    : `${state.sub === '随机' ? '细分随机' : '细分：' + state.sub} · ${ind} · 未上传简历`;
+}
+
+function makeChips(el, list, key){
+  list.forEach(v=>{
+    const c = document.createElement('div');
+    c.className = 'chip' + (state[key]===v ? ' active':'');
+    c.textContent = v;
+    c.onclick = ()=>{
+      state[key] = v;
+      el.querySelectorAll('.chip').forEach(x=>x.classList.remove('active'));
+      c.classList.add('active');
+      if(key === 'track'){          // 切换主方向 → 二级选项重置为随机
+        state.sub = '随机';
+        renderSubChips();
+      }
+      updateTitle();
+    };
+    el.appendChild(c);
+  });
+}
+
+/* 二级方向：首项为「随机」 */
+function renderSubChips(){
+  const el = $('chipSub');
+  el.innerHTML = '';
+  const subs = TRACK_SUBS[state.track] || [];
+  const items = [{ label: '🎲 随机', value: '随机' }, ...subs.map(s=>({ label: s, value: s }))];
+
+  items.forEach(it=>{
+    const c = document.createElement('div');
+    c.className = 'chip' + (state.sub === it.value ? ' active' : '');
+    c.textContent = it.label;
+    c.onclick = ()=>{
+      state.sub = it.value;
+      el.querySelectorAll('.chip').forEach(x=>x.classList.remove('active'));
+      c.classList.add('active');
+      updateTitle();
+    };
+    el.appendChild(c);
+  });
+}
+
+makeChips($('chipTrack'), TRACKS, 'track');
+makeChips($('chipLevel'), LEVELS, 'level');
+makeChips($('chipExp'), EXPS, 'exp');
+makeChips($('chipIndustry'), INDUSTRIES, 'industry');
+renderSubChips();
+updateTitle();
+renderAgentBar();
+
+/* 恢复模型配置 */
+const savedCfg = loadCfg();
+if(savedCfg.base) $('cfgBase').value = savedCfg.base;
+if(savedCfg.key) $('cfgKey').value = savedCfg.key;
+if(savedCfg.model) $('cfgModel').value = savedCfg.model;
+
+/* ================= 模型配置弹框 ================= */
+const cfgModal = $('cfgModal');
+function openCfgModal(){ cfgModal.classList.add('show'); }
+function closeCfgModal(){ cfgModal.classList.remove('show'); }
+$('btnCfg').onclick = () => cfgModal.classList.toggle('show');
+$('btnCfgClose').onclick = closeCfgModal;
+cfgModal.addEventListener('click', (e) => { if(e.target === cfgModal) closeCfgModal(); });
+document.addEventListener('keydown', (e) => { if(e.key === 'Escape'){ closeCfgModal(); closeAgentModal(); } });
+
+/* ================= 事件绑定 ================= */
+$('btnSaveCfg').onclick = saveCfg;
+
+/* 拉取模型列表（经本地代理，避免 CORS） */
+$('btnModels').onclick = async ()=>{
+  const cfg = saveCfg();
+  if(!cfg.base){ toast('❌ 请先填写 API 地址'); return; }
+  if(!state.proxyOk && !(await checkHealth())){ toast('❌ 请先用 http://localhost:8787 打开本页'); return; }
+  const btn = $('btnModels');
+  btn.disabled = true; btn.textContent = '拉取中…';
+  try{
+    const res = await fetch(API + '/api/models', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ base: cfg.base, key: cfg.key })
+    });
+    const raw = await res.text();
+    let j = {};
+    try{ j = JSON.parse(raw); }catch(_){}
+    if(!res.ok){
+      throw new Error(j.error?.message || ('HTTP ' + res.status));
+    }
+    const list = j.models || [];
+    if(!list.length){ toast('未返回模型列表，可手动填写模型名'); return; }
+    const dl = $('modelOptions');
+    dl.innerHTML = list.map(m=>`<option value="${esc(m)}"></option>`).join('');
+    // 若当前模型名为空，自动填入第一个
+    if(!$('cfgModel').value.trim()){
+      $('cfgModel').value = list[0];
+      localStorage.setItem(LS_CFG, JSON.stringify({base:cfg.base, key:cfg.key, model:list[0]}));
+    }
+    toast(`✅ 获取到 ${list.length} 个模型，点模型名可下拉选择`);
+  }catch(err){
+    toast('❌ ' + err.message);
+  }finally{
+    btn.disabled = false; btn.textContent = '拉取模型列表';
+  }
+};
+
+$('cfgCount').oninput = e=>{
+  const v = parseInt(e.target.value); if(v>0 && v<=50) state.count = v;
+};
+$('cfgLang').onchange = e=> state.lang = e.target.value;
+$('cfgNote').oninput = e=> state.note = e.target.value;
+
+/* 上传 */
+const uploadBox = $('uploadBox');
+uploadBox.onclick = ()=> $('fileInput').click();
+$('fileInput').onchange = e=> e.target.files[0] && handleFile(e.target.files[0]);
+uploadBox.ondragover = e=>{ e.preventDefault(); uploadBox.classList.add('drag'); };
+uploadBox.ondragleave = ()=> uploadBox.classList.remove('drag');
+uploadBox.ondrop = e=>{
+  e.preventDefault(); uploadBox.classList.remove('drag');
+  const f = e.dataTransfer.files[0]; if(f) handleFile(f);
+};
+
+async function handleFile(file){
+  toast('解析简历中…');
+  try{
+    const text = await parseResume(file);
+    if(!text || !text.trim()) throw new Error('未能提取到文本内容');
+    state.resumeText = text;
+    state.resumeName = file.name;
+    $('fileBadge').style.display = 'flex';
+    $('fileName').textContent = `${file.name}（${text.length} 字）`;
+    // 图片简历显示缩略图
+    const iconEl = $('fileBadge').firstElementChild;
+    if(IMG_EXT.includes(file.name.split('.').pop().toLowerCase())){
+      const u = URL.createObjectURL(file);
+      iconEl.innerHTML = `<img src="${u}" style="width:26px;height:26px;object-fit:cover;border-radius:4px;display:block">`;
+    } else {
+      iconEl.textContent = '📄';
+    }
+    $('resumeHint').textContent = '✅ 简历已解析，出题将针对简历内容';
+    toast('✅ 简历解析成功');
+  }catch(err){
+    toast('❌ ' + err.message);
+  }
+}
+$('fileDel').onclick = ()=>{
+  state.resumeText = ''; state.resumeName='';
+  $('fileBadge').style.display = 'none';
+  $('fileBadge').firstElementChild.textContent = '📄';
+  $('fileInput').value = '';
+  $('resumeHint').textContent = '上传简历后，AI 将结合简历内容针对性出题';
+};
+
+/* 发送 / 清空（生成面试题统一走「面试配置」弹框的确认按钮） */
+$('btnSend').onclick = sendMsg;
+$('inputBox').addEventListener('keydown', e=>{
+  if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendMsg(); }
+});
+async function sendMsg(){
+  if(state.busy) return;
+  const t = $('inputBox').value.trim();
+  if(!t) return;
+  $('inputBox').value = '';
+  await streamChat(t);
+}
+
+/* 左侧栏「＋ 新建」：新建空白会话 */
+$('btnNewConvoSide').onclick = ()=>newConvo();
+
+$('btnClear').onclick = ()=>{
+  state.history = [];
+  saveHistory();
+  $('chatList').innerHTML = `<div class="empty-state" id="emptyState"><div class="big">🎯</div><p>对话已清空</p></div>`;
+  toast('已清空当前会话');
+};
+
+/* 测试连接 */
+$('btnTest').onclick = async ()=>{
+  const cfg = saveCfg();
+  if(!cfg.base || !cfg.model){ toast('❌ 请先填写 API 地址和模型名'); return; }
+  $('connDot').className = 'conn-dot';
+  $('connText').textContent = '测试中…';
+  try{
+    const res = await fetch(API + '/api/chat', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        base: cfg.base, key: cfg.key, model: cfg.model,
+        messages:[{role:'user', content:'回复：ok'}], max_tokens: 8, stream: false
+      })
+    });
+    if(res.ok){
+      $('connDot').className = 'conn-dot ok';
+      $('connText').textContent = '已连接 · ' + cfg.model;
+      toast('✅ 模型连接成功');
+    } else {
+      let m = 'HTTP ' + res.status;
+      try{ const e = await res.json(); m = e.error?.message || m; }catch(_){}
+      $('connDot').className = 'conn-dot err';
+      $('connText').textContent = '连接失败';
+      toast('❌ ' + m);
+    }
+  }catch(err){
+    $('connDot').className = 'conn-dot err';
+    $('connText').textContent = '连接失败';
+    toast('❌ 本地服务未启动：请运行 node server.js');
+  }
+};
+
+/* 检测本地代理是否可用：同源 → 当前主机的 8787 → localhost:8787 */
+const PROXY_FALLBACK = 'http://localhost:8787';
+let API = ''; // '' = 同源；否则为代理地址前缀
+
+function proxyCandidates(){
+  const list = [''];
+  const h = location.hostname;
+  if(h && h !== 'localhost' && h !== '127.0.0.1'){
+    list.push('http://' + h + ':8787');   // 局域网访问时，服务就在同一台机器
+  }
+  list.push(PROXY_FALLBACK);
+  return [...new Set(list)];
+}
+
+async function ping(origin){
+  try{
+    const ctl = new AbortController();
+    const t = setTimeout(()=>ctl.abort(), 2500);
+    const r = await fetch(origin + '/api/health', {cache:'no-store', signal: ctl.signal});
+    clearTimeout(t);
+    if(!r.ok) return false;
+    return await r.json();
+  }catch(_){ return false; }
+}
+
+async function checkHealth(){
+  for(const origin of proxyCandidates()){
+    const j = await ping(origin);
+    if(j && j.ok){
+      API = origin;
+      state.proxyOk = true;
+      $('proxyBanner').classList.remove('show');
+      if(!$('connText').textContent.startsWith('已连接')){
+        $('connDot').className = 'conn-dot ok';
+        $('connText').textContent = '本地服务就绪' + (origin ? '（经 ' + origin.replace('http://','') + '）' : '');
+      }
+      // AgentScope 智能体服务状态（server.js 探测后回报）
+      if(j.agentOk === false){
+        const b = $('proxyBanner');
+        b.innerHTML = '⚠️ 本地页面服务正常，但 <b>AgentScope 智能体服务</b>未连接，出题会失败。<br>' +
+          '请双击项目里的 <code>start.bat</code> 启动全部服务；或手动运行 ' +
+          '<code>.venv\\Scripts\\python.exe agent_server.py</code>。';
+        b.classList.add('show');
+        $('connDot').className = 'conn-dot err';
+        $('connText').textContent = '智能体服务未连接';
+      }
+      return true;
+    }
+  }
+  API = '';
+  state.proxyOk = false;
+  const b = $('proxyBanner');
+  b.innerHTML = '⚠️ 未检测到本地服务，模型请求无法发出。<br>' +
+    '请双击项目里的 <code>start.bat</code>（会同时启动智能体服务与页面服务），然后刷新本页。';
+  b.classList.add('show');
+  $('connDot').className = 'conn-dot err';
+  $('connText').textContent = '未连接本地服务';
+  return false;
+}
+checkHealth();
+setInterval(checkHealth, 15000);
+
+/* 恢复历史 */
+restoreHistory();
+renderConvoList();
+setBusy(false);
+function setBusy(b){
+  $('btnSend').disabled = b;
+  $('btnAgentConfirm').disabled = b;
+  document.querySelector('.send-btn').textContent = b ? '…' : '发送';
+}
+</script>
+</body>
+</html>

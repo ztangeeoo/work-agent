@@ -1,0 +1,11 @@
+{
+  "name": "interview-agent-server",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@copilotkit/runtime": "^1.10.6"
+  }
+}

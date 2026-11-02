@@ -1,0 +1,25 @@
+# 依赖
+node_modules/
+web/node_modules/
+.venv/
+
+# 构建产物
+web/dist/
+
+# 本地数据（历史会话库，含个人面试记录，不要提交）
+data/
+
+# 本地 AI 工作日志 / 工作区元数据
+.workbuddy/
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# 日志与临时文件
+*.log
+npm-debug.log*
+__pycache__/
+*.pyc
