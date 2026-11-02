@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   isTraceFinished, reduceStageEvents, sumStageMs,
-  type StageEvent, type StageRow,
+  type StageEvent, type StageMode, type StageRow,
 } from './stageReducer';
 
-export type { StageEvent, StageRow, StageStatus } from './stageReducer';
-export { STAGE_ORDER, reduceStageEvents } from './stageReducer';
+export type { StageEvent, StageRow, StageMode, StageStatus } from './stageReducer';
+export { STAGE_ORDER, REVIEW_STAGE_ORDER, stageOrderFor, reduceStageEvents } from './stageReducer';
 
 export interface TraceState {
   rows: StageRow[];
@@ -24,7 +24,7 @@ export interface TraceState {
  * @param runId 每次发送消息前由前端生成，并随模型配置同步到服务端
  * @param enabled 是否保持订阅（生成结束后关掉）
  */
-export function useAgentStages(runId: string, enabled: boolean): TraceState {
+export function useAgentStages(runId: string, enabled: boolean, mode: StageMode = 'interview'): TraceState {
   const [events, setEvents] = useState<StageEvent[]>([]);
   const esRef = useRef<EventSource | null>(null);
   const seenRef = useRef<Set<string>>(new Set());
@@ -57,7 +57,7 @@ export function useAgentStages(runId: string, enabled: boolean): TraceState {
     };
   }, [runId, enabled]);
 
-  const rows = reduceStageEvents(events);
+  const rows = reduceStageEvents(events, mode);
   const hasEvents = events.length > 0;
   const finished = hasEvents && isTraceFinished(rows);
   const totalMs = sumStageMs(rows);

@@ -28,7 +28,7 @@ if not defined PY (
 
 rem ---------- 2. 安装/确认依赖 ----------
 echo [2/4] 检查 Python 依赖（首次较慢，请耐心等待）...
-"%PY%" -c "import agentscope, fastapi, uvicorn" >nul 2>nul
+"%PY%" -c "import agentscope, fastapi, uvicorn, httpx" >nul 2>nul
 if errorlevel 1 (
   "%PY%" -m pip install -r requirements.txt
   if errorlevel 1 (

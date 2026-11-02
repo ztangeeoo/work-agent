@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { ChatMessage } from '../types';
 import { esc, aiBlocks } from '../lib/markdown';
 
@@ -7,6 +7,12 @@ interface Props {
   isLoading: boolean;
   onSend: (text: string) => void;
   onStop: () => void;
+  /** 列表顶部的自定义内容（代码审核模式的工作台） */
+  header?: ReactNode;
+  /** 空状态；传 null 表示不渲染（工作台自己会占位） */
+  empty?: ReactNode;
+  avatar?: string;
+  placeholder?: string;
 }
 
 /** AI 消息：按块渲染（一题一卡）。每块独立 DOM 且 key 稳定，流式时已完成的卡片不重建 */
@@ -39,7 +45,9 @@ function AiBubble({ content, streaming }: { content: string; streaming: boolean 
   );
 }
 
-export default function ChatPanel({ messages, isLoading, onSend, onStop }: Props) {
+export default function ChatPanel({
+  messages, isLoading, onSend, onStop, header, empty, avatar = '🎯', placeholder,
+}: Props) {
   const [text, setText] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
   /** 是否吸附在底部：用户往上翻看历史时置 false，不再强制拉回 */
@@ -59,7 +67,8 @@ export default function ChatPanel({ messages, isLoading, onSend, onStop }: Props
   /* 仅当贴底时才自动跟随新内容；rAF 保证在布局完成后滚，避免和用户拖动打架 */
   useEffect(() => {
     const el = listRef.current;
-    if (!el || !stickRef.current) return;
+    /* 没有消息时不滚到底：审核模式的 PR 工作台在最上面，滚到底会把它顶出视野 */
+    if (!el || !stickRef.current || !messages.length) return;
     const id = requestAnimationFrame(() => {
       if (stickRef.current) el.scrollTop = el.scrollHeight;
     });
@@ -77,20 +86,21 @@ export default function ChatPanel({ messages, isLoading, onSend, onStop }: Props
   return (
     <>
       <div className="chat-list" ref={listRef}>
-        {messages.length === 0 && (
+        {header}
+        {messages.length === 0 && (empty === undefined ? (
           <div className="empty-state">
             <div className="big">🎯</div>
             <p>点击下方「面试出题官」卡片，新建面试会话</p>
             <p>填写面试配置（方向 / 级别 / 经验 / 简历）并确认，即可生成面试题</p>
             <p>也可以直接在下方输入任何指令，例如"再出 3 道算法题"</p>
           </div>
-        )}
+        ) : empty)}
         {messages.map((m, i) => {
           const isUser = m.role === 'user';
           const streaming = !isUser && isLoading && i === messages.length - 1;
           return (
             <div key={m.id || i} className={'msg ' + (isUser ? 'user' : 'ai')}>
-              <div className="avatar">{isUser ? '🧑' : '🎯'}</div>
+              <div className="avatar">{isUser ? '🧑' : avatar}</div>
               {isUser
                 ? <div className="bubble" dangerouslySetInnerHTML={{ __html: esc(m.content).replace(/\n/g, '<br>') }} />
                 : <AiBubble content={m.content} streaming={streaming} />}
@@ -99,7 +109,7 @@ export default function ChatPanel({ messages, isLoading, onSend, onStop }: Props
         })}
         {isLoading && messages.length === 0 && (
           <div className="msg ai">
-            <div className="avatar">🎯</div>
+            <div className="avatar">{avatar}</div>
             <div className="bubble"><span className="typing"><i></i><i></i><i></i></span></div>
           </div>
         )}
@@ -108,7 +118,7 @@ export default function ChatPanel({ messages, isLoading, onSend, onStop }: Props
       <div className="chat-input">
         <textarea
           value={text}
-          placeholder="输入消息…（Enter 发送，Shift+Enter 换行）"
+          placeholder={placeholder || '输入消息…（Enter 发送，Shift+Enter 换行）'}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
         />

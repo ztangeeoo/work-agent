@@ -11,13 +11,22 @@ import { checkHealth } from './lib/health';
 import { deleteRemoteConvo, fetchRemoteConvos, flushNow, queueSaveConvo } from './lib/remote';
 import { useAgentStages } from './lib/stages';
 import { newProfile } from './lib/storage';
-import type { ChatMessage, Convo, ModelCfg, Profile } from './types';
+import {
+  fetchPRs, fetchRepos, fetchReviews, pollRepo, postReviewToPR,
+  reviewPR as requestReview, sortPRs, useReviewEvents,
+} from './lib/review';
+import type { AgentMode, ChatMessage, Convo, ModelCfg, PRItem, Profile, Repo, ReviewItem } from './types';
 import ConvoSidebar from './components/ConvoSidebar';
-import AgentBar from './components/AgentBar';
+import AgentSwitcher from './components/AgentSwitcher';
 import ChatPanel from './components/ChatPanel';
 import AgentTrace from './components/AgentTrace';
 import ConfigModal from './components/ConfigModal';
 import AgentModal from './components/AgentModal';
+import RepoModal from './components/RepoModal';
+import ReviewBar from './components/ReviewBar';
+import ReviewWorkbench from './components/ReviewWorkbench';
+
+const LS_MODE = 'interviewer_mode_v1';
 
 export default function ChatApp() {
   /* ---------- 模型配置 ---------- */
@@ -31,6 +40,21 @@ export default function ChatApp() {
   const [profile, setProfile] = useState<Profile>(newProfile);
   const [agentOpen, setAgentOpen] = useState(false);
   const [genErr, setGenErr] = useState('');
+
+  /* ---------- 智能体模式：面试出题 / 代码审核 ---------- */
+  const [mode, setMode] = useState<AgentMode>(() =>
+    localStorage.getItem(LS_MODE) === 'review' ? 'review' : 'interview',
+  );
+  const [repos, setRepos] = useState<Repo[]>([]);
+  const [repoId, setRepoId] = useState('');
+  const [prs, setPRs] = useState<PRItem[]>([]);
+  const [reviews, setReviews] = useState<ReviewItem[]>([]);
+  const [selectedPr, setSelectedPr] = useState<number | null>(null);
+  const [runningPr, setRunningPr] = useState<number | null>(null);
+  const [polling, setPolling] = useState(false);
+  const [repoOpen, setRepoOpen] = useState(false);
+  const [repoEditing, setRepoEditing] = useState<Repo | null>(null);
+  const [repoErr, setRepoErr] = useState('');
 
   /* ---------- 多会话 ---------- */
   const [convos, setConvos] = useState<{ activeId: string; list: Convo[] }>(() => {
@@ -62,14 +86,39 @@ export default function ChatApp() {
 
   /* ---------- 智能体执行流水线 ---------- */
   const [runId, setRunId] = useState('');
-  const trace = useAgentStages(runId, isLoading);
+  const trace = useAgentStages(runId, isLoading, mode);
 
-  /* 初始恢复当前会话消息 */
+  /* 初始恢复：只恢复与当前智能体同模式的会话，避免把面试对话显示在审核模式里 */
+  const modeOf = (c: Convo): AgentMode => c.mode || 'interview';
   const restoredRef = useRef(false);
   useEffect(() => {
     if (restoredRef.current) return;
     restoredRef.current = true;
-    const conv = convos.list.find(c => c.id === convoId);
+
+    let conv = convos.list.find(c => c.id === convoId);
+    if (!conv || modeOf(conv) !== mode) {
+      const same = convos.list.find(c => modeOf(c) === mode);
+      if (same) {
+        conv = same;
+        setConvos(prev => {
+          const nd = { ...prev, activeId: same.id };
+          persistConvos(nd);
+          return nd;
+        });
+      } else {
+        const id = genId();
+        const fresh: Convo = {
+          id, title: '新会话', createdAt: Date.now(), updatedAt: Date.now(),
+          messages: [], profile: snapshotProfile(profile), mode,
+        };
+        conv = fresh;
+        setConvos(prev => {
+          const nd = { activeId: id, list: [fresh, ...prev.list].slice(0, 30) };
+          persistConvos(nd);
+          return nd;
+        });
+      }
+    }
     if (conv && conv.messages && conv.messages.length) {
       setMessages(conv.messages.map(m => ({ id: m.id, role: m.role, content: m.content })));
       if (conv.profile) setProfile({ ...newProfile(), ...conv.profile });
@@ -156,6 +205,115 @@ export default function ChatApp() {
     return () => { alive = false; window.clearInterval(t); };
   }, []);
 
+  /* ---------- 代码审核：仓库 / PR / 审核报告 ---------- */
+  const loadRepoList = useCallback(async () => {
+    try {
+      const list = await fetchRepos();
+      setRepos(list);
+      setRepoId(prev => (prev && list.some(r => r.id === prev) ? prev : (list[0]?.id || '')));
+    } catch (e: any) {
+      setRepoErr(e.message || String(e));
+    }
+  }, []);
+
+  const loadPRData = useCallback(async (id: string) => {
+    if (!id) {
+      setPRs([]);
+      setReviews([]);
+      setSelectedPr(null);
+      return;
+    }
+    try {
+      const [prList, reviewList] = await Promise.all([fetchPRs(id), fetchReviews(id, 20)]);
+      const sorted = sortPRs(prList);
+      setPRs(sorted);
+      setReviews(reviewList);
+      setRepoErr('');
+      setSelectedPr(prev => {
+        if (prev && sorted.some(p => p.number === prev)) return prev;
+        const reviewed = reviewList.find(r => sorted.some(p => p.number === r.prNumber));
+        if (reviewed) return reviewed.prNumber;
+        return sorted.length ? sorted[0].number : null;
+      });
+    } catch (e: any) {
+      setRepoErr(e.message || String(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (mode !== 'review') return;
+    loadRepoList();
+  }, [mode, loadRepoList]);
+
+  useEffect(() => {
+    if (mode !== 'review') return;
+    loadPRData(repoId);
+  }, [mode, repoId, loadPRData]);
+
+  /* 轮询 / 审核进度：后端推送事件，前端即时更新 */
+  useReviewEvents(mode === 'review', (ev) => {
+    if (repoId && ev.repoId && ev.repoId !== repoId) return;
+    if (ev.type === 'poll-start') setPolling(true);
+    else if (ev.type === 'poll-done') { setPolling(false); loadPRData(repoId); }
+    else if (ev.type === 'poll-error') {
+      setPolling(false);
+      toast('⚠️ 轮询失败：' + (ev.error || '未知错误'));
+    } else if (ev.type === 'review-start') {
+      setRunningPr(ev.prNumber ?? null);
+      setPolling(true);
+    } else if (ev.type === 'review-done') {
+      setRunningPr(null);
+      setPolling(false);
+      if (ev.review) {
+        const r = ev.review;
+        setReviews(prev => [r, ...prev.filter(x => x.id !== r.id)]);
+      }
+      loadPRData(repoId);
+    } else if (ev.type === 'review-error') {
+      setRunningPr(null);
+      setPolling(false);
+      if (ev.error) toast('⚠️ ' + ev.error);
+    }
+  });
+
+  const handlePoll = useCallback(async () => {
+    if (!repoId) { setRepoEditing(null); setRepoOpen(true); return; }
+    setPolling(true);
+    try {
+      await pollRepo(repoId);
+      toast('已触发轮询，结果会自动刷新');
+    } catch (e: any) {
+      setPolling(false);
+      toast('❌ ' + (e.message || e));
+    }
+  }, [repoId, toast]);
+
+  const handleReviewOne = useCallback(async (n: number) => {
+    if (!repoId) return;
+    setRunningPr(n);
+    setSelectedPr(n);
+    try {
+      const r = await requestReview(repoId, n);
+      setReviews(prev => [r, ...prev.filter(x => x.id !== r.id)]);
+      await loadPRData(repoId);
+      toast('✅ PR #' + n + ' 审核完成');
+    } catch (e: any) {
+      toast('❌ 审核失败：' + (e.message || e));
+    } finally {
+      setRunningPr(null);
+    }
+  }, [repoId, loadPRData, toast]);
+
+  const handlePost = useCallback(async (review: ReviewItem) => {
+    try {
+      const out = await postReviewToPR(review.id);
+      setReviews(prev => prev.map(x => (x.id === review.id ? out.review : x)));
+      toast('✅ 已回帖到 PR');
+    } catch (e: any) {
+      toast('❌ 回帖失败：' + (e.message || e));
+    }
+  }, [toast]);
+
   /* ---------- 会话持久化 ---------- */
   /** CopilotKit 的消息 content 可能为 undefined，落盘前统一成 ChatMessage */
   const asChatMessages = (list: typeof messages): ChatMessage[] =>
@@ -171,7 +329,7 @@ export default function ChatApp() {
         c.id === prev.activeId
           ? { ...c, messages: snapshot.slice(-40), updatedAt: Date.now(),
               title: c.title && c.title !== '新会话' ? c.title : titleFromMessages(snapshot),
-              profile: snapshotProfile(profile) }
+              profile: snapshotProfile(profile), mode }
           : c
       );
       list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
@@ -182,7 +340,7 @@ export default function ChatApp() {
       if (active) queueSaveConvo(active);
       return nd;
     });
-  }, [messages, profile]);
+  }, [messages, mode, profile]);
 
   /* 消息变化即落盘（流式过程中也会持续写，刷新不丢） */
   useEffect(() => {
@@ -192,14 +350,33 @@ export default function ChatApp() {
   }, [messages]);
 
   /* ---------- 发送 ---------- */
+  /* 审核模式追问时，把当前 PR 的审核报告一起带给后端 */
+  const selectedReview = useMemo(
+    () => (selectedPr == null ? null : reviews.find(r => r.prNumber === selectedPr) || null),
+    [reviews, selectedPr],
+  );
+
   const syncModelConfig = useCallback(async (rid: string) => {
+    const reviewCtx = mode === 'review' && selectedReview
+      ? {
+          repo: (selectedReview.owner ? selectedReview.owner + '/' : '') + selectedReview.name,
+          number: selectedReview.prNumber,
+          title: selectedReview.title,
+          risk: selectedReview.risk,
+          decision: selectedReview.decision,
+          reportMd: String(selectedReview.reportMd || '').slice(0, 8000),
+        }
+      : null;
     try {
       await fetch('/api/model-config', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ base: cfg.base, key: cfg.key, model: cfg.model, profile, runId: rid }),
+        body: JSON.stringify({
+          base: cfg.base, key: cfg.key, model: cfg.model, profile, runId: rid,
+          agentMode: mode, review: reviewCtx,
+        }),
       });
     } catch (_) {}
-  }, [cfg, profile]);
+  }, [cfg, mode, profile, selectedReview]);
 
   const send = useCallback(async (text: string) => {
     const t = (text || '').trim();
@@ -230,7 +407,10 @@ export default function ChatApp() {
     if (isLoading) return;
     saveCurrent();
     const id = genId();
-    const conv: Convo = { id, title: '新会话', createdAt: Date.now(), updatedAt: Date.now(), messages: [], profile: snapshotProfile(profile) };
+    const conv: Convo = {
+      id, title: '新会话', createdAt: Date.now(), updatedAt: Date.now(),
+      messages: [], profile: snapshotProfile(profile), mode,
+    };
     setConvos(prev => {
       const nd = { activeId: id, list: [conv, ...prev.list].slice(0, 30) };
       persistConvos(nd);
@@ -239,7 +419,7 @@ export default function ChatApp() {
     reset();
     setRunId('');
     if (!silent) toast('已创建新会话');
-  }, [isLoading, profile, reset, saveCurrent, toast]);
+  }, [isLoading, mode, profile, reset, saveCurrent, toast]);
 
   const switchConvo = useCallback((id: string) => {
     if (isLoading || id === convoId) return;
@@ -279,10 +459,11 @@ export default function ChatApp() {
   const deleteConvo = useCallback((id: string) => {
     const d = loadConvos();
     d.list = d.list.filter(c => c.id !== id);
-    if (d.activeId === id) d.activeId = d.list.length ? d.list[0].id : '';
-    if (!d.list.length) {
+    const sameMode = d.list.filter(c => modeOf(c) === mode);
+    if (d.activeId === id) d.activeId = sameMode.length ? sameMode[0].id : '';
+    if (!sameMode.length) {
       const nid = genId();
-      d.list = [{ id: nid, title: '新会话', createdAt: Date.now(), updatedAt: Date.now(), messages: [], profile: null }];
+      d.list = [{ id: nid, title: '新会话', createdAt: Date.now(), updatedAt: Date.now(), messages: [], profile: null, mode }, ...d.list];
       d.activeId = nid;
     }
     persistConvos(d);
@@ -296,15 +477,56 @@ export default function ChatApp() {
       if (next?.profile) setProfile({ ...newProfile(), ...next.profile });
     }
     toast('已删除会话');
-  }, [convoId, reset, setMessages, toast]);
+  }, [convoId, mode, reset, setMessages, toast]);
 
-  /* ---------- 智能体卡片 ---------- */
-  const activateAgent = useCallback(() => {
+  /* ---------- 智能体切换 ---------- */
+  const switchMode = useCallback((m: AgentMode) => {
+    if (m === mode) {
+      /* 再次点击当前智能体 = 打开它的配置 */
+      if (m === 'review') {
+        setRepoEditing(repos.find(r => r.id === repoId) || null);
+        setRepoOpen(true);
+      } else {
+        setAgentOpen(true);
+      }
+      return;
+    }
     if (isLoading) return;
-    if (messages.length) newConvo(true);   // 当前会话已有内容才新建，避免堆积空会话
-    setAgentOpen(true);
-    toast('已切换到「面试出题官」，请填写面试配置');
-  }, [isLoading, messages.length, newConvo, toast]);
+    saveCurrent();
+    flushNow();
+
+    /* 每个智能体有自己的会话集合：优先切回该模式最近一场，没有才新建 */
+    const target = convos.list.find(c => modeOf(c) === m);
+    setMode(m);
+    localStorage.setItem(LS_MODE, m);
+
+    if (target) {
+      setConvos(prev => {
+        const nd = { ...prev, activeId: target.id };
+        persistConvos(nd);
+        return nd;
+      });
+      reset();
+      setRunId('');
+      setMessages((target.messages || []).slice(-40).map(x => ({ id: x.id, role: x.role, content: x.content })));
+      if (target.profile) setProfile({ ...newProfile(), ...target.profile });
+    } else {
+      const id = genId();
+      const conv: Convo = {
+        id, title: '新会话', createdAt: Date.now(), updatedAt: Date.now(),
+        messages: [], profile: snapshotProfile(profile), mode: m,
+      };
+      setConvos(prev => {
+        const nd = { activeId: id, list: [conv, ...prev.list].slice(0, 30) };
+        persistConvos(nd);
+        return nd;
+      });
+      reset();
+      setRunId('');
+      setMessages([]);
+    }
+    toast(m === 'review' ? '已切换到「代码审核官」' : '已切换到「面试出题官」');
+  }, [mode, isLoading, convos.list, saveCurrent, reset, setMessages, profile, repos, repoId, toast]);
 
   /* ---------- 面试配置确认 ---------- */
   const onAgentConfirm = useCallback(() => {
@@ -319,12 +541,25 @@ export default function ChatApp() {
   }, [cfg.base, cfg.model, profile, send]);
 
   /* ---------- 派生数据 ---------- */
-  const activeAgent = useMemo(() => AGENTS.find(a => a.id === 'interviewer') || AGENTS[0], []);
-  const chatTitle = `${profile.track}${profile.sub && profile.sub !== '随机' ? ' / ' + profile.sub : ''} · ${profile.level} · ${profile.exp}`;
+  const activeAgent = useMemo(() => AGENTS.find(a => a.mode === mode) || AGENTS[0], [mode]);
+  const currentRepo = useMemo(() => repos.find(r => r.id === repoId) || null, [repos, repoId]);
+  /* 侧栏只显示当前智能体的会话，避免两种工作混在一起 */
+  const visibleConvos = useMemo(
+    () => ({ activeId: convos.activeId, list: convos.list.filter(c => modeOf(c) === mode) }),
+    [convos, mode],
+  );
+
   const indText = profile.industry === '不限' ? '行业不限' : profile.industry;
-  const chatMeta = profile.resumeName
-    ? `已加载简历：${profile.resumeName} · ${indText}`
-    : `${profile.sub === '随机' ? '细分随机' : '细分：' + profile.sub} · ${indText} · 未上传简历`;
+  const chatTitle = mode === 'review'
+    ? (currentRepo ? `${currentRepo.owner}/${currentRepo.name}` : '代码审核官')
+    : `${profile.track}${profile.sub && profile.sub !== '随机' ? ' / ' + profile.sub : ''} · ${profile.level} · ${profile.exp}`;
+  const chatMeta = mode === 'review'
+    ? (currentRepo
+        ? `${prs.length} 个开放 PR · 每 ${Math.round(currentRepo.intervalSec / 60) || 1} 分钟轮询 · ${currentRepo.hasToken ? '已配 Token' : '未配 Token'}`
+        : '先填代码地址，再轮询 PR 自动审核')
+    : (profile.resumeName
+        ? `已加载简历：${profile.resumeName} · ${indText}`
+        : `${profile.sub === '随机' ? '细分随机' : '细分：' + profile.sub} · ${indText} · 未上传简历`);
 
   const onSaveCfg = (c: ModelCfg) => {
     setCfg(c);
@@ -336,7 +571,7 @@ export default function ChatApp() {
     <>
       <header>
         <div className="logo">🎯 IT<span>面试出题官</span></div>
-        <div className="sub">AI Interviewer · React + CopilotKit + AgentScope 三智能体</div>
+        <div className="sub">面试出题官 + 代码审核官 · React + CopilotKit + AgentScope 多智能体</div>
         <div className="spacer"></div>
         <span id="connText">{health.proxyOk ? (health.agentOk ? '本地服务就绪' : '智能体服务未连接') : '未检测到本地服务'}</span>
         <span className={'conn-dot ' + (health.proxyOk ? (health.agentOk ? 'ok' : 'err') : '')}></span>
@@ -348,7 +583,7 @@ export default function ChatApp() {
 
       <main>
         <ConvoSidebar
-          convos={convos}
+          convos={visibleConvos}
           activeId={convoId}
           onSwitch={switchConvo}
           onDelete={deleteConvo}
@@ -375,8 +610,30 @@ export default function ChatApp() {
               <div className="meta">{chatMeta}</div>
             </div>
             <div className="spacer"></div>
+            {mode === 'review' && currentRepo && (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => { setRepoEditing(currentRepo); setRepoOpen(true); }}
+              >
+                ⚙️ 仓库设置
+              </button>
+            )}
             <button className="btn btn-ghost btn-sm" onClick={clearCurrent}>清空对话</button>
           </div>
+
+          {mode === 'review' && (
+            <ReviewBar
+              repos={repos}
+              repoId={repoId}
+              onPick={setRepoId}
+              onPoll={handlePoll}
+              onAdd={() => { setRepoEditing(null); setRepoOpen(true); }}
+              onSettings={() => { setRepoEditing(currentRepo); setRepoOpen(true); }}
+              polling={polling}
+              prCount={prs.length}
+              lastError={repoErr || currentRepo?.lastError || ''}
+            />
+          )}
 
           <AgentTrace trace={trace} active={isLoading} />
 
@@ -385,9 +642,39 @@ export default function ChatApp() {
             isLoading={isLoading}
             onSend={send}
             onStop={stopGeneration}
+            avatar={activeAgent.icon}
+            header={mode === 'review' ? (
+              <ReviewWorkbench
+                repo={currentRepo}
+                prs={prs}
+                reviews={reviews}
+                selected={selectedPr}
+                onSelect={setSelectedPr}
+                onReview={handleReviewOne}
+                onPost={handlePost}
+                onAddRepo={() => { setRepoEditing(null); setRepoOpen(true); }}
+                onPoll={handlePoll}
+                polling={polling || isLoading}
+                runningPr={runningPr}
+                onAsk={send}
+              />
+            ) : undefined}
+            empty={mode === 'review' ? null : undefined}
+            placeholder={mode === 'review'
+              ? '针对这份审核报告追问，例如「第 2 个问题怎么改？」'
+              : '输入消息…（Enter 发送，Shift+Enter 换行）'}
           />
 
-          <AgentBar agent={activeAgent} onClickCard={activateAgent} onOpenCfg={() => setAgentOpen(true)} />
+          <AgentSwitcher
+            agents={AGENTS}
+            mode={mode}
+            onSwitch={switchMode}
+            onOpenConfig={() => {
+              if (mode === 'review') { setRepoEditing(currentRepo); setRepoOpen(true); }
+              else setAgentOpen(true);
+            }}
+            configLabel={mode === 'review' ? '仓库设置' : '面试配置'}
+          />
         </div>
       </main>
 
@@ -401,6 +688,21 @@ export default function ChatApp() {
         genErr={genErr}
         cfg={cfg}
         onNeedCfg={() => setCfgOpen(true)}
+        toast={toast}
+      />
+      <RepoModal
+        open={repoOpen}
+        onClose={() => setRepoOpen(false)}
+        repo={repoEditing}
+        onSaved={(repo, isNew) => {
+          setRepos(prev => (isNew ? [...prev, repo] : prev.map(r => (r.id === repo.id ? repo : r))));
+          setRepoId(repo.id);
+        }}
+        onDeleted={(id) => {
+          setRepos(prev => prev.filter(r => r.id !== id));
+          setRepoId(prev => (prev === id ? '' : prev));
+          setRepoOpen(false);
+        }}
         toast={toast}
       />
 

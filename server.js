@@ -7,7 +7,8 @@
  *     由多 Agent（策划官/面试官/评分官）完成出题与对话
  *  4. /api/model-config 保存前端最新模型配置（内存），供 CopilotKit 适配器读取
  *  5. /api/copilotkit CopilotKit 自托管 runtime（适配器 → AgentScope 三智能体）
- *  6. /api/convos、/api/search SQLite 会话持久化与跨会话检索（零依赖 node:sqlite）
+ *  6. /api/convos、/api/search、/api/repos、/api/reviews、/api/review/events
+ *     反向代理到 FastAPI（:8790）；持久化用 Python 标准库 sqlite3，零额外依赖
  *
  * 启动：start.bat（会同时拉起 Python 智能体服务、构建前端并启动本服务）
  *       AGENTSCOPE=0 node server.js  → 回退到「直接转发模型 API」的老模式
@@ -19,7 +20,9 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const db = require('./db');
+/* 持久化（SQLite）、代码托管适配、PR 轮询与全部 /api/* 业务接口
+ * 都已归到 FastAPI 侧（agent_server.py + store.py + reviewer.py + review_poller.py），
+ * 本服务只做「静态托管 + CopilotKit runtime + 反向代理」。 */
 
 const PORT = Number(process.env.PORT) || 8787;
 const ROOT = __dirname;
@@ -28,8 +31,12 @@ const ROOT = __dirname;
 const AGENTSCOPE_URL = (process.env.AGENTSCOPE_URL || 'http://127.0.0.1:8790').replace(/\/+$/, '');
 const USE_AGENTSCOPE = process.env.AGENTSCOPE !== '0'; // 默认走智能体
 
-/* ---------- 前端最新模型配置（内存，由 /api/model-config 更新） ---------- */
-const modelCfg = { base: '', key: '', model: '', profile: null, runId: '' };
+/* ---------- 前端最新配置（内存，由 /api/model-config 更新） ---------- */
+const modelCfg = {
+  base: '', key: '', model: '', profile: null, runId: '',
+  agentMode: 'interview',  // interview | review
+  review: null,            // 审核模式下当前 PR 的上下文（追问用）
+};
 
 /* ---------- 智能体阶段中心 ----------
  * 后端每个智能体环节的起止都会以 `agent_stage` 事件透出，
@@ -69,6 +76,24 @@ setInterval(() => {
     if (now - b.updatedAt > STAGE_TTL && b.clients.size === 0) stageHub.delete(k);
   }
 }, 60 * 1000).unref();
+
+/* ---------- 代码审核事件中心 ----------
+ * 轮询状态、审核完成都会广播；页面晚打开时回放最近一批事件，避免错过结果。
+ */
+const reviewClients = new Set();
+const reviewEventLog = [];
+const REVIEW_EVENT_MAX = 120;
+
+function broadcastReview(ev) {
+  reviewEventLog.push(ev);
+  if (reviewEventLog.length > REVIEW_EVENT_MAX) {
+    reviewEventLog.splice(0, reviewEventLog.length - REVIEW_EVENT_MAX);
+  }
+  const line = 'data: ' + JSON.stringify(ev) + '\n\n';
+  for (const res of reviewClients) {
+    try { res.write(line); } catch (_) { reviewClients.delete(res); }
+  }
+}
 
 /* ---------- 静态文件 ---------- */
 const DIST = path.join(ROOT, 'web', 'dist');
@@ -190,6 +215,70 @@ function json(res, code, obj) {
   res.end(body);
 }
 
+/* ---------- 反向代理：把 /api/* 业务接口透传给 FastAPI（8790） ----------
+ * 持久化、仓库配置、PR 轮询、审核报告与事件流都在 Python 侧；
+ * 本函数流式透传（SSE 也能用），上游不可用时给出明确提示。
+ */
+function proxyToAgent(req, res, targetPath) {
+  return new Promise((resolve) => {
+    let u;
+    try {
+      u = new URL(AGENTSCOPE_URL + targetPath);
+    } catch (_) {
+      return resolve({ done: false, error: new Error('AGENTSCOPE_URL 无效') });
+    }
+    const lib = u.protocol === 'https:' ? https : http;
+    const headers = {
+      Host: u.host,
+      Accept: req.headers.accept || '*/*',
+    };
+    if (req.headers['content-type']) headers['Content-Type'] = req.headers['content-type'];
+    if (req.headers['x-user-key']) headers['X-User-Key'] = String(req.headers['x-user-key']).slice(0, 64);
+    if (req.headers['content-length']) headers['Content-Length'] = req.headers['content-length'];
+
+    const preq = lib.request(
+      {
+        hostname: u.hostname,
+        port: u.port || (u.protocol === 'https:' ? 443 : 80),
+        path: u.pathname + u.search,
+        method: req.method,
+        headers,
+        timeout: 300000,   // 审核流水线可能跑几分钟
+      },
+      (pres) => {
+        const outHeaders = {
+          'Content-Type': pres.headers['content-type'] || 'application/json; charset=utf-8',
+        };
+        if (pres.headers['cache-control']) outHeaders['Cache-Control'] = pres.headers['cache-control'];
+        if (String(pres.headers['content-type'] || '').includes('text/event-stream')) {
+          outHeaders['Cache-Control'] = outHeaders['Cache-Control'] || 'no-cache, no-transform';
+          outHeaders.Connection = 'keep-alive';
+          outHeaders['X-Accel-Buffering'] = 'no';
+        }
+        res.writeHead(pres.statusCode || 502, outHeaders);
+        pres.pipe(res);
+        pres.on('end', () => resolve({ done: true }));
+        pres.on('error', () => resolve({ done: true }));
+      }
+    );
+    preq.on('timeout', () => preq.destroy(Object.assign(new Error('智能体服务响应超时'), { code: 'ETIMEDOUT' })));
+    preq.on('error', (e) => resolve({ done: false, error: e }));
+    req.pipe(preq);
+  });
+}
+
+/** 代理并保证响应一定被写回（上游挂掉时给出可读错误） */
+async function proxyApi(req, res, targetPath, fallbackStatus = 502) {
+  const r = await proxyToAgent(req, res, targetPath);
+  if (r.done) return;
+  if (res.headersSent) { try { res.end(); } catch (_) {} return; }
+  let hint = (r.error && r.error.message) || '未知错误';
+  if (r.error && r.error.code === 'ECONNREFUSED') hint = AGENT_DOWN_HINT;
+  json(res, fallbackStatus, {
+    error: { message: '无法连接后端数据服务（' + AGENTSCOPE_URL + '）：' + hint },
+  });
+}
+
 /* ---------- AgentScope 智能体服务探测（带 5 秒缓存） ---------- */
 let agentHealthCache = { ok: false, ts: 0, detail: '' };
 function checkAgentHealth() {
@@ -210,7 +299,7 @@ function checkAgentHealth() {
         port: u.port || (u.protocol === 'https:' ? 443 : 80),
         path: u.pathname,
         method: 'GET',
-        timeout: 2500,
+        timeout: 4000,   // /health 里 import agentscope 偶尔要 2s+，给足余量避免误报未连接
       },
       (res) => {
         const chunks = [];
@@ -239,7 +328,41 @@ function checkAgentHealth() {
   });
 }
 
-/* ---------- 转发给 AgentScope 智能体服务 ---------- */
+/* ---------- 读取智能体服务的 JSON（启动时探测持久化状态用） ---------- */
+function fetchAgentJson(pathname, timeout = 4000) {
+  return new Promise((resolve, reject) => {
+    let u;
+    try {
+      u = new URL(AGENTSCOPE_URL + pathname);
+    } catch (e) {
+      return reject(new Error('AGENTSCOPE_URL 无效'));
+    }
+    const lib = u.protocol === 'https:' ? https : http;
+    const req = lib.request(
+      {
+        hostname: u.hostname,
+        port: u.port || (u.protocol === 'https:' ? 443 : 80),
+        path: u.pathname + u.search,
+        method: 'GET',
+        timeout,
+      },
+      (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'));
+          } catch (e) {
+            reject(new Error('返回内容不是合法 JSON'));
+          }
+        });
+      }
+    );
+    req.on('timeout', () => req.destroy(new Error('探测超时')));
+    req.on('error', reject);
+    req.end();
+  });
+}
 function forwardToAgent(rawBody, res) {
   return new Promise((resolve) => {
     let u;
@@ -565,112 +688,73 @@ const server = http.createServer((req, res) => {
     }
     return copilotHandler(req, res);
   }
-  /* ---------- 会话持久化（SQLite 单文件 data/interview.db） ---------- */
+  /* ================== 业务接口：反向代理到 FastAPI（8790） ==================
+   * 持久化（会话/检索）、仓库配置、PR 轮询、审核报告与事件流都由 Python 侧提供，
+   * 前端仍只访问本服务的 /api/*，因此接口路径与响应结构保持不变。
+   */
+
+  /* 会话持久化（SQLite：Python store.py） */
   if (url.pathname === '/api/convos' || url.pathname.startsWith('/api/convos/')) {
-    return (async () => {
-      if (!db.available) {
-        return json(res, 503, {
-          dbAvailable: false,
-          error: { message: '当前 Node 不支持 node:sqlite（需 >= 22.5），已回退到浏览器本地存储：' + db.unavailableReason },
-        });
-      }
-      const userKey = String(req.headers['x-user-key'] || 'local').slice(0, 64);
-      const idPart = url.pathname.slice('/api/convos'.length).replace(/^\//, '');
-      let id = '';
-      try { id = idPart ? decodeURIComponent(idPart) : ''; } catch (_) { id = idPart; }
-
-      try {
-        /* 会话集合 */
-        if (!id) {
-          if (req.method === 'GET') {
-            const limit = Math.min(Number(url.searchParams.get('limit')) || 200, 200);
-            const withMessages = url.searchParams.get('messages') !== '0';
-            const list = db.listConvos({ user: userKey, limit, withMessages });
-            return json(res, 200, { ok: true, dbAvailable: true, list });
-          }
-          if (req.method === 'POST') {
-            const body = JSON.parse(await readBody(req, 16 * 1024 * 1024));
-            const saved = db.saveConvo(body, userKey);
-            return json(res, 200, { ok: true, ...saved });
-          }
-          return json(res, 405, { error: { message: '不支持的方法：' + req.method } });
-        }
-
-        /* 单个会话 */
-        if (req.method === 'GET') {
-          const conv = db.getConvo(id, userKey);
-          return conv
-            ? json(res, 200, { ok: true, convo: conv })
-            : json(res, 404, { error: { message: '会话不存在：' + id } });
-        }
-        if (req.method === 'POST') {
-          const body = JSON.parse(await readBody(req, 16 * 1024 * 1024));
-          const saved = db.saveConvo({ ...body, id }, userKey);
-          return json(res, 200, { ok: true, ...saved });
-        }
-        if (req.method === 'DELETE') {
-          const removed = db.deleteConvo(id, userKey);
-          return json(res, removed ? 200 : 404,
-            removed ? { ok: true } : { error: { message: '会话不存在：' + id } });
-        }
-        return json(res, 405, { error: { message: '不支持的方法：' + req.method } });
-      } catch (e) {
-        return json(res, 500, { error: { message: '数据库操作失败：' + e.message } });
-      }
-    })();
+    return void proxyApi(req, res, url.pathname + url.search);
   }
 
-  /* 跨会话全文检索：GET /api/search?q=缓存穿透 */
+  /* 跨会话全文检索 */
   if (req.method === 'GET' && url.pathname === '/api/search') {
-    if (!db.available) {
-      return json(res, 503, { dbAvailable: false, error: { message: '未启用数据库（node:sqlite 不可用）' } });
-    }
-    const q = url.searchParams.get('q') || '';
-    const limit = Math.min(Number(url.searchParams.get('limit')) || 30, 100);
-    if (!q.trim()) return json(res, 200, { ok: true, query: q, results: [] });
-    try {
-      const userKey = String(req.headers['x-user-key'] || 'local').slice(0, 64);
-      return json(res, 200, { ok: true, query: q, results: db.searchMessages(q, { user: userKey, limit }) });
-    } catch (e) {
-      return json(res, 500, { error: { message: '检索失败：' + e.message } });
-    }
+    return void proxyApi(req, res, url.pathname + url.search);
   }
 
-  /* 数据库状态 */
+  /* 历史库状态 */
   if (req.method === 'GET' && url.pathname === '/api/db/stats') {
-    if (!db.available) {
-      return json(res, 200, { dbAvailable: false, reason: db.unavailableReason });
-    }
-    try {
-      return json(res, 200, { dbAvailable: true, ...db.stats() });
-    } catch (e) {
-      return json(res, 500, { error: { message: e.message } });
-    }
+    return void proxyApi(req, res, url.pathname + url.search);
   }
 
-  /* 保存前端最新模型配置（CopilotKit 适配器每次请求前读取） */
+  /* 模型配置：本地内存留一份（供 CopilotKit 适配器即时读取），同时同步给 Python 轮询器 */
   if (req.method === 'POST' && url.pathname === '/api/model-config') {
     return (async () => {
+      let raw = '';
       try {
-        const p = JSON.parse(await readBody(req, 1 * 1024 * 1024));
+        raw = await readBody(req, 1 * 1024 * 1024);
+        const p = JSON.parse(raw);
         modelCfg.base = String(p.base || '').trim();
         modelCfg.key = String(p.key || '').trim();
         modelCfg.model = String(p.model || '').trim();
         modelCfg.profile = p.profile && typeof p.profile === 'object' ? p.profile : null;
+        modelCfg.agentMode = p.agentMode === 'review' ? 'review' : 'interview';
+        modelCfg.review = p.review && typeof p.review === 'object' ? p.review : null;
         if (typeof p.runId === 'string' && p.runId) {
           modelCfg.runId = p.runId;
           stageBucket(p.runId, true); // 新一轮，保证桶存在
         }
-        json(res, 200, { ok: true });
       } catch (e) {
-        json(res, 400, { error: { message: '请求体解析失败：' + e.message } });
+        return json(res, 400, { error: { message: '请求体解析失败：' + e.message } });
       }
+      /* 同步给 Python（审核轮询要用同一份配置）；失败不影响前端，只影响自动审核 */
+      try {
+        const u = new URL(AGENTSCOPE_URL + '/api/model-config');
+        const lib = u.protocol === 'https:' ? https : http;
+        await new Promise((resolve) => {
+          const up = lib.request({
+            hostname: u.hostname,
+            port: u.port || (u.protocol === 'https:' ? 443 : 80),
+            path: u.pathname,
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(raw) },
+            timeout: 3000,
+          }, (r) => { r.resume(); r.on('end', resolve); });
+          up.on('timeout', () => { up.destroy(); resolve(); });
+          up.on('error', resolve);
+          up.end(raw);
+        });
+      } catch (_) { /* 忽略：Python 未就绪时前端仍可正常使用 */ }
+      json(res, 200, { ok: true });
     })();
   }
-  /* 智能体阶段事件订阅（SSE）：前端流水线面板用 */
+
+  /* 智能体阶段事件订阅（SSE）：前端流水线面板用（留在本服务，与适配器同进程） */
   if (req.method === 'GET' && url.pathname === '/api/stages') {
     const runId = url.searchParams.get('runId') || '';
     if (!runId) return json(res, 400, { error: { message: '缺少 runId' } });
+    const b = stageBucket(runId, true);
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
@@ -678,20 +762,25 @@ const server = http.createServer((req, res) => {
       'X-Accel-Buffering': 'no',
       'Access-Control-Allow-Origin': '*',
     });
-    const b = stageBucket(runId, true);
-    // 补发历史事件（前端可能在阶段开始后才连上来）
-    for (const ev of b.events) res.write('data: ' + JSON.stringify(ev) + '\n\n');
+    for (const ev of b.events.slice(-40)) {
+      res.write('data: ' + JSON.stringify(ev) + '\n\n');
+    }
     b.clients.add(res);
     const hb = setInterval(() => { try { res.write(': ping\n\n'); } catch (_) {} }, 15000);
     req.on('close', () => { clearInterval(hb); b.clients.delete(res); });
     return;
   }
+
+  /* 健康检查：智能体连通性 + 持久层状态（持久层在 Python 侧，一起汇总） */
   if (req.method === 'GET' && url.pathname === '/api/health') {
     return (async () => {
       const agent = await checkAgentHealth();
-      let dbInfo = { available: db.available };
-      if (db.available) {
-        try { Object.assign(dbInfo, db.stats()); } catch (e) { dbInfo.error = e.message; }
+      let dbInfo = { available: false };
+      try {
+        const h = await fetchAgentJson('/health');
+        dbInfo = (h && h.db) || { available: false, reason: 'Python 服务未返回数据库状态' };
+      } catch (e) {
+        dbInfo = { available: false, reason: e.message };
       }
       json(res, 200, {
         ok: true,
@@ -704,6 +793,18 @@ const server = http.createServer((req, res) => {
       });
     })();
   }
+
+  /* 代码审核：仓库 / PR / 审核报告（Python 提供，含异步轮询与 SSE 事件流回放） */
+  if (url.pathname === '/api/repos' || url.pathname.startsWith('/api/repos/')) {
+    return void proxyApi(req, res, url.pathname + url.search);
+  }
+  if (url.pathname === '/api/reviews' || url.pathname.startsWith('/api/reviews/')) {
+    return void proxyApi(req, res, url.pathname + url.search);
+  }
+  if (req.method === 'GET' && url.pathname === '/api/review/events') {
+    return void proxyApi(req, res, url.pathname + url.search);
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/chat') {
     return handleChat(req, res);
   }
@@ -740,17 +841,21 @@ server.listen(PORT, async () => {
   } else {
     console.log('  ➜  智能体:     已关闭（AGENTSCOPE=0，直接转发模型 API）');
   }
-  /* 初始化数据库并打印状态 */
-  if (db.available) {
+  /* 持久化与 PR 轮询都在 Python 侧，启动时探测一次并把状态打出来 */
+  if (USE_AGENTSCOPE) {
     try {
-      const s = db.stats();
-      console.log('  ➜  历史库:     SQLite 就绪 · ' + s.convos + ' 场会话 / ' + s.messages + ' 条消息');
-      console.log('                ' + s.path + '（' + s.sizeKB + ' KB，备份=复制此文件）');
+      const r = await fetchAgentJson('/health');
+      const d = (r && r.db) || null;
+      if (d && d.available) {
+        console.log('  ➜  历史库:     SQLite 就绪 · ' + d.convos + ' 场会话 / ' + d.messages + ' 条消息');
+        console.log('                ' + d.path + '（' + d.sizeKB + ' KB，备份=复制此文件）');
+        console.log('  ➜  代码审核:   ' + d.repos + ' 个仓库 / ' + d.reviews + ' 份审核报告 · 轮询调度在 Python 侧');
+      } else {
+        console.log('  ➜  历史库:     ⚠️ 状态未知（' + ((d && (d.reason || d.error)) || 'Python 服务尚未就绪') + '）');
+      }
     } catch (e) {
-      console.log('  ➜  历史库:     ⚠️ 初始化失败（' + e.message + '），回退到浏览器本地存储');
+      console.log('  ➜  历史库:     ⚠️ 无法读取状态（' + e.message + '），Python 服务可能还没起来');
     }
-  } else {
-    console.log('  ➜  历史库:     ⚠️ node:sqlite 不可用（需 Node >= 22.5），回退到浏览器本地存储');
   }
   const lan = lanAddresses();
   if (lan.length) {

@@ -58,8 +58,10 @@ ok(/::-webkit-scrollbar-thumb[\s\S]{0,80}border-radius/.test(CSS), '滚动条滑
 console.log('\n[4] 自动滚底不打断用户拖动');
 ok(/stickRef/.test(PANEL), 'ChatPanel 有 stickRef（贴底吸附状态）');
 ok(/addEventListener\('scroll'/.test(PANEL), '监听用户滚动以更新吸附状态');
-ok(/if \(!el \|\| !stickRef\.current\) return;/.test(PANEL),
+ok(/if \(!el \|\| !stickRef\.current \|\| !messages\.length\) return;/.test(PANEL),
    '不贴底时不强制滚到底（用户往上翻不会被拽回）');
+ok(/!messages\.length\) return;/.test(PANEL),
+   '空消息列表不滚到底（审核工作台不会被顶出视野）');
 ok(/stickRef\.current = true/.test(PANEL), '发送消息时重新吸附到底部');
 ok(!/useEffect\(\(\) => \{\s*const el = listRef\.current;\s*if \(el\) el\.scrollTop = el\.scrollHeight;\s*\}, \[messages, isLoading\]\)/.test(PANEL),
    '旧的「每次都强制滚底」逻辑已移除');

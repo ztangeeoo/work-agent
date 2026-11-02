@@ -38,6 +38,9 @@ function createAgentScopeAdapter({ agentBase, getCfg, onStage }) {
             model: cfg.model,
             messages,
             profile: cfg.profile || {},
+            /* review 模式：跳过面试三智能体，走「代码审核官」追问 */
+            agent_mode: cfg.agentMode === 'review' ? 'review' : 'interview',
+            review: cfg.agentMode === 'review' ? (cfg.review || null) : null,
             temperature: 0.7,
             stream: true,
           }),
