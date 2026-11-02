@@ -40,6 +40,11 @@ agent_server.py（Python :8790，AgentScope + FastAPI）
 
 ## 快速开始
 
+```bash
+git clone https://github.com/ztangeeoo/work-agent.git
+cd work-agent
+```
+
 ```bat
 双击 start.bat
 ```
