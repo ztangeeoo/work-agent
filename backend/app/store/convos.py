@@ -19,6 +19,9 @@ def _map_convo(r) -> dict:
         "createdAt": r["created_at"],
         "updatedAt": r["updated_at"],
         "profile": profile,
+        # 会话与专家永久绑定：interview / review + 审核会话绑定的仓库
+        "mode": r["agent_mode"] or None,
+        "repoId": r["repo_id"] or None,
     }
 
 
@@ -27,7 +30,7 @@ def list_convos(user: str = DEFAULT_USER, limit: int = MAX_CONVOS, with_messages
     db = init()
     with lock:
         rows = db.execute(
-            """SELECT id, title, profile_json, created_at, updated_at
+            """SELECT id, title, profile_json, agent_mode, repo_id, created_at, updated_at
                  FROM convo WHERE user_key = ?
                 ORDER BY updated_at DESC LIMIT ?""",
             (user, limit),
@@ -52,7 +55,7 @@ def get_convo(cid: str, user: str = DEFAULT_USER) -> dict | None:
     db = init()
     with lock:
         r = db.execute(
-            """SELECT id, title, profile_json, created_at, updated_at
+            """SELECT id, title, profile_json, agent_mode, repo_id, created_at, updated_at
                  FROM convo WHERE id = ? AND user_key = ?""",
             (cid, user),
         ).fetchone()
@@ -78,6 +81,8 @@ def save_convo(data: dict, user: str = DEFAULT_USER) -> dict:
     msgs = (data.get("messages") if isinstance(data.get("messages"), list) else [])[-MAX_MSGS:]
     title = str(data.get("title") or "新会话")[:200]
     profile_json = json.dumps(data.get("profile"), ensure_ascii=False) if data.get("profile") else None
+    agent_mode = str(data.get("mode") or "").strip() or None
+    repo_id = str(data.get("repoId") or "").strip() or None
     created_at = int(data.get("createdAt") or ts)
     updated_at = int(data.get("updatedAt") or ts)
 
@@ -85,13 +90,15 @@ def save_convo(data: dict, user: str = DEFAULT_USER) -> dict:
         try:
             db.execute("BEGIN IMMEDIATE")
             db.execute(
-                """INSERT INTO convo (id, user_key, title, profile_json, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                """INSERT INTO convo (id, user_key, title, profile_json, agent_mode, repo_id, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(id) DO UPDATE SET
                         title        = excluded.title,
                         profile_json = excluded.profile_json,
+                        agent_mode   = excluded.agent_mode,
+                        repo_id      = excluded.repo_id,
                         updated_at   = excluded.updated_at""",
-                (cid, user, title, profile_json, created_at, updated_at),
+                (cid, user, title, profile_json, agent_mode, repo_id, created_at, updated_at),
             )
             db.execute("DELETE FROM msg WHERE convo_id = ?", (cid,))
             for i, m in enumerate(msgs):

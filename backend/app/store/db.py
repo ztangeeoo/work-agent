@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS convo (
   user_key     TEXT NOT NULL DEFAULT 'local',
   title        TEXT NOT NULL DEFAULT '新会话',
   profile_json TEXT,
+  agent_mode   TEXT,
+  repo_id      TEXT,
   created_at   INTEGER NOT NULL,
   updated_at   INTEGER NOT NULL
 );
@@ -136,6 +138,15 @@ def now() -> int:
     return int(time.time() * 1000)
 
 
+def _ensure_convo_columns(conn: sqlite3.Connection) -> None:
+    """老库补列：会话与专家绑定所需的 agent_mode / repo_id（幂等）。"""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(convo)").fetchall()}
+    if "agent_mode" not in cols:
+        conn.execute("ALTER TABLE convo ADD COLUMN agent_mode TEXT")
+    if "repo_id" not in cols:
+        conn.execute("ALTER TABLE convo ADD COLUMN repo_id TEXT")
+
+
 def init() -> sqlite3.Connection:
     """建立（并缓存）连接；首次会建表并打开 WAL。"""
     global _conn, _available, _unavailable_reason
@@ -153,6 +164,7 @@ def init() -> sqlite3.Connection:
             conn.execute("PRAGMA foreign_keys = ON")
             conn.execute("PRAGMA busy_timeout = 5000")
             conn.executescript(SCHEMA)
+            _ensure_convo_columns(conn)
             conn.commit()
             _conn = conn
             _available = True

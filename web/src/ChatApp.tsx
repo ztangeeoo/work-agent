@@ -119,10 +119,14 @@ export default function ChatApp() {
     restoredRef.current = true;
 
     const conv = convos.list.find(c => c.id === convoId);
-    if (conv && conv.messages && conv.messages.length) {
-      setMessages(conv.messages.map(m => ({ id: m.id, role: m.role, content: m.content })));
-      if (conv.profile) setProfile({ ...newProfile(), ...conv.profile });
+    if (conv) {
+      if (conv.messages && conv.messages.length) {
+        setMessages(conv.messages.map(m => ({ id: m.id, role: m.role, content: m.content })));
+        if (conv.profile) setProfile({ ...newProfile(), ...conv.profile });
+      }
+      /* 会话绑定的专家与专家配置（空会话同样要恢复） */
       if (conv.mode) setMode(conv.mode);
+      if (conv.mode === 'review' && conv.repoId) setRepoId(conv.repoId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -152,6 +156,11 @@ export default function ChatApp() {
             if (!r || (c.updatedAt || 0) > (r.updatedAt || 0)) {
               map.set(c.id, c);
               toPush.push(c);
+            } else if (r && !r.mode && c.mode) {
+              /* 服务端是加字段前的旧记录：保留本地已绑定的专家与配置 */
+              const merged: Convo = { ...r, mode: c.mode, repoId: c.repoId };
+              map.set(c.id, merged);
+              toPush.push(merged);
             }
           });
         }
@@ -164,8 +173,10 @@ export default function ChatApp() {
         const activeId = list.some(c => c.id === prev.activeId) ? prev.activeId : list[0].id;
         const nd = { activeId, list };
         persistConvos(nd);
-        /* 空会话不上推（避免每次开新浏览器都往库里加一条空壳） */
-        toPush.filter(c => (c.messages || []).length).forEach(c => queueSaveConvo(c));
+        /* 空壳会话不上推；但已绑定专家的任务会话（哪怕还没有消息）要推，否则绑定信息只在本地 */
+        toPush
+          .filter(c => (c.messages || []).length || (c.mode && c.title && c.title !== '新会话'))
+          .forEach(c => queueSaveConvo(c));
         return nd;
       });
       setSynced(true);
@@ -347,7 +358,9 @@ export default function ChatApp() {
         c.id === prev.activeId
           ? { ...c, messages: snapshot.slice(-40), updatedAt: Date.now(),
               title: c.title && c.title !== '新会话' ? c.title : titleFromMessages(snapshot),
-              profile: snapshotProfile(profile), mode }
+              profile: snapshotProfile(profile), mode,
+              /* 审核会话的专家配置 = 当前绑定的仓库 */
+              repoId: mode === 'review' ? repoId : c.repoId }
           : c
       );
       list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
@@ -359,7 +372,7 @@ export default function ChatApp() {
       if (active && (active.messages || []).length) queueSaveConvo(active);
       return nd;
     });
-  }, [messages, mode, profile]);
+  }, [messages, mode, profile, repoId]);
 
   /* 消息变化即落盘（流式过程中也会持续写，刷新不丢） */
   useEffect(() => {
@@ -422,7 +435,7 @@ export default function ChatApp() {
   }, [cfg, isLoading, sendMessage, setMessages, syncModelConfig, toast]);
 
   /* ---------- 会话操作 ---------- */
-  const newConvo = useCallback((silent = false, opts: { mode?: AgentMode; title?: string } = {}) => {
+  const newConvo = useCallback((silent = false, opts: { mode?: AgentMode; title?: string; repoId?: string; persist?: boolean } = {}) => {
     if (isLoading) return;
     saveCurrent();
     const nextMode = opts.mode || mode;
@@ -434,28 +447,34 @@ export default function ChatApp() {
     staleMsgIdsRef.current = new Set(asChatMessages(messages).map(m => String(m.id)));
     freshConvoRef.current = true;
     const id = genId();
+    const boundRepoId = opts.repoId ?? repoId;
     const conv: Convo = {
       id, title: opts.title || '新会话', createdAt: Date.now(), updatedAt: Date.now(),
       messages: [], profile: snapshotProfile(profile), mode: nextMode,
+      repoId: nextMode === 'review' ? boundRepoId : undefined,
     };
     setConvos(prev => {
       const nd = { activeId: id, list: [conv, ...prev.list].slice(0, 30) };
       persistConvos(nd);
       return nd;
     });
+    /* 任务会话没有消息也要落库，否则刷新后服务端合并会把绑定信息弄丢 */
+    if (opts.persist) queueSaveConvo(conv);
     reset();
     setRunId('');
     if (!silent) toast('已创建新会话');
-  }, [isLoading, messages, mode, profile, reset, saveCurrent, toast]);
+  }, [isLoading, messages, mode, profile, repoId, reset, saveCurrent, toast]);
 
   /**
    * 新建一个任务会话（专家确认后调用），会话建好后即与该专家永久绑定。
    * 当前会话还没有内容时直接复用它（改名 + 绑定专家），否则另开一个，绝不改动已有会话的专家。
    */
-  const startTask = useCallback((m: AgentMode, title: string, firstPrompt?: string) => {
+  const startTask = useCallback((m: AgentMode, title: string, firstPrompt?: string, opts: { repoId?: string } = {}) => {
     if (isLoading) { toast('当前任务进行中，请稍候'); return; }
     setView('chat');
     pendingPromptRef.current = firstPrompt || '';
+    /* 仓库刚保存就建任务时 state 里的 repoId 还没刷新，用调用方传入的 id 兜底 */
+    const boundRepoId = opts.repoId ?? repoId;
 
     const hasMsgs = asChatMessages(messages).some(x => String(x.content || '').trim());
     if (!hasMsgs) {
@@ -463,15 +482,20 @@ export default function ChatApp() {
       localStorage.setItem(LS_MODE, m);
       setConvos(prev => {
         const list = prev.list.map(c =>
-          c.id === prev.activeId ? { ...c, title, mode: m, updatedAt: Date.now() } : c);
+          c.id === prev.activeId
+            ? { ...c, title, mode: m, updatedAt: Date.now(),
+                repoId: m === 'review' ? boundRepoId : undefined }
+            : c);
         const nd = { activeId: prev.activeId, list };
         persistConvos(nd);
+        const active = list.find(c => c.id === nd.activeId);
+        if (active) queueSaveConvo(active);   // 空会话直接绑定时也要落库
         return nd;
       });
       return;
     }
-    newConvo(true, { mode: m, title });
-  }, [isLoading, messages, newConvo, toast]);
+    newConvo(true, { mode: m, title, repoId: boundRepoId, persist: true });
+  }, [isLoading, messages, newConvo, repoId, toast]);
 
   /* 新会话 / 切换专家落地后再发首轮指令：此时 send 的 mode 已是新专家，避免用旧专家发请求 */
   useEffect(() => {
@@ -485,7 +509,10 @@ export default function ChatApp() {
     if (isLoading || id === convoId) return;
     saveCurrent();
     flushNow(); // 切走前把上一场立即落库
-    freshConvoRef.current = false;   // 切会话：恢复常规保存
+    /* 与新建会话同理：切换后 CopilotKit 可能把上一场的消息又回流一次，
+       记下这些 id，在出现本场真正的新消息前不落盘，避免消息串场 */
+    staleMsgIdsRef.current = new Set(asChatMessages(messages).map(m => String(m.id)));
+    freshConvoRef.current = true;
     const conv = convos.list.find(c => c.id === id);
     if (!conv) return;
     setConvos(prev => {
@@ -498,6 +525,8 @@ export default function ChatApp() {
     setMessages((conv.messages || []).slice(-40).map(m => ({ id: m.id, role: m.role, content: m.content })));
     if (conv.profile) setProfile({ ...newProfile(), ...conv.profile });
     if (conv.mode) { setMode(conv.mode); localStorage.setItem(LS_MODE, conv.mode); }
+    /* 审核会话跟着它绑定的仓库走；面试会话不动仓库（仓库只在审核界面出现） */
+    if (conv.mode === 'review' && conv.repoId) setRepoId(conv.repoId);
     setView('chat');
     toast('已切换会话：' + (conv.title || '新会话'));
   }, [convoId, convos.list, isLoading, reset, saveCurrent, setMessages, toast]);
@@ -539,6 +568,7 @@ export default function ChatApp() {
       setMessages((next?.messages || []).map(m => ({ id: m.id, role: m.role, content: m.content })));
       if (next?.profile) setProfile({ ...newProfile(), ...next.profile });
       if (next?.mode) { setMode(next.mode); localStorage.setItem(LS_MODE, next.mode); }
+      if (next?.mode === 'review' && next.repoId) setRepoId(next.repoId);
     }
     toast('已删除会话');
   }, [convoId, reset, setMessages, toast]);
@@ -665,6 +695,7 @@ export default function ChatApp() {
           onOpenExperts={() => setView(v => (v === 'experts' ? 'chat' : 'experts'))}
           expertsOpen={view === 'experts'}
           expertCount={AGENTS.length}
+          repos={repos}
           banner={
             !health.proxyOk ? (
               <div className="banner show">
@@ -790,7 +821,7 @@ export default function ChatApp() {
           /* 从专家入口选了审核官时，保存仓库 = 确认任务：新建审核会话并立刻拉一次 PR */
           if (pendingExpert === 'review') {
             setPendingExpert(null);
-            startTask('review', `代码审核 · ${repo.owner}/${repo.name}`);
+            startTask('review', `代码审核 · ${repo.owner}/${repo.name}`, undefined, { repoId: repo.id });
             window.setTimeout(() => { void pollRepo(repo.id).catch(() => {}); }, 0);
           }
         }}

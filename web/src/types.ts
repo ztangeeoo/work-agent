@@ -37,6 +37,8 @@ export interface Convo {
   profile: Profile | null;
   /** 这场会话属于哪个智能体；老数据没有该字段时按面试模式处理 */
   mode?: AgentMode;
+  /** 审核会话绑定的仓库 id（专家配置的一部分，切回该会话时恢复） */
+  repoId?: string;
 }
 
 /** 智能体工作模式：面试出题 / 代码审核 */

@@ -50,6 +50,7 @@ async function flush(): Promise<void> {
         method: 'POST',
         body: JSON.stringify({
           id: c.id, title: c.title, profile: c.profile,
+          mode: c.mode, repoId: c.repoId,
           messages: c.messages, createdAt: c.createdAt, updatedAt: c.updatedAt,
         }),
       });

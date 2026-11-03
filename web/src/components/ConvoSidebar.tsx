@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Convo } from '../types';
+import type { Convo, Repo } from '../types';
 import { fmtTime } from '../lib/storage';
 import { searchMessages, type SearchHit } from '../lib/remote';
 
@@ -16,10 +16,12 @@ interface Props {
   expertsOpen: boolean;
   /** 可选的专家数量，显示在入口徽标上 */
   expertCount: number;
+  /** 仓库列表：用于在会话行显示绑定的仓库 */
+  repos: Repo[];
 }
 
 export default function ConvoSidebar({
-  convos, activeId, onSwitch, onDelete, onNew, banner, onOpenExperts, expertsOpen, expertCount,
+  convos, activeId, onSwitch, onDelete, onNew, banner, onOpenExperts, expertsOpen, expertCount, repos,
 }: Props) {
   /* ---------- 跨会话全文检索 ---------- */
   const [q, setQ] = useState('');
@@ -111,10 +113,17 @@ export default function ConvoSidebar({
           {convos.list.length === 0 && <div className="convo-empty">暂无历史会话</div>}
           {convos.list.map(c => {
             const isReview = c.mode === 'review';
+            const repo = isReview ? repos.find(r => r.id === c.repoId) : null;
+            const agentCfg = isReview
+              ? (repo ? `${repo.owner}/${repo.name}` : '代码审核')
+              : (c.profile
+                  ? [c.profile.track, c.profile.level,
+                     c.profile.sub && c.profile.sub !== '随机' ? c.profile.sub : ''].filter(Boolean).join(' · ')
+                  : '面试出题');
             const meta = [
               fmtTime(c.updatedAt || c.createdAt),
               (c.messages || []).length + ' 条消息',
-              isReview ? '代码审核' : (c.profile ? (c.profile.track + (c.profile.sub && c.profile.sub !== '随机' ? ' / ' + c.profile.sub : '')) : '')
+              agentCfg,
             ].filter(Boolean).join(' · ');
             return (
               <div key={c.id} className={'convo-item' + (c.id === activeId ? ' active' : '')} onClick={() => onSwitch(c.id)}>
