@@ -10,13 +10,13 @@ IM 渠道，以及一套 REST + SSE 接口和 /docs。
 
     持久化   SQLite（AsyncSQLAlchemyStorage + aiosqlite）—— 不需要 Redis
     消息总线 InMemoryMessageBus —— 单进程够用；多副本时换 RedisMessageBus
-    工作区   LocalWorkspaceManager（默认）/ DockerWorkspaceManager（SANDBOX=docker）
+    工作区   DockerWorkspaceManager（默认，容器隔离）/ LocalWorkspaceManager（SANDBOX=local）
 
 环境变量：
     AGENT_SERVICE_PORT   端口，默认 8799（出题官 8790、Node 8787，错开不冲突）
     AGENT_SERVICE_DB     SQLite 文件，默认 data/agent_service.db
     AGENT_WORKSPACE_DIR  工作区根目录，默认 data/workspaces
-    SANDBOX              local（默认）| docker（需要 Docker 引擎在运行）
+    SANDBOX              docker（默认，需 Docker 引擎在跑）| local（不隔离，仅本机调试）
     AGENT_SERVICE_TITLE  服务标题，默认「IT 面试出题官 · Agent 服务」
 
 启动：
@@ -25,6 +25,7 @@ IM 渠道，以及一套 REST + SSE 接口和 /docs。
 """
 
 import os
+import subprocess
 
 import uvicorn
 
@@ -40,7 +41,9 @@ from agentscope.app.workspace_manager import (
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
 PORT = int(os.environ.get("AGENT_SERVICE_PORT", "8799"))
-SANDBOX = (os.environ.get("SANDBOX") or "local").strip().lower()
+# 默认容器模式：agent 的工具/代码在 Docker 沙箱里执行，不碰宿主机。
+# 没装 Docker 或只想本机快速试：SANDBOX=local（工具直接在宿主机执行，无隔离）
+SANDBOX = (os.environ.get("SANDBOX") or "docker").strip().lower()
 DB_PATH = os.path.abspath(
     os.environ.get("AGENT_SERVICE_DB") or os.path.join(ROOT, "data", "agent_service.db"),
 )
@@ -64,6 +67,21 @@ def build_workspace_manager() -> WorkspaceManagerBase:
     return LocalWorkspaceManager(basedir=WORKSPACE_DIR)
 
 
+def docker_ready() -> tuple[bool, str]:
+    """Docker 引擎是否可用（只查服务端，不拉镜像）"""
+    try:
+        r = subprocess.run(
+            ["docker", "version", "--format", "{{.Server.Version}}"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            return True, r.stdout.strip()
+        return False, (r.stderr or r.stdout or "").strip()[:200]
+    except Exception as e:  # docker 未安装 / 命令不在 PATH
+        return False, f"{type(e).__name__}: {e}"
+
+
+
 app = create_app(
     storage=AsyncSQLAlchemyStorage(sqlite_url(DB_PATH), create_tables=True),
     message_bus=InMemoryMessageBus(),
@@ -78,7 +96,15 @@ if __name__ == "__main__":
     print(f"  ➜  端口: {PORT}（接口文档 /docs）")
     print(f"  ➜  存储: SQLite {DB_PATH}")
     print(f"  ➜  工作区: {WORKSPACE_DIR}（SANDBOX={SANDBOX}）")
-    if SANDBOX != "docker":
-        print("  ➜  提示: 当前是本地工作区，工具直接在宿主机执行；需要隔离请设 SANDBOX=docker 并启动 Docker")
+    if SANDBOX == "docker":
+        ok, info = docker_ready()
+        if not ok:
+            # 不静默降级到本地：那样隔离就没了，用户还以为在沙箱里
+            print(f"  ✗ Docker 引擎不可用：{info}")
+            print("    → 启动 Docker Desktop 后重试；或显式放弃隔离：set SANDBOX=local")
+            raise SystemExit(1)
+        print(f"  ➜  Docker 引擎: {info}（首次会构建 agentscope-workspace 镜像，约 2-3 分钟）")
+    else:
+        print("  ➜  提示: 本地工作区不隔离，工具直接在宿主机执行；需要隔离请用 SANDBOX=docker")
     print("")
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info", timeout_keep_alive=300)

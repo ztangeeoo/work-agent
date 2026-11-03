@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
-"""AgentScope 2.0 Sandbox 自检（默认本地工作区，SANDBOX=docker 走容器）
+"""AgentScope 2.0 Sandbox 自检（默认容器工作区，SANDBOX=local 走宿主机）
 
 做什么：建一个 workspace（= 工具/代码执行环境），在里面真的跑几条命令、读写文件，
 把「沙箱到底通不通」一次性验证出来。AgentScope 2.0 的 workspace 是 Agent 执行
 工具（Shell / 读写文件 / MCP）的落点：
 
+    DockerWorkspace     每个 workspace 一个容器，workdir 挂载到 /workspace（默认）
     LocalWorkspace      宿主机直接执行，不隔离 —— 开发机够用，别对公网开放
-    DockerWorkspace     每个 workspace 一个容器，workdir 挂载到 /workspace
 
 用法：
-    .venv\\Scripts\\python.exe sandbox_probe.py
-    set SANDBOX=docker && .venv\\Scripts\\python.exe sandbox_probe.py   （需 Docker 引擎在跑）
+    .venv\\Scripts\\python.exe sandbox_probe.py                       （默认容器，需 Docker 引擎）
+    set SANDBOX=local && .venv\\Scripts\\python.exe sandbox_probe.py  （不隔离，快）
 """
 
 import asyncio
@@ -21,7 +21,7 @@ import time
 from agentscope.workspace import DockerWorkspace, LocalWorkspace
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-SANDBOX = (os.environ.get("SANDBOX") or "local").strip().lower()
+SANDBOX = (os.environ.get("SANDBOX") or "docker").strip().lower()
 WORKDIR = os.path.abspath(
     os.environ.get("AGENT_WORKSPACE_DIR") or os.path.join(ROOT, "data", "probe-workspace"),
 )

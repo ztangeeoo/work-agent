@@ -99,8 +99,8 @@ agent_server.py（Python :8790，FastAPI + AgentScope）
 自检（会真的跑命令、读写文件）：
 
 ```bash
-.venv\Scripts\python.exe sandbox_probe.py            # 默认本地工作区
-set SANDBOX=docker && .venv\Scripts\python.exe sandbox_probe.py   # 容器，需 Docker 引擎在跑
+.venv\Scripts\python.exe sandbox_probe.py                          # 默认容器后端（需 Docker 引擎）
+set SANDBOX=local && .venv\Scripts\python.exe sandbox_probe.py     # 宿主机直跑，快
 ```
 
 > 本机实测（Docker Desktop 4.50 / 引擎 28.5.1，Linux 容器）：容器后端 5 项全过，首次初始化 150s
@@ -112,9 +112,12 @@ set SANDBOX=docker && .venv\Scripts\python.exe sandbox_probe.py   # 容器，需
 `agent_service.py` 用 `agentscope.app.create_app()` 起官方服务，替掉归档的 runtime：
 
 ```bash
-.venv\Scripts\python.exe agent_service.py
+.venv\Scripts\python.exe agent_service.py                # 默认容器沙箱（要求 Docker 引擎在跑）
+set SANDBOX=local && .venv\Scripts\python.exe agent_service.py   # 只本机调试，放弃隔离
 # → http://localhost:8799/docs   共 77 个接口（会话 / 运行 / 模型 / 凭据 / RAG / 工作区 / 渠道 / 计划任务）
 ```
+
+启动时会先探测 Docker 引擎：不可用直接退出并提示，**不会静默降级成本地执行**（否则你以为在沙箱里、其实在宿主机上跑）。
 
 零外部依赖跑法（本项目默认配置）：
 
@@ -122,7 +125,7 @@ set SANDBOX=docker && .venv\Scripts\python.exe sandbox_probe.py   # 容器，需
 |---|---|---|
 | 持久化 | `AsyncSQLAlchemyStorage("sqlite+aiosqlite:///data/agent_service.db")` | 不装 Redis 也能跑；多副本换 Postgres |
 | 消息总线 | `InMemoryMessageBus` | 单进程；多副本换 `RedisMessageBus` |
-| 工作区 | `LocalWorkspaceManager`（`SANDBOX=docker` 换 `DockerWorkspaceManager`） | 每个 agent 一个 workdir，TTL 回收；容器模式实测 `/health` 全组件 ok |
+| 工作区 | `DockerWorkspaceManager`（默认，容器隔离）；`SANDBOX=local` 换本地 | 每个 agent 一个 workdir，TTL 回收；容器模式实测 `/health` 全组件 ok |
 
 调用注意：`/health` 等接口要求 `x-user-id` 头（多租户隔离），不带会返回 422：
 
@@ -429,7 +432,7 @@ VITE_COPILOTKIT_KEY=ckpb_你的key
 | `agent_adapter.js` | CopilotKit → AgentScope 智能体服务的 ServiceAdapter（SSE 转接，并截获智能体阶段事件） |
 | `agent_server.py` | FastAPI 服务：AgentScope 多 Agent 编排、`/v1/chat/completions`（OpenAI 兼容 SSE）、`/v1/review`（审核流水线），以及全部 `/api/*` 数据接口 |
 | `agent_service.py` | AgentScope 2.0 官方 Agent Service（`create_app`）：SQLite 持久化 + 内存总线 + 本地工作区，独立端口 8799，自带 `/docs` |
-| `sandbox_probe.py` | 沙箱自检：建工作区 → 跑命令 / 读写文件 / 校验退出码；`SANDBOX=docker` 可切容器后端 |
+| `sandbox_probe.py` | 沙箱自检：建工作区 → 跑命令 / 读写文件 / 校验退出码；默认容器后端，`SANDBOX=local` 切宿主机 |
 | `store.py` | 持久层（标准库 `sqlite3`，零依赖）：七张表建表迁移、会话读写、FTS5 检索、仓库 / PR / 审核报告 CRUD、容量上限保护 |
 | `reviewer.py` | 代码托管平台适配：解析仓库地址、拉开放 PR 与 diff、回帖；自动识别 `HTTP(S)_PROXY`，`localhost` 直连 |
 | `review_poller.py` | PR 轮询调度：同仓库串行、单轮限流、到期触发、事件广播；模型配置从页面内存读取 |
@@ -446,7 +449,7 @@ VITE_COPILOTKIT_KEY=ckpb_你的key
 
 ```bash
 .venv\Scripts\python.exe tests/test_agentscope_api.py # AgentScope 2.0 运行时基线：版本/API 面/事件字段/上下文语义（40 断言）
-.venv\Scripts\python.exe sandbox_probe.py             # 沙箱自检：命令执行 / 文件读写 / 退出码（本地或容器后端）
+.venv\Scripts\python.exe sandbox_probe.py             # 沙箱自检：命令执行 / 文件读写 / 退出码（默认容器，SANDBOX=local 切本地）
 .venv\Scripts\python.exe tests/test_store.py          # 持久层：会话/检索/隔离/仓库/审核报告（85 断言）
 .venv\Scripts\python.exe tests/test_reviewer.py       # 仓库地址解析 / diff 统计 / 代理规则（32 断言）
 .venv\Scripts\python.exe tests/test_adapter.py        # 指令层：降级 / 拼接 / 开关 / 截断 / 热更新 / 格式契约 / 接线守卫（38 断言）
