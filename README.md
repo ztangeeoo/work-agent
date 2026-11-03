@@ -3,7 +3,7 @@
 一个本地运行的研发助手智能体，内含两个可切换的智能体：
 
 - 🎯 **面试出题官**：配置自己的模型（任意 OpenAI 兼容接口），选择技术方向 / 细分方向 / 级别 / 经验 / 行业背景，上传简历（txt / md / pdf / docx / 图片），由 **AgentScope 多智能体** 生成针对性面试题，支持对话式追问与结构化评分。
-- 🛡️ **代码审核官**：配置代码仓库地址（GitHub / GitLab，支持 Token），按间隔**自动轮询 PR**、拉取 diff 交给三智能体（侦察官 → 审核官 → 裁决官）自动审核、给出结构化意见与风险结论，并可在聊天里追问这份审核；可选**一键回帖**到 PR。
+- 🛡️ **代码审核官**：配置代码仓库地址（GitHub / GitLab / Gitee，含企业版与私有部署，支持 Token），按间隔**自动轮询 PR**、拉取 diff 交给三智能体（侦察官 → 审核官 → 裁决官）自动审核、给出结构化意见与风险结论，并可在聊天里追问这份审核；可选**一键回帖**到 PR。
 
 前端为 **React SPA（Vite）+ CopilotKit**，后端为 **Node（托管 + CopilotKit runtime + 反向代理）+ Python FastAPI（智能体 + 数据服务）**，前后端分离。
 
@@ -240,7 +240,7 @@ node --experimental-strip-types tests/test_qcard.ts
 ### 代码审核官怎么用
 
 1. 点输入框上方的「🛡️ 代码审核官」，首次使用（还没有仓库）会自动弹出仓库配置。
-2. 填代码地址（`https://github.com/owner/repo`、`github.com/owner/repo`、`git@github.com:owner/repo.git`、`owner/repo` 都能识别；GitLab 同理），私有仓库填 Token，设置轮询间隔与是否自动回帖。
+2. 填代码地址（`https://github.com/owner/repo`、`github.com/owner/repo`、`git@github.com:owner/repo.git`、`owner/repo` 都能识别；GitLab / Gitee 同理），私有仓库填 Token，设置轮询间隔与是否自动回帖。
 3. 点「测试连接」确认能读到 PR，再点「保存并轮询」；之后按间隔自动轮询，也可在状态条点「立即轮询」。
 4. 工作台列出开放 PR，未审的前面有圆点；点某个 PR 可直接审核，或在下一轮自动被审。
 5. 审核完成出报告卡：风险 / 结论徽章、问题清单（按严重度分组）、亮点与建议、三智能体耗时；有 Token 时可在卡片上「🚀 回帖到 PR」。
@@ -481,7 +481,7 @@ node tests/mock_llm.js                                # mock 上游（含审核�
 | 上下文很长、模型重复回答同一个问题 | 检查是否又给 `AgentState(context=...)` 预置了历史又往 `inputs` 里传了一遍（见「上下文语义」） |
 | 页面提示「AgentScope 智能体服务未连接」 | Python 服务没起来：双击 `start.bat`，或手动 `.venv\Scripts\python.exe backend\run.py` |
 | 出题报「模型未配置」 | 点右上角齿轮完成模型配置；每次发消息前页面会自动同步配置到 Node 与 Python |
-| `平台接口返回 HTTP 404` 且末尾是一段网页（如「你所访问的页面不存在」） | 自建实例的**平台类型判错了**：GitLab 走 `/api/v4`，Gitea 等走 `/api/v3`，猜错就会命中对方网页 404。在仓库配置里把「平台」明确选成 GitLab（或更新到带自动探测的版本，保存/测试时会自动识别） |
+| `平台接口返回 HTTP 404` 且末尾是一段网页（如「你所访问的页面不存在」） | 自建实例的**平台类型判错了**：GitLab 走 `/api/v4`，Gitee（含企业版 / Gitee Premium 私有部署）走 `/api/v5`，GitHub 企业版走 `/api/v3`，猜错就会命中对方网页 404。在仓库配置里把「平台」明确选对（新版也会在保存/测试时自动探测并纠正） |
 | `模型 API Key 无效`（401） | 齿轮弹框里 Key 填错或额度不足 |
 | `接口或模型不存在`（404） | API 地址要以 `/v1` 结尾；或模型名不对，点「拉取模型列表」选一个 |
 | `连接被拒绝 ECONNREFUSED` | 本地模型（Ollama）没启动，或地址端口写错 |

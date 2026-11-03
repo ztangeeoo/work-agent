@@ -138,7 +138,7 @@ export default function RepoSetup({ open, onClose, repo, onSaved, onDeleted, toa
             onChange={(e) => setUrl(e.target.value)}
           />
           <div className="hint">
-            支持 GitHub / GitLab（含自建实例）。私有仓库需要在下面填 Access Token；公开仓库可以留空（限流较低）。
+            支持 GitHub / GitLab / Gitee（均含企业版、私有部署）。私有仓库需要在下面填 Access Token；公开仓库可以留空（限流较低）。
           </div>
 
           <div className="row2" style={{ marginTop: 12 }}>
@@ -148,6 +148,7 @@ export default function RepoSetup({ open, onClose, repo, onSaved, onDeleted, toa
                 <option value="auto">自动识别</option>
                 <option value="github">GitHub</option>
                 <option value="gitlab">GitLab</option>
+                <option value="gitee">Gitee</option>
               </select>
             </div>
             <div>
@@ -162,11 +163,12 @@ export default function RepoSetup({ open, onClose, repo, onSaved, onDeleted, toa
           <input
             type="password"
             value={token}
-            placeholder={repo?.hasToken ? '已配置，留空表示不修改' : 'github_pat_... / glpat-...（只存在本机 SQLite）'}
+            placeholder={repo?.hasToken ? '已配置，留空表示不修改' : 'github_pat_... / glpat-... / Gitee 私人令牌（只存在本机 SQLite）'}
             onChange={(e) => setToken(e.target.value)}
           />
           <div className="hint">
-            GitHub 需要 <code>repo</code> 读权限（回帖还需要 issues 写权限）；GitLab 需要 <code>api</code> 权限。
+            GitHub 需要 <code>repo</code> 读权限（回帖还需要 issues 写权限）；GitLab 需要 <code>api</code> 权限；
+            Gitee 私人令牌需要勾选 <code>projects</code> 与 <code>pull_requests</code>（回帖还需要 <code>notes</code>）。
           </div>
 
           <div className="row2" style={{ marginTop: 14 }}>

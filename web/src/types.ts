@@ -63,7 +63,7 @@ export interface AgentDef {
 export interface Repo {
   id: string;
   url: string;
-  provider: 'github' | 'gitlab';
+  provider: 'github' | 'gitlab' | 'gitee';
   host: string;
   owner: string;
   name: string;

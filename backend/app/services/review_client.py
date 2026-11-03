@@ -4,8 +4,13 @@
 
 负责三件事（其余交给 app/agents/review.py 的三智能体审核流水线）：
   1. 解析用户填的「代码地址」→ provider / owner / name
-  2. 拉取开放 PR（GitHub Pull Request / GitLab Merge Request）与 diff
+  2. 拉取开放 PR（GitHub Pull Request / GitLab Merge Request / Gitee Pull Request）与 diff
   3. 把审核意见回帖到 PR（可选，默认关闭）
+
+支持的平台（含私有部署）：
+  github  api.github.com，自建走 /api/v3
+  gitlab  /api/v4（含 lggit.xxx 这类自建实例）
+  gitee   /api/v5（Gitee 企业版 / Gitee Premium 私有部署同样是 v5）
 
 网络说明：本机若有 HTTP(S)_PROXY（公司代理 / 科学上网），https 目标
 会通过代理 CONNECT 隧道访问；localhost 与「代理自身地址」直连。
@@ -27,6 +32,18 @@ MAX_REVIEWS_PER_POLL = 3  # 单次轮询最多审几个，避免一次刷爆模�
 
 _SCP_RE = re.compile(r"^git@([^:]+):(.+)$")
 _OWNER_REPO_RE = re.compile(r"^[\w.-]+/[\w.-]+$")
+
+PROVIDERS = ("github", "gitlab", "gitee")
+
+
+def host_hint(host: str) -> str:
+    """按域名猜平台（猜不准没关系，自建实例后面会探测校准）。"""
+    h = (host or "").lower()
+    if "gitlab" in h:
+        return "gitlab"
+    if "gitee" in h or "git.oschina" in h:
+        return "gitee"
+    return "github"
 
 
 def parse_repo_url(raw_input, provider_override=None) -> dict:
@@ -77,8 +94,8 @@ def parse_repo_url(raw_input, provider_override=None) -> dict:
     host = (u.hostname or "").lower()
 
     provider = str(provider_override or "").lower()
-    if provider not in ("github", "gitlab"):
-        provider = "gitlab" if "gitlab" in host else "github"
+    if provider not in PROVIDERS:
+        provider = host_hint(host)
 
     netloc = u.netloc
     return {
@@ -169,14 +186,21 @@ def _api_message(text: str, content_type: str = "") -> str:
     return ""
 
 
+def auth_header(provider: str, token: str) -> dict:
+    """各平台的鉴权头：GitLab 用 PRIVATE-TOKEN，Gitee 用 Authorization: token，GitHub 用 Bearer。"""
+    if not token:
+        return {}
+    if provider == "gitlab":
+        return {"PRIVATE-TOKEN": token}
+    if provider == "gitee":
+        return {"Authorization": "token " + token}
+    return {"Authorization": "Bearer " + token}
+
+
 async def api_json(url: str, token: str = "", headers: dict | None = None, method: str = "GET",
                    body=None, provider: str = "github"):
     h = {"Accept": "application/json", **(headers or {})}
-    if token:
-        if provider == "gitlab":
-            h["PRIVATE-TOKEN"] = token
-        else:
-            h["Authorization"] = "Bearer " + token
+    h.update(auth_header(provider, token))
     if provider == "github":
         h["X-GitHub-Api-Version"] = "2022-11-28"
     res = await request(url, method=method, headers=h, body=body)
@@ -189,9 +213,9 @@ async def api_json(url: str, token: str = "", headers: dict | None = None, metho
             hint = "（Token 无效、权限不足或触发限流）"
         elif res.status_code == 404 and html:
             hint = ("（接口路径不存在，不是仓库问题：自建实例请在「平台」里选对类型"
-                    "——GitLab 用 /api/v4，Gitea 等用 /api/v3）")
+                    "——GitLab 用 /api/v4，Gitee（含企业版）用 /api/v5，GitHub 企业版用 /api/v3）")
         elif res.status_code == 404:
-            hint = "（仓库不存在、是私有仓库但未配 Token，或地址写错）"
+            hint = "（仓库不存在、是私有仓库但未配 Token、Token 不属于该实例，或地址写错）"
         raise RuntimeError(f"平台接口返回 HTTP {res.status_code}{hint}：{msg}")
     try:
         return res.json()
@@ -201,61 +225,81 @@ async def api_json(url: str, token: str = "", headers: dict | None = None, metho
 
 # ------------------------------------------------------------------ 平台适配
 
-# 自建实例的平台探测缓存：host -> "gitlab" | "github"
+# 自建实例的平台探测缓存：host -> "gitlab" | "gitee" | "github"
 _PROVIDER_CACHE: dict[str, str] = {}
 _GITHUB_HOSTS = ("github.com", "www.github.com", "api.github.com")
+_GITLAB_HOSTS = ("gitlab.com", "www.gitlab.com")
+_GITEE_HOSTS = ("gitee.com", "www.gitee.com")
+
+# 探测用：路径 -> 平台。Gitee 独有 /api/v5，GitLab 独有 /api/v4
+_PROBE_PATHS = (("/api/v5/user", "gitee"), ("/api/v4/projects?per_page=1", "gitlab"))
 
 
-async def detect_provider(host: str, token: str = "") -> str:
+async def _probe_json(host: str, path: str, provider: str, token: str) -> bool:
+    """探一个路径：返回 JSON 就算这个平台存在（200/401/403 都算，网页 404 不算）。"""
+    h = {"Accept": "application/json", **auth_header(provider, token)}
+    try:
+        res = await request("https://" + host + path, headers=h, timeout=8.0)
+    except Exception:
+        return False
+    ct = (res.headers.get("content-type") or "").lower()
+    if "json" not in ct:
+        return False
+    body = (res.text or "").lstrip()[:1]
+    return body in ("{", "[")
+
+
+async def detect_provider(host: str, token: str = "", fallback: str = "github") -> str:
     """
-    判断自建实例是 GitLab 还是 GitHub 系（GitHub / Gitea）。
+    判断实例是 GitLab / Gitee / GitHub 系（GitHub Enterprise）。
 
-    判据是 /api/v4/projects 有没有 JSON 响应：
-      - GitLab：有该路由，200（公开）或 401（未授权）都返回 JSON；
-      - Gitea / 其它：该路径不存在，返回自家的 HTML 404 页面。
-    只看域名里有没有 "gitlab" 会漏掉 lggitee.xxx 这类自建实例，所以改用探测。
+    判据是各自的独有路由有没有 JSON 响应：
+      - Gitee（含 Gitee Premium 私有部署）：/api/v5/user → 200 或 401 JSON；
+      - GitLab：/api/v4/projects → 200 或 401 JSON；
+      - 其它（GHE 等）：两个路径都返回自家 HTML 404 → 落到 fallback。
+    只看域名里有没有 "gitlab"/"gitee" 会不稳，所以一律以探测结果为准。
     """
     host = (host or "").lower()
     if not host or host in _GITHUB_HOSTS:
         return "github"
+    if host in _GITLAB_HOSTS:
+        return "gitlab"
+    if host in _GITEE_HOSTS:
+        return "gitee"
     if host in _PROVIDER_CACHE:
         return _PROVIDER_CACHE[host]
 
-    provider = "github"
-    try:
-        h = {"Accept": "application/json"}
-        if token:
-            h["PRIVATE-TOKEN"] = token
-        res = await request("https://" + host + "/api/v4/projects?per_page=1",
-                            headers=h, timeout=8.0)
-        ct = (res.headers.get("content-type") or "").lower()
-        if "json" in ct or res.status_code in (200, 401, 403):
-            provider = "gitlab"
-    except Exception:
-        # 探测失败（断网/代理不通）时不缓存，沿用调用方传进来的判断
-        return _PROVIDER_CACHE.get(host, provider)
+    for path, provider in _PROBE_PATHS:
+        if await _probe_json(host, path, provider, token):
+            _PROVIDER_CACHE[host] = provider
+            return provider
 
-    _PROVIDER_CACHE[host] = provider
-    return provider
+    # 探测都没命中（断网 / 反代改写）：不缓存，沿用调用方给的值
+    return fallback or host_hint(host)
 
 
 async def ensure_provider(repo: dict) -> dict:
-    """自建实例自动校准 provider（就地改写 repo['provider']），返回同一个 dict。"""
+    """自建实例自动校准 provider（就地改写 repo['provider']），返回同一个 dict。
+
+    注意：每次都校准，不因为库里存着 "gitlab" 就直接信任 ——
+    早期版本会把 Gitee 私有部署误判成 GitLab，靠这里才能自动纠正。
+    """
     if not isinstance(repo, dict):
         return repo
     host = (repo.get("host") or "").lower()
-    if not host or host in _GITHUB_HOSTS:
-        repo["provider"] = "github"
+    if not host:
         return repo
-    if repo.get("provider") == "gitlab":
-        return repo          # 已明确是 GitLab，不必探测
-    repo["provider"] = await detect_provider(host, repo.get("token") or "")
+    repo["provider"] = await detect_provider(
+        host, repo.get("token") or "", fallback=repo.get("provider") or host_hint(host)
+    )
     return repo
 
 
 def _repo_api_base(repo: dict) -> str:
     if repo.get("provider") == "gitlab":
         return "https://" + repo["host"] + "/api/v4"
+    if repo.get("provider") == "gitee":
+        return "https://" + repo["host"] + "/api/v5"
     if repo.get("host") == "github.com":
         return "https://api.github.com"
     return "https://" + repo["host"] + "/api/v3"
@@ -295,6 +339,25 @@ async def list_open_prs(repo: dict, limit: int = 20, max_age_days: int = 45) -> 
                 "state": "open" if mr.get("state") == "opened" else (mr.get("state") or "open"),
                 "draft": bool(mr.get("draft") or mr.get("work_in_progress")),
                 "updatedAt": _parse_ts(mr.get("updated_at")),
+            })
+    elif repo.get("provider") == "gitee":
+        url = (_repo_api_base(repo) + "/repos/" + repo["owner"] + "/" + repo["name"]
+               + "/pulls?state=open&sort=updated&direction=desc&per_page=" + str(limit))
+        arr = await api_json(url, token=token, provider="gitee") or []
+        if isinstance(arr, dict):   # 出错时可能是 {"message": ...}
+            arr = []
+        for pr in arr:
+            out.append({
+                "number": pr.get("number"),
+                "title": pr.get("title") or "",
+                "author": ((pr.get("user") or {}).get("login")) or "",
+                "url": pr.get("html_url") or "",
+                "baseBranch": ((pr.get("base") or {}).get("ref")) or "",
+                "headBranch": ((pr.get("head") or {}).get("ref")) or "",
+                "headSha": ((pr.get("head") or {}).get("sha")) or "",
+                "state": pr.get("state") or "open",
+                "draft": bool(pr.get("draft")),
+                "updatedAt": _parse_ts(pr.get("updated_at") or pr.get("created_at")),
             })
     else:
         url = (_repo_api_base(repo) + "/repos/" + repo["owner"] + "/" + repo["name"]
@@ -340,9 +403,40 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
+def _looks_like_diff(text: str) -> bool:
+    t = str(text or "")
+    return "diff --git " in t or "\n@@" in t or t.lstrip().startswith("--- ")
+
+
 async def fetch_pr_diff(repo: dict, number) -> str:
     """拉取某个 PR 的 unified diff 文本（超长截断，附提示）"""
     repo = await ensure_provider(repo)
+    if repo.get("provider") == "gitee":
+        base = _repo_api_base(repo)
+        path = ("/repos/" + repo["owner"] + "/" + repo["name"]
+                + "/pulls/" + str(number))
+        token = repo.get("token") or ""
+        res = await request(base + path + ".diff",
+                            headers={**auth_header("gitee", token), "Accept": "text/plain"},
+                            timeout=45.0)
+        text = res.text or ""
+        if 200 <= res.status_code < 300 and _looks_like_diff(text):
+            return truncate_diff(text, text.count("\ndiff --git ") + (1 if text.startswith("diff --git ") else 0))
+        if res.status_code in (401, 403):
+            raise RuntimeError("拉取 PR diff 失败（HTTP " + str(res.status_code)
+                               + "）：Token 无效或无权访问该仓库")
+        # 部分版本没有 .diff 路由：退回 /files，用每个文件的 patch 拼 diff
+        j = await api_json(base + path + "/files", token=token, provider="gitee")
+        files = j if isinstance(j, list) else []
+        parts = []
+        for f in files:
+            patch = f.get("patch") or f.get("diff") or ""
+            if not str(patch).strip():
+                continue
+            fn = f.get("filename") or f.get("new_path") or ""
+            parts.append("diff --git a/" + str(fn) + " b/" + str(fn) + "\n" + str(patch))
+        return truncate_diff("\n".join(parts), len(parts))
+
     if repo.get("provider") == "gitlab":
         url = (_repo_api_base(repo) + "/projects/" + _gitlab_project_id(repo)
                + "/merge_requests/" + str(number) + "/changes")
@@ -396,8 +490,14 @@ def truncate_diff(text, file_count=None) -> str:
 
 
 async def post_pr_comment(repo: dict, number, body: str) -> dict:
-    """回帖：GitHub 用 issue comments，GitLab 用 notes"""
+    """回帖：GitHub 用 issue comments，GitLab 用 notes，Gitee 用 PR comments"""
     repo = await ensure_provider(repo)
+    if repo.get("provider") == "gitee":
+        url = (_repo_api_base(repo) + "/repos/" + repo["owner"] + "/" + repo["name"]
+               + "/pulls/" + str(number) + "/comments")
+        await api_json(url, token=repo.get("token") or "", provider="gitee",
+                       method="POST", body={"body": body})
+        return {"ok": True, "url": repo["url"] + "/pulls/" + str(number)}
     if repo.get("provider") == "gitlab":
         url = (_repo_api_base(repo) + "/projects/" + _gitlab_project_id(repo)
                + "/merge_requests/" + str(number) + "/notes")

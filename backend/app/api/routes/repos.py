@@ -42,7 +42,8 @@ async def api_repos_save(request: Request):
         parsed = rv.parse_repo_url(body.get("url"), body.get("provider"))
     except Exception as e:
         return err(str(e), 400)
-    # 用户没显式选平台时，对自建实例探测一次（GitLab 走 /api/v4，Gitea 走 /api/v3，猜错就是 404）
+    # 用户没显式选平台时，对自建实例探测一次
+    # （GitLab 走 /api/v4，Gitee 含企业版走 /api/v5，GitHub 企业版走 /api/v3，猜错就是 404）
     # 注意：探测只借用 token 发请求，不能把 token 写回 parsed —— save_repo 见到 token='' 会清空已存的 Token
     if not str(body.get("provider") or "").strip():
         try:

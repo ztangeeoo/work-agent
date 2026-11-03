@@ -106,7 +106,9 @@ def save_repo(data: dict, user: str = DEFAULT_USER) -> dict:
             interval = min(max(int(data.get("intervalSec") or 120), 30), 3600)
         except Exception:
             interval = 120
-        provider = "gitlab" if str(data.get("provider") or "github").lower() == "gitlab" else "github"
+        provider = str(data.get("provider") or "github").lower()
+        if provider not in ("github", "gitlab", "gitee"):
+            provider = "github"
         enabled = 1 if data.get("enabled") is None else (1 if data.get("enabled") else 0)
 
         db.execute(
