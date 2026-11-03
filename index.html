@@ -248,33 +248,19 @@
   }
   .chat-wrap.hide { display: none; }
 
-  /* ---- 智能体栏（聊天框上方） ---- */
-  .agent-bar {
-    display: flex; align-items: center; gap: 10px; padding: 10px 20px;
-    background: var(--panel); border-top: 1px solid var(--border); flex-shrink: 0;
+  /* ---- 对话头部：当前专家徽标（更换专家入口） ---- */
+  .expert-chip {
+    display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0;
+    padding: 5px 11px 5px 5px; border: 1px solid var(--border); border-radius: 999px;
+    background: #fff; cursor: pointer; transition: all .13s; font-size: 12px; font-weight: 600;
+    color: var(--text); font-family: inherit;
   }
-  .agent-card {
-    flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px;
-    padding: 9px 14px; border: 1.5px solid var(--border); border-radius: 12px;
-    cursor: pointer; transition: all .15s; background: linear-gradient(135deg, #f7f9ff, #ffffff);
+  .expert-chip:hover { border-color: var(--primary); color: var(--primary); }
+  .expert-chip .chip-ico {
+    width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; font-size: 13px; color: #fff; flex-shrink: 0;
   }
-  .agent-card:hover { border-color: var(--primary); box-shadow: 0 2px 10px rgba(79, 110, 247, .14); }
-  .agent-card.active { border-color: var(--primary); background: var(--primary-light); }
-  .agent-icon {
-    width: 38px; height: 38px; border-radius: 10px; flex-shrink: 0;
-    background: linear-gradient(135deg, #4f6ef7, #7c5cf5);
-    display: flex; align-items: center; justify-content: center; font-size: 18px;
-  }
-  .agent-info { flex: 1; min-width: 0; }
-  .agent-name { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
-  .agent-badge {
-    font-size: 10px; font-weight: 500; color: var(--primary); background: #fff;
-    border: 1px solid var(--primary); border-radius: 999px; padding: 1px 8px; line-height: 1.4;
-  }
-  .agent-desc {
-    font-size: 11px; color: var(--sub); margin-top: 2px;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
+  .expert-chip .chip-arrow { color: var(--sub); font-size: 11px; margin-left: 1px; }
 
   /* 输入区 */
   .chat-input {
@@ -452,24 +438,20 @@
   <!-- ============ 右侧对话 ============ -->
   <div class="chat-wrap" id="chatView">
     <div class="chat-head">
-      <div>
+      <button class="expert-chip" id="expertChip" title="点击更换专家"></button>
+      <div style="flex:1; min-width:0">
         <div class="title" id="chatTitle">面试对话</div>
-        <div class="meta" id="chatMeta">点击下方「面试出题官」卡片开始</div>
+        <div class="meta" id="chatMeta">在左侧「专家」中选择一位专家开始任务</div>
       </div>
-      <div class="spacer"></div>
+      <button class="btn btn-ghost btn-sm" id="btnAgentCfg">⚙️ 面试配置</button>
       <button class="btn btn-ghost btn-sm" id="btnClear">清空对话</button>
     </div>
     <div class="chat-list" id="chatList">
       <div class="empty-state" id="emptyState">
         <div class="big">🎯</div>
-        <p>点击下方「面试出题官」卡片，新建面试会话</p>
+        <p>在左侧「专家」中选择面试出题官</p>
         <p>填写面试配置（方向 / 级别 / 经验 / 简历）并确认，即可生成面试题</p>
       </div>
-    </div>
-    <!-- 智能体栏：位于聊天框上方 -->
-    <div class="agent-bar">
-      <div class="agent-card" id="agentCard" title="点击切换到该智能体，并新建一个会话"></div>
-      <button class="btn btn-ghost btn-sm" id="btnAgentCfg">⚙️ 面试配置</button>
     </div>
     <div class="chat-input">
       <textarea id="inputBox" placeholder="输入消息…（Enter 发送，Shift+Enter 换行）"></textarea>
@@ -1547,18 +1529,18 @@ function selectExpert(id){
 }
 $('expertEntry').onclick = ()=>{ state.view === 'experts' ? showChatView() : showExpertView(); };
 
-/* ================= 当前专家栏（聊天框上方） ================= */
+/* ================= 当前专家（对话头部徽标） ================= */
 function renderAgentBar(){
   const ag = currentExpert();
-  $('agentCard').innerHTML = `
-    <span class="agent-icon" style="background:${ag.avatar}">${ag.icon}</span>
-    <div class="agent-info">
-      <div class="agent-name">${esc(ag.name)}<span class="agent-badge">当前</span></div>
-      <div class="agent-desc">${esc(ag.role)} · 点击更换专家 / 新建任务</div>
-    </div>`;
+  const chip = $('expertChip');
+  if(chip){
+    chip.innerHTML = `<span class="chip-ico" style="background:${ag.avatar}">${ag.icon}</span>` +
+      `<span>${esc(ag.name)}</span><span class="chip-arrow">›</span>`;
+    chip.title = '当前专家：' + ag.name + '，点击更换';
+  }
   $('btnAgentCfg').textContent = ag.id === 'reviewer' ? '🛡️ 仓库配置' : '⚙️ 面试配置';
 }
-$('agentCard').onclick = ()=>{ if(!state.busy) showExpertView(); };
+$('expertChip').onclick = ()=>{ if(!state.busy) showExpertView(); };
 
 /* ================= 任务配置弹框（面试 / 审核 两套字段） ================= */
 const agentModal = $('agentModal');
