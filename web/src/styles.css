@@ -240,23 +240,103 @@ html, body { height: 100%; }
   .typing i:nth-child(3) { animation-delay: .4s; }
   @keyframes blink { 0%,80%,100% { opacity: .25; } 40% { opacity: 1; } }
 
-  /* ---- 智能体栏（聊天框上方） ---- */
-  /* 输入框上方的智能体切换条：两个分段标签 + 右侧配置开关 */
-  .agent-bar {
-    display: flex; align-items: center; gap: 10px; padding: 8px 20px;
-    background: var(--panel); border-top: 1px solid var(--border); flex-shrink: 0;
+  /* ---- 左侧「专家」入口 ---- */
+  .side-experts { margin-bottom: 16px; }
+  .expert-entry {
+    width: 100%; display: flex; align-items: center; gap: 10px; padding: 9px 11px;
+    border: 1px solid var(--border); border-radius: var(--md-radius-xl); cursor: pointer;
+    background: var(--md-surface-1); font-family: inherit; text-align: left;
+    transition: border-color var(--md-dur-fast), background var(--md-dur-fast);
   }
-  .agent-bar .spacer { flex: 1; }
-  .agent-tabs { display: flex; gap: 6px; min-width: 0; }
-  .agent-tab {
-    display: inline-flex; align-items: center; justify-content: center; white-space: nowrap;
-    padding: 6px 14px; border-radius: var(--md-radius-pill); border: 1px solid var(--border);
-    background: var(--md-surface-1); color: var(--text); font-size: 12.5px; font-family: inherit;
-    cursor: pointer; transition: border-color var(--md-dur-fast), background var(--md-dur-fast), color var(--md-dur-fast);
+  .expert-entry:hover { border-color: var(--md-brand); background: var(--md-brand-subtle); }
+  .expert-entry.active { border-color: var(--md-brand); background: var(--md-brand-subtle); }
+  .expert-entry-ico {
+    width: 30px; height: 30px; border-radius: var(--md-radius-lg); flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, var(--md-brand), var(--md-brand-solid));
+    color: var(--md-on-brand); font-size: 13px; font-weight: var(--md-fw-medium);
   }
-  .agent-tab:hover { border-color: var(--md-brand); }
-  .agent-tab.active { border-color: var(--md-brand); background: var(--md-brand-subtle); color: var(--md-brand-text); font-weight: var(--md-fw-medium); }
-  .agent-bar .btn.is-on { border-color: var(--md-brand); color: var(--md-brand-text); background: var(--md-brand-subtle); }
+  .expert-entry-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .expert-entry-title {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: var(--md-fw-medium); color: var(--text);
+  }
+  .expert-entry-count {
+    font-size: 10px; line-height: 1.6; padding: 0 7px; border-radius: var(--md-radius-pill);
+    border: 1px solid var(--md-brand); color: var(--md-brand-text); background: var(--md-surface-1);
+  }
+  .expert-entry-desc { font-size: 11px; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .expert-entry-arrow { color: var(--sub); font-size: 14px; flex-shrink: 0; }
+
+  /* ---- 右侧：专家选择视图 ---- */
+  .expert-view { flex: 1; min-width: 0; overflow-y: auto; }
+  .expert-view-inner { max-width: 880px; margin: 0 auto; padding: 30px 26px 48px; }
+  .expert-view-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .expert-view-inner h1 { font-size: 19px; font-weight: var(--md-fw-medium); color: var(--text); }
+  .expert-view-inner .lead { margin-top: 7px; font-size: 13px; line-height: 1.75; color: var(--sub); }
+  .expert-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 22px; }
+  .expert-card {
+    display: flex; flex-direction: column; gap: 11px; padding: 18px; text-align: left;
+    background: var(--md-surface-1); border: 1px solid var(--border);
+    border-radius: var(--md-radius-2xl); cursor: pointer; font-family: inherit;
+    transition: border-color var(--md-dur-fast), box-shadow var(--md-dur-fast), transform var(--md-dur-fast);
+  }
+  .expert-card:hover {
+    border-color: var(--md-brand); transform: translateY(-2px);
+    box-shadow: var(--md-shadow-3);
+  }
+  .expert-card.current { border-color: var(--md-brand); background: var(--md-brand-subtle); }
+  .expert-card-top { display: flex; align-items: center; gap: 12px; }
+  .expert-avatar {
+    width: 46px; height: 46px; border-radius: var(--md-radius-xl); flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, var(--md-brand), var(--md-brand-solid));
+    color: var(--md-on-brand); font-size: 18px; font-weight: var(--md-fw-medium);
+  }
+  .expert-card-title { min-width: 0; }
+  .expert-name { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: var(--md-fw-medium); color: var(--text); }
+  .expert-now {
+    font-size: 10px; line-height: 1.6; padding: 0 7px; border-radius: var(--md-radius-pill);
+    border: 1px solid var(--md-brand); color: var(--md-brand-text); background: var(--md-surface-1);
+  }
+  .expert-role { margin-top: 2px; font-size: 11px; color: var(--sub); }
+  .expert-desc { font-size: 12.5px; line-height: 1.75; color: var(--md-text-2); }
+  .expert-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .expert-tag {
+    font-size: 10.5px; line-height: 1.6; padding: 2px 9px; border-radius: var(--md-radius-pill);
+    color: var(--md-brand-text); background: var(--md-brand-subtle);
+  }
+  .expert-go {
+    margin-top: auto; padding-top: 4px; display: flex; align-items: center; gap: 5px;
+    font-size: 12px; font-weight: var(--md-fw-medium); color: var(--md-brand-text);
+  }
+
+  /* ---- 对话头部：当前专家徽标（点击更换专家） ---- */
+  .chat-head-main { min-width: 0; }
+  .expert-chip {
+    display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0;
+    padding: 4px 10px 4px 4px; border: 1px solid var(--border); border-radius: var(--md-radius-pill);
+    background: var(--md-surface-1); color: var(--text); font-family: inherit;
+    font-size: 12px; font-weight: var(--md-fw-medium); cursor: pointer;
+    transition: border-color var(--md-dur-fast), color var(--md-dur-fast);
+  }
+  .expert-chip:hover { border-color: var(--md-brand); color: var(--md-brand-text); }
+  .expert-chip-ico {
+    width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, var(--md-brand), var(--md-brand-solid));
+    color: var(--md-on-brand); font-size: 12px;
+  }
+  .expert-chip-arrow { color: var(--sub); font-size: 11px; }
+
+  /* 会话标题前的专家标记 */
+  .convo-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; margin-right: 5px; border-radius: var(--md-radius-xs);
+    font-size: 10px; line-height: 1; vertical-align: 1px;
+    background: var(--md-brand-subtle); color: var(--md-brand-text);
+  }
+  .convo-badge.is-review { background: var(--md-surface-2); color: var(--md-text-2); }
 
   /* 输入区 */
   .chat-input {
@@ -672,11 +752,10 @@ html, body { height: 100%; }
   .btn.danger { color: var(--danger); border-color: var(--md-danger-border); }
   .btn.danger:hover { background: var(--md-danger-subtle); border-color: var(--danger); color: var(--danger); }
 
-  /* 窄屏：智能体标签与状态条换行，弹框占满宽度 */
+  /* 窄屏：专家卡片单列，弹框占满宽度 */
   @media (max-width: 900px) {
-    .agent-bar { flex-wrap: wrap; }
-    .agent-tabs { width: 100%; }
-    .agent-tab { flex: 1; justify-content: center; }
+    .expert-grid { grid-template-columns: 1fr; }
+    .expert-view-inner { padding: 18px 14px 32px; }
     .review-bar { flex-wrap: wrap; }
     .rb-status { max-width: 100%; }
     .modal-wide { width: 100%; }

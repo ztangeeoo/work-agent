@@ -18,11 +18,19 @@ export const LEVELS = ['初级', '中级', '高级', '专家'];
 export const EXPS = ['应届/实习', '1-3年', '3-5年', '5-10年', '10年以上'];
 export const INDUSTRIES = ['不限', '互联网/电商', '金融/银行', '证券/基金', '游戏', '在线教育', '医疗健康', '智能制造', '汽车/自动驾驶', '云计算/SaaS', '社交/内容', '物流/供应链', '政务/国企', '通信/运营商'];
 
-/** 智能体列表：聊天框上方可切换
+/** 专家列表：从左侧「专家」入口进入后，在右侧选择
  *  icon 只作头像用的单字标记 —— 界面主题色单一，不再塞彩色 emoji */
 export const AGENTS: AgentDef[] = [
-  { id: 'interviewer', name: '面试出题官', icon: '面', desc: '按方向 / 级别 / 经验 / 简历智能出题', mode: 'interview' },
-  { id: 'reviewer', name: '代码审核官', icon: '审', desc: '配置代码地址，轮询 PR 自动审核并给出修改意见', mode: 'review' },
+  {
+    id: 'interviewer', name: '面试出题官', icon: '面', mode: 'interview',
+    desc: '按技术方向 / 级别 / 经验 / 行业背景 / 简历智能出题，支持追问与结构化评分复盘。',
+    role: 'AI 技术面试官', tags: ['智能出题', '简历深挖', '评分复盘'], cta: '开始出题',
+  },
+  {
+    id: 'reviewer', name: '代码审核官', icon: '审', mode: 'review',
+    desc: '轮询仓库开放 PR，按正确性 / 安全 / 并发性能 / 可维护性 / 测试五维审核，给出风险等级与合入结论。',
+    role: 'AI Code Reviewer', tags: ['PR 审核', '风险定级', '修复建议'], cta: '开始审核',
+  },
 ];
 
 export const DEFAULT_PROFILE = {

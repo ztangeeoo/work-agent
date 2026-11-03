@@ -95,9 +95,9 @@ export default function ChatPanel({
         {shown.length === 0 && (empty === undefined ? (
           <div className="empty-state">
             <div className="big">面</div>
-            <p>点输入框上方的「面试配置」选好方向与级别，再点「确认并生成面试题」</p>
+            <p>在左侧「专家」里选择面试出题官，填好方向与级别后确认，即可生成面试题</p>
             <p>也可以直接在输入框里提问，例如「再出 3 道算法题」</p>
-            <p>换一个智能体？点输入框上方的「代码审核官」</p>
+            <p>想换个专家？点左侧「专家」或标题栏的专家徽标</p>
           </div>
         ) : empty)}
         {shown.map((m, i) => {

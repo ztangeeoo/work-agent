@@ -48,6 +48,12 @@ export interface AgentDef {
   icon: string;
   desc: string;
   mode: AgentMode;
+  /** 专家卡片上的角色副标题 */
+  role?: string;
+  /** 专家卡片上的能力标签 */
+  tags?: string[];
+  /** 专家卡片主按钮文案 */
+  cta?: string;
 }
 
 /* ---------- 代码审核 ---------- */

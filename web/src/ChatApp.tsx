@@ -18,7 +18,7 @@ import {
 } from './lib/review';
 import type { AgentMode, ChatMessage, Convo, ModelCfg, PRItem, Profile, Repo, ReviewItem } from './types';
 import ConvoSidebar from './components/ConvoSidebar';
-import AgentSwitcher from './components/AgentSwitcher';
+import ExpertPicker from './components/ExpertPicker';
 import ChatPanel from './components/ChatPanel';
 import AgentTrace from './components/AgentTrace';
 import ConfigModal from './components/ConfigModal';
@@ -68,6 +68,13 @@ export default function ChatApp() {
   const [repoEditing, setRepoEditing] = useState<Repo | null>(null);
   const [repoErr, setRepoErr] = useState('');
 
+  /* ---------- 视图：对话 / 专家选择 ---------- */
+  const [view, setView] = useState<'chat' | 'experts'>('chat');
+  /** 从专家入口选了审核官后，等仓库配置保存完成再真正创建任务 */
+  const pendingTaskRef = useRef<'' | 'review'>('');
+  /** 新会话建好后要发送的首轮指令（等 reset 落地再发） */
+  const pendingPromptRef = useRef('');
+
   /* ---------- 多会话 ---------- */
   const [convos, setConvos] = useState<{ activeId: string; list: Convo[] }>(() => {
     const d = loadConvos();
@@ -115,6 +122,7 @@ export default function ChatApp() {
     if (conv && conv.messages && conv.messages.length) {
       setMessages(conv.messages.map(m => ({ id: m.id, role: m.role, content: m.content })));
       if (conv.profile) setProfile({ ...newProfile(), ...conv.profile });
+      if (conv.mode) setMode(conv.mode);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -414,16 +422,21 @@ export default function ChatApp() {
   }, [cfg, isLoading, sendMessage, setMessages, syncModelConfig, toast]);
 
   /* ---------- 会话操作 ---------- */
-  const newConvo = useCallback((silent = false) => {
+  const newConvo = useCallback((silent = false, opts: { mode?: AgentMode; title?: string } = {}) => {
     if (isLoading) return;
     saveCurrent();
+    const nextMode = opts.mode || mode;
+    if (opts.mode) {
+      setMode(opts.mode);
+      localStorage.setItem(LS_MODE, opts.mode);
+    }
     /* 记录旧消息 id：新会话在收到真正的新消息前，不接受这些旧消息 */
     staleMsgIdsRef.current = new Set(asChatMessages(messages).map(m => String(m.id)));
     freshConvoRef.current = true;
     const id = genId();
     const conv: Convo = {
-      id, title: '新会话', createdAt: Date.now(), updatedAt: Date.now(),
-      messages: [], profile: snapshotProfile(profile), mode,
+      id, title: opts.title || '新会话', createdAt: Date.now(), updatedAt: Date.now(),
+      messages: [], profile: snapshotProfile(profile), mode: nextMode,
     };
     setConvos(prev => {
       const nd = { activeId: id, list: [conv, ...prev.list].slice(0, 30) };
@@ -434,6 +447,40 @@ export default function ChatApp() {
     setRunId('');
     if (!silent) toast('已创建新会话');
   }, [isLoading, messages, mode, profile, reset, saveCurrent, toast]);
+
+  /**
+   * 新建一个任务会话（专家确认后调用）。
+   * 当前会话还没有内容时直接复用它（改名 + 绑定专家），否则另开一个，避免堆积空会话。
+   */
+  const startTask = useCallback((m: AgentMode, title: string, firstPrompt?: string) => {
+    if (isLoading) { toast('当前任务进行中，请稍候'); return; }
+    setMode(m);
+    localStorage.setItem(LS_MODE, m);
+    setView('chat');
+
+    const hasMsgs = asChatMessages(messages).some(x => String(x.content || '').trim());
+    if (!hasMsgs) {
+      setConvos(prev => {
+        const list = prev.list.map(c =>
+          c.id === prev.activeId ? { ...c, title, mode: m, updatedAt: Date.now() } : c);
+        const nd = { activeId: prev.activeId, list };
+        persistConvos(nd);
+        return nd;
+      });
+      if (firstPrompt) void send(firstPrompt);
+      return;
+    }
+    pendingPromptRef.current = firstPrompt || '';
+    newConvo(true, { mode: m, title });
+  }, [isLoading, messages, newConvo, send, toast]);
+
+  /* 新会话 reset 落地后再发首轮指令，避免和 reset() 抢消息 */
+  useEffect(() => {
+    const p = pendingPromptRef.current;
+    if (!p || isLoading) return;
+    pendingPromptRef.current = '';
+    void send(p);
+  }, [messages, isLoading, send]);
 
   const switchConvo = useCallback((id: string) => {
     if (isLoading || id === convoId) return;
@@ -451,6 +498,8 @@ export default function ChatApp() {
     setRunId('');
     setMessages((conv.messages || []).slice(-40).map(m => ({ id: m.id, role: m.role, content: m.content })));
     if (conv.profile) setProfile({ ...newProfile(), ...conv.profile });
+    if (conv.mode) { setMode(conv.mode); localStorage.setItem(LS_MODE, conv.mode); }
+    setView('chat');
     toast('已切换会话：' + (conv.title || '新会话'));
   }, [convoId, convos.list, isLoading, reset, saveCurrent, setMessages, toast]);
 
@@ -490,38 +539,41 @@ export default function ChatApp() {
       setRunId('');
       setMessages((next?.messages || []).map(m => ({ id: m.id, role: m.role, content: m.content })));
       if (next?.profile) setProfile({ ...newProfile(), ...next.profile });
+      if (next?.mode) { setMode(next.mode); localStorage.setItem(LS_MODE, next.mode); }
     }
     toast('已删除会话');
   }, [convoId, reset, setMessages, toast]);
 
-  /* ---------- 智能体切换 ----------
-   * 只切换「谁来回话」，不新建、不切换、不过滤左侧会话。
-   * 再次点击当前智能体 = 打开它的配置弹框（面试配置 / 仓库配置）。
+  /* ---------- 专家选择 ----------
+   * 左侧「专家」入口 → 右侧专家卡片 → 选中后弹出该专家的任务配置 → 确认新建任务。
    */
-  const switchMode = useCallback((m: AgentMode) => {
-    if (m === mode) {
-      if (m === 'review') {
-        setRepoEditing(repos.find(r => r.id === repoId) || null);
-        setRepoOpen(true);
-      } else {
-        setSetupOpen(true);
-      }
-      return;
-    }
-    if (isLoading) return;
-    saveCurrent();
-    flushNow();
+  const pickExpert = useCallback((m: AgentMode) => {
+    if (isLoading) { toast('当前任务进行中，请稍候'); return; }
     setMode(m);
     localStorage.setItem(LS_MODE, m);
-    /* 切过去不主动弹框（弹框会打断视线）；只有审核官还没有仓库时才自动弹出来引导 */
-    if (m === 'review' && !repos.length) {
-      setRepoEditing(null);
+    setView('chat');
+    if (m === 'review') {
+      /* 审核任务要等仓库配置保存后再建（保存=确认），避免弹出空任务会话 */
+      pendingTaskRef.current = 'review';
+      setRepoEditing(repos.find(r => r.id === repoId) || null);
       setRepoOpen(true);
+    } else {
+      pendingTaskRef.current = '';
+      setSetupOpen(true);
     }
-    toast(m === 'review' ? '已切换到「代码审核官」' : '已切换到「面试出题官」');
-  }, [mode, isLoading, saveCurrent, repos, repoId, toast]);
+  }, [isLoading, repos, repoId, toast]);
 
-  /* ---------- 面试配置确认 ---------- */
+  /* 对话头部：打开当前专家的配置弹框 */
+  const openAgentConfig = useCallback(() => {
+    if (mode === 'review') {
+      setRepoEditing(repos.find(r => r.id === repoId) || null);
+      setRepoOpen(true);
+    } else {
+      setSetupOpen(true);
+    }
+  }, [mode, repos, repoId]);
+
+  /* ---------- 面试配置确认：确认即新建一个面试任务 ---------- */
   const onAgentConfirm = useCallback(() => {
     if (!cfg.base || !cfg.model) {
       setGenErr('请先点击右上角齿轮图标完成「模型配置」');
@@ -530,8 +582,8 @@ export default function ChatApp() {
     }
     setGenErr('');
     setSetupOpen(false);   // 生成后关掉弹框，把屏幕还给对话
-    send(buildGeneratePrompt(profile));
-  }, [cfg.base, cfg.model, profile, send]);
+    startTask('interview', `面试任务 · ${profile.track} ${profile.level}`, buildGeneratePrompt(profile));
+  }, [cfg.base, cfg.model, profile, startTask]);
 
   /* ---------- 派生数据 ---------- */
   const activeAgent = useMemo(() => AGENTS.find(a => a.mode === mode) || AGENTS[0], [mode]);
@@ -601,6 +653,9 @@ export default function ChatApp() {
           onSwitch={switchConvo}
           onDelete={deleteConvo}
           onNew={() => newConvo()}
+          onOpenExperts={() => setView(v => (v === 'experts' ? 'chat' : 'experts'))}
+          expertsOpen={view === 'experts'}
+          expertCount={AGENTS.length}
           banner={
             !health.proxyOk ? (
               <div className="banner show">
@@ -616,21 +671,34 @@ export default function ChatApp() {
           }
         />
 
+        {view === 'experts' ? (
+          <ExpertPicker
+            agents={AGENTS}
+            mode={mode}
+            onPick={pickExpert}
+            onBack={() => setView('chat')}
+          />
+        ) : (
         <div className="chat-wrap">
           <div className="chat-head">
-            <div>
+            <button
+              type="button"
+              className="expert-chip"
+              onClick={() => setView('experts')}
+              title="更换专家 / 新建任务"
+            >
+              <span className="expert-chip-ico" aria-hidden="true">{activeAgent.icon}</span>
+              <span className="expert-chip-name">{activeAgent.name}</span>
+              <span className="expert-chip-arrow" aria-hidden="true">›</span>
+            </button>
+            <div className="chat-head-main">
               <div className="title">{chatTitle}</div>
               <div className="meta">{chatMeta}</div>
             </div>
             <div className="spacer"></div>
-            {mode === 'review' && currentRepo && (
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => { setRepoEditing(currentRepo); setRepoOpen(true); }}
-              >
-                仓库设置
-              </button>
-            )}
+            <button className="btn btn-ghost btn-sm" onClick={openAgentConfig}>
+              {mode === 'review' ? '仓库配置' : '面试配置'}
+            </button>
             <button className="btn btn-ghost btn-sm" onClick={clearCurrent}>清空对话</button>
           </div>
 
@@ -676,25 +744,9 @@ export default function ChatApp() {
             placeholder={mode === 'review'
               ? '针对这份审核报告追问，例如「第 2 个问题怎么改？」'
               : '输入消息…（Enter 发送，Shift+Enter 换行）'}
-            inputTop={
-              <AgentSwitcher
-                agents={AGENTS}
-                mode={mode}
-                onSwitch={switchMode}
-                onOpenConfig={() => {
-                  if (mode === 'review') {
-                    setRepoEditing(currentRepo);
-                    setRepoOpen(true);
-                  } else {
-                    setSetupOpen(true);
-                  }
-                }}
-                configLabel={mode === 'review' ? '仓库配置' : '面试配置'}
-                configOpen={mode === 'review' ? repoOpen : setupOpen}
-              />
-            }
           />
         </div>
+        )}
       </main>
 
       {/* 三个弹框：面试配置 / 仓库配置 / 模型配置（模型配置叠在最上层） */}
@@ -712,12 +764,18 @@ export default function ChatApp() {
 
       <RepoSetup
         open={repoOpen}
-        onClose={() => setRepoOpen(false)}
+        onClose={() => { setRepoOpen(false); pendingTaskRef.current = ''; }}
         repo={repoEditing}
         onSaved={(repo, isNew) => {
           setRepos(prev => (isNew ? [...prev, repo] : prev.map(r => (r.id === repo.id ? repo : r))));
           setRepoId(repo.id);
           setRepoEditing(repo);
+          /* 从专家入口选了审核官时，保存仓库 = 确认任务：新建审核会话并立刻拉一次 PR */
+          if (pendingTaskRef.current === 'review') {
+            pendingTaskRef.current = '';
+            startTask('review', `代码审核 · ${repo.owner}/${repo.name}`);
+            window.setTimeout(() => { void pollRepo(repo.id).catch(() => {}); }, 0);
+          }
         }}
         onDeleted={(id) => {
           setRepos(prev => prev.filter(r => r.id !== id));
