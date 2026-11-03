@@ -231,12 +231,18 @@ _GITHUB_HOSTS = ("github.com", "www.github.com", "api.github.com")
 _GITLAB_HOSTS = ("gitlab.com", "www.gitlab.com")
 _GITEE_HOSTS = ("gitee.com", "www.gitee.com")
 
-# 探测用：路径 -> 平台。Gitee 独有 /api/v5，GitLab 独有 /api/v4
-_PROBE_PATHS = (("/api/v5/user", "gitee"), ("/api/v4/projects?per_page=1", "gitlab"))
+# 探测用：路径 -> 平台。GitLab 的 /api/v4 优先（Gitee 企业版同时提供 GitLab 兼容层，
+# 两边都能用时走兼容层更稳，v5 只在没有 /api/v4 的纯 Gitee 实例上才用）
+_PROBE_PATHS = (("/api/v4/user", "gitlab"), ("/api/v5/user", "gitee"))
 
 
 async def _probe_json(host: str, path: str, provider: str, token: str) -> bool:
-    """探一个路径：返回 JSON 就算这个平台存在（200/401/403 都算，网页 404 不算）。"""
+    """探一个路径，判断这个平台的接口是否真的可用。
+
+    带 Token 时要求真的通过鉴权（2xx 且返回 JSON）—— 只看「有没有 JSON」会误判：
+    Gitee 企业版的兼容网关对不存在的路径也回 JSON 401，会把实例判成另一家。
+    没有 Token 时（公开仓库）只能退化成「返回 JSON 就算存在」。
+    """
     h = {"Accept": "application/json", **auth_header(provider, token)}
     try:
         res = await request("https://" + host + path, headers=h, timeout=8.0)
@@ -245,6 +251,8 @@ async def _probe_json(host: str, path: str, provider: str, token: str) -> bool:
     ct = (res.headers.get("content-type") or "").lower()
     if "json" not in ct:
         return False
+    if token:
+        return 200 <= res.status_code < 300
     body = (res.text or "").lstrip()[:1]
     return body in ("{", "[")
 
@@ -253,10 +261,11 @@ async def detect_provider(host: str, token: str = "", fallback: str = "github") 
     """
     判断实例是 GitLab / Gitee / GitHub 系（GitHub Enterprise）。
 
-    判据是各自的独有路由有没有 JSON 响应：
-      - Gitee（含 Gitee Premium 私有部署）：/api/v5/user → 200 或 401 JSON；
-      - GitLab：/api/v4/projects → 200 或 401 JSON；
-      - 其它（GHE 等）：两个路径都返回自家 HTML 404 → 落到 fallback。
+    判据是各自的鉴权接口能不能通过（带 Token 要求 2xx）：
+      - GitLab：/api/v4/user；
+      - Gitee（含 Gitee Premium 私有部署）：/api/v5/user —— 有些企业版同时提供
+        GitLab 兼容层，那种实例两边都通，优先按 GitLab 处理（顺序见 _PROBE_PATHS）；
+      - 其它（GHE 等）：都探不通 → 落到 fallback。
     只看域名里有没有 "gitlab"/"gitee" 会不稳，所以一律以探测结果为准。
     """
     host = (host or "").lower()

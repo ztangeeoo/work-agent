@@ -93,9 +93,14 @@ def save_repo(data: dict, user: str = DEFAULT_USER) -> dict:
         if not rid:
             exist = db.execute("SELECT id FROM repo WHERE user_key = ? AND url = ?", (user, url)).fetchone()
             rid = exist["id"] if exist else "repo_" + uuid.uuid4().hex[:12]
-        old = db.execute("SELECT token FROM repo WHERE id = ? AND user_key = ?", (rid, user)).fetchone()
+        old = db.execute("SELECT token, url FROM repo WHERE id = ? AND user_key = ?", (rid, user)).fetchone()
         if (not old) and data.get("id"):
             raise ValueError("仓库不存在：" + rid)
+
+        # 换了仓库地址：旧 PR 与审核报告属于另一个仓库，留着只会张冠李戴
+        if old and str(old["url"] or "").strip() != url:
+            db.execute("DELETE FROM pr WHERE repo_id = ?", (rid,))
+            db.execute("DELETE FROM review WHERE repo_id = ?", (rid,))
 
         if data.get("token") is None:
             token = (old["token"] if old else "") or ""
