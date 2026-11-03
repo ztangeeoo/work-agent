@@ -443,7 +443,8 @@ VITE_COPILOTKIT_KEY=ckpb_你的key
 | `tests/` | 回归测试：`test_store.py`（持久层）、`test_reviewer.py`（地址解析 / diff / 代理规则）、`test_adapter.py`（指令层加载 / 降级 / 热更新 / 格式契约）、`test_web.ts`（渲染逻辑）、`test_qcard.ts`（卡片布局与历史守卫）、`test_stages.ts`（流水线状态）、`test_layout.ts`（布局约束）、`test_render.js`（旧版渲染逻辑）、`mock_llm.js`（mock 上游验全链路） |
 | `docs/` | `design-spec-v1.html` 全局样式主题规范 · `theme-demo.html` 主题实时预览（可切深浅） |
 | `index.html` | 旧版单文件应用（保留作回退，不再维护） |
-| `start.bat` | 一键启动 |
+| `start.bat` | 一键启动（智能体服务 8790 + 页面服务 8787 + 打开浏览器） |
+| `start_service.bat` | 单独启动 Agent Service（8799，默认容器沙箱；和 start.bat 相互独立） |
 
 ## 测试
 
