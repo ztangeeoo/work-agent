@@ -143,6 +143,10 @@ class ReviewPoller:
             prs = await rv.list_open_prs(repo, limit=20)
             for pr in prs:
                 store.upsert_pr(repo["id"], pr)
+            try:
+                store.set_repo_provider(repo["id"], repo.get("provider") or "")
+            except Exception:
+                pass
             store.touch_repo(repo["id"], at=_now_ms(), error="")
             self.emit({"type": "poll-done", "repoId": repo["id"], "count": len(prs)})
             self.log_line(f"{repo['owner']}/{repo['name']} 轮询到 {len(prs)} 个开放 PR")

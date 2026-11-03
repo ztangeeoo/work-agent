@@ -143,7 +143,7 @@ export default function RepoSetup({ open, onClose, repo, onSaved, onDeleted, toa
 
           <div className="row2" style={{ marginTop: 12 }}>
             <div>
-              <label className="field">平台（默认自动识别）</label>
+              <label className="field">平台（默认自动识别，自建实例会自动探测）</label>
               <select value={provider} onChange={(e) => setProvider(e.target.value)}>
                 <option value="auto">自动识别</option>
                 <option value="github">GitHub</option>

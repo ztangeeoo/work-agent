@@ -1350,6 +1350,14 @@ async def api_repos_save(request: Request):
         parsed = rv.parse_repo_url(body.get("url"), body.get("provider"))
     except Exception as e:
         return _err(str(e), 400)
+    # 用户没显式选平台时，对自建实例探测一次（GitLab 走 /api/v4，Gitea 走 /api/v3，猜错就是 404）
+    # 注意：探测只借用 token 发请求，不能把 token 写回 parsed —— save_repo 见到 token='' 会清空已存的 Token
+    if not str(body.get("provider") or "").strip():
+        try:
+            probe = await rv.ensure_provider({**parsed, "token": body.get("token") or ""})
+            parsed["provider"] = probe.get("provider") or parsed["provider"]
+        except Exception:
+            pass
     try:
         repo = store.save_repo({**body, **parsed}, _user_key(request))
         return {"ok": True, "repo": repo}
@@ -1380,6 +1388,11 @@ async def api_repos_test(request: Request, rid: str):
         return _err("仓库不存在：" + rid, 404)
     try:
         r = await rv.test_repo(repo)
+        # test_repo 里会把自建实例的 provider 校准好，变化就回写
+        try:
+            store.set_repo_provider(rid, repo.get("provider") or "")
+        except Exception:
+            pass
         store.touch_repo(rid, error="")
         return {"ok": True, **r}
     except Exception as e:

@@ -471,6 +471,7 @@ node tests/mock_llm.js                                # mock 上游（含审核�
 | 上下文很长、模型重复回答同一个问题 | 检查是否又给 `AgentState(context=...)` 预置了历史又往 `inputs` 里传了一遍（见「上下文语义」） |
 | 页面提示「AgentScope 智能体服务未连接」 | Python 服务没起来：双击 `start.bat`，或手动 `.venv\Scripts\python.exe agent_server.py` |
 | 出题报「模型未配置」 | 点右上角齿轮完成模型配置；每次发消息前页面会自动同步配置到 Node 与 Python |
+| `平台接口返回 HTTP 404` 且末尾是一段网页（如「你所访问的页面不存在」） | 自建实例的**平台类型判错了**：GitLab 走 `/api/v4`，Gitea 等走 `/api/v3`，猜错就会命中对方网页 404。在仓库配置里把「平台」明确选成 GitLab（或更新到带自动探测的版本，保存/测试时会自动识别） |
 | `模型 API Key 无效`（401） | 齿轮弹框里 Key 填错或额度不足 |
 | `接口或模型不存在`（404） | API 地址要以 `/v1` 结尾；或模型名不对，点「拉取模型列表」选一个 |
 | `连接被拒绝 ECONNREFUSED` | 本地模型（Ollama）没启动，或地址端口写错 |

@@ -144,12 +144,29 @@ async def request(url: str, method: str = "GET", headers: dict | None = None,
         return await client.request(method, url, headers=h, content=content)
 
 
-def _api_message(text: str) -> str:
+def _html_title(text: str) -> str:
+    """从 HTML 错误页里取出 <title>，避免把整页 HTML 塞进报错。"""
+    m = re.search(r"<title[^>]*>(.*?)</title>", text or "", re.I | re.S)
+    return re.sub(r"\s+", " ", m.group(1)).strip() if m else ""
+
+
+def _is_html(text: str, content_type: str = "") -> bool:
+    if "html" in (content_type or "").lower():
+        return True
+    t = (text or "").lstrip()[:200].lower()
+    return t.startswith("<!doctype html") or t.startswith("<html") or "<html" in t
+
+
+def _api_message(text: str, content_type: str = "") -> str:
     try:
         j = json.loads(text)
         return j.get("message") or j.get("error_description") or (j.get("error") or {}).get("message") or ""
     except Exception:
-        return ""
+        pass
+    if _is_html(text, content_type):
+        title = _html_title(text)
+        return "网页错误页：" + title if title else "接口返回了网页而不是 JSON"
+    return ""
 
 
 async def api_json(url: str, token: str = "", headers: dict | None = None, method: str = "GET",
@@ -164,10 +181,15 @@ async def api_json(url: str, token: str = "", headers: dict | None = None, metho
         h["X-GitHub-Api-Version"] = "2022-11-28"
     res = await request(url, method=method, headers=h, body=body)
     if res.status_code < 200 or res.status_code >= 300:
-        msg = _api_message(res.text) or res.text[:200]
+        ct = res.headers.get("content-type") or ""
+        html = _is_html(res.text, ct)
+        msg = _api_message(res.text, ct) or res.text[:200]
         hint = ""
         if res.status_code in (401, 403):
             hint = "（Token 无效、权限不足或触发限流）"
+        elif res.status_code == 404 and html:
+            hint = ("（接口路径不存在，不是仓库问题：自建实例请在「平台」里选对类型"
+                    "——GitLab 用 /api/v4，Gitea 等用 /api/v3）")
         elif res.status_code == 404:
             hint = "（仓库不存在、是私有仓库但未配 Token，或地址写错）"
         raise RuntimeError(f"平台接口返回 HTTP {res.status_code}{hint}：{msg}")
@@ -178,6 +200,58 @@ async def api_json(url: str, token: str = "", headers: dict | None = None, metho
 
 
 # ------------------------------------------------------------------ 平台适配
+
+# 自建实例的平台探测缓存：host -> "gitlab" | "github"
+_PROVIDER_CACHE: dict[str, str] = {}
+_GITHUB_HOSTS = ("github.com", "www.github.com", "api.github.com")
+
+
+async def detect_provider(host: str, token: str = "") -> str:
+    """
+    判断自建实例是 GitLab 还是 GitHub 系（GitHub / Gitea）。
+
+    判据是 /api/v4/projects 有没有 JSON 响应：
+      - GitLab：有该路由，200（公开）或 401（未授权）都返回 JSON；
+      - Gitea / 其它：该路径不存在，返回自家的 HTML 404 页面。
+    只看域名里有没有 "gitlab" 会漏掉 lggitee.xxx 这类自建实例，所以改用探测。
+    """
+    host = (host or "").lower()
+    if not host or host in _GITHUB_HOSTS:
+        return "github"
+    if host in _PROVIDER_CACHE:
+        return _PROVIDER_CACHE[host]
+
+    provider = "github"
+    try:
+        h = {"Accept": "application/json"}
+        if token:
+            h["PRIVATE-TOKEN"] = token
+        res = await request("https://" + host + "/api/v4/projects?per_page=1",
+                            headers=h, timeout=8.0)
+        ct = (res.headers.get("content-type") or "").lower()
+        if "json" in ct or res.status_code in (200, 401, 403):
+            provider = "gitlab"
+    except Exception:
+        # 探测失败（断网/代理不通）时不缓存，沿用调用方传进来的判断
+        return _PROVIDER_CACHE.get(host, provider)
+
+    _PROVIDER_CACHE[host] = provider
+    return provider
+
+
+async def ensure_provider(repo: dict) -> dict:
+    """自建实例自动校准 provider（就地改写 repo['provider']），返回同一个 dict。"""
+    if not isinstance(repo, dict):
+        return repo
+    host = (repo.get("host") or "").lower()
+    if not host or host in _GITHUB_HOSTS:
+        repo["provider"] = "github"
+        return repo
+    if repo.get("provider") == "gitlab":
+        return repo          # 已明确是 GitLab，不必探测
+    repo["provider"] = await detect_provider(host, repo.get("token") or "")
+    return repo
+
 
 def _repo_api_base(repo: dict) -> str:
     if repo.get("provider") == "gitlab":
@@ -201,6 +275,7 @@ def _github_headers(token: str) -> dict:
 
 async def list_open_prs(repo: dict, limit: int = 20, max_age_days: int = 45) -> list:
     """列出开放的 PR / MR（按更新时间倒序）"""
+    repo = await ensure_provider(repo)
     token = repo.get("token") or ""
     out = []
 
@@ -267,6 +342,7 @@ def _now_ms() -> int:
 
 async def fetch_pr_diff(repo: dict, number) -> str:
     """拉取某个 PR 的 unified diff 文本（超长截断，附提示）"""
+    repo = await ensure_provider(repo)
     if repo.get("provider") == "gitlab":
         url = (_repo_api_base(repo) + "/projects/" + _gitlab_project_id(repo)
                + "/merge_requests/" + str(number) + "/changes")
@@ -321,6 +397,7 @@ def truncate_diff(text, file_count=None) -> str:
 
 async def post_pr_comment(repo: dict, number, body: str) -> dict:
     """回帖：GitHub 用 issue comments，GitLab 用 notes"""
+    repo = await ensure_provider(repo)
     if repo.get("provider") == "gitlab":
         url = (_repo_api_base(repo) + "/projects/" + _gitlab_project_id(repo)
                + "/merge_requests/" + str(number) + "/notes")

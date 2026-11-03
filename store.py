@@ -517,6 +517,19 @@ def delete_repo(rid: str, user: str = DEFAULT_USER) -> bool:
         return cur.rowcount > 0
 
 
+def set_repo_provider(rid: str, provider: str) -> bool:
+    """把平台探测结果写回仓库（自建 GitLab 被误判成 GitHub 时自动纠正）。"""
+    provider = str(provider or "").strip()
+    if not provider:
+        return False
+    db = init()
+    with _lock:
+        cur = db.execute("UPDATE repo SET provider = ?, updated_at = ? WHERE id = ? AND provider != ?",
+                         (provider, _now(), str(rid), provider))
+        db.commit()
+        return cur.rowcount > 0
+
+
 def touch_repo(rid: str, at: int | None = None, error: str = ""):
     """记录一次轮询结果（时间戳 / 错误信息）"""
     db = init()
