@@ -25,14 +25,11 @@ export default function AgentSwitcher({ agents, mode, onSwitch, onOpenConfig, co
               key={a.id}
               role="tab"
               aria-selected={active}
-              className={
-                'agent-tab' + (active ? ' active' : '') + (a.mode === 'review' ? ' is-review' : '')
-              }
+              className={'agent-tab' + (active ? ' active' : '')}
               onClick={() => onSwitch(a.mode)}
               title={a.desc}
             >
-              <span className="agent-tab-icon">{a.icon}</span>
-              <span>{a.name}</span>
+              {a.name}
             </button>
           );
         })}
@@ -43,7 +40,7 @@ export default function AgentSwitcher({ agents, mode, onSwitch, onOpenConfig, co
         onClick={onOpenConfig}
         title={'打开' + configLabel + '弹框'}
       >
-        ⚙️ {configLabel}
+        {configLabel}
       </button>
     </div>
   );

@@ -45,7 +45,7 @@ export default function ConvoSidebar({ convos, activeId, onSwitch, onDelete, onN
       {banner}
       <div className="side-head">
         <div className="section-title">历史会话</div>
-        <button className="btn btn-ghost btn-sm" onClick={onNew} title="新建空白会话">＋ 新建</button>
+        <button className="btn btn-ghost btn-sm" onClick={onNew} title="新建空白会话">新建</button>
       </div>
 
       <div className="side-search">

@@ -560,8 +560,11 @@ export default function ChatApp() {
   return (
     <>
       <header>
-        <div className="logo">🎯 IT<span>面试出题官</span></div>
-        <div className="sub">面试出题官 + 代码审核官 · React + CopilotKit + AgentScope 多智能体</div>
+        <div className="logo">
+          <span className="logo-mark" aria-hidden="true"></span>
+          工作智能体集合
+        </div>
+        <div className="sub">面试出题官 + 代码审核官 · 多智能体协作</div>
         <div className="spacer"></div>
         <span id="connText">{health.proxyOk ? (health.agentOk ? '本地服务就绪' : '智能体服务未连接') : '未检测到本地服务'}</span>
         <span className={'conn-dot ' + (health.proxyOk ? (health.agentOk ? 'ok' : 'err') : '')}></span>
@@ -625,7 +628,7 @@ export default function ChatApp() {
                 className="btn btn-ghost btn-sm"
                 onClick={() => { setRepoEditing(currentRepo); setRepoOpen(true); }}
               >
-                ⚙️ 仓库设置
+                仓库设置
               </button>
             )}
             <button className="btn btn-ghost btn-sm" onClick={clearCurrent}>清空对话</button>

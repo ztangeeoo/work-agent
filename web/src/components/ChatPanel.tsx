@@ -48,7 +48,7 @@ function AiBubble({ content, streaming }: { content: string; streaming: boolean 
 }
 
 export default function ChatPanel({
-  messages, isLoading, onSend, onStop, header, inputTop, empty, avatar = '🎯', placeholder,
+  messages, isLoading, onSend, onStop, header, inputTop, empty, avatar = '面', placeholder,
 }: Props) {
   const [text, setText] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
@@ -94,8 +94,8 @@ export default function ChatPanel({
         {header}
         {shown.length === 0 && (empty === undefined ? (
           <div className="empty-state">
-            <div className="big">🎯</div>
-            <p>点输入框上方的「⚙️ 面试配置」选好方向与级别，再点「🚀 生成面试题」</p>
+            <div className="big">面</div>
+            <p>点输入框上方的「面试配置」选好方向与级别，再点「确认并生成面试题」</p>
             <p>也可以直接在输入框里提问，例如「再出 3 道算法题」</p>
             <p>换一个智能体？点输入框上方的「代码审核官」</p>
           </div>
@@ -105,7 +105,7 @@ export default function ChatPanel({
           const streaming = !isUser && isLoading && i === shown.length - 1;
           return (
             <div key={m.id || i} className={'msg ' + (isUser ? 'user' : 'ai')}>
-              <div className="avatar">{isUser ? '🧑' : avatar}</div>
+              <div className="avatar">{isUser ? '我' : avatar}</div>
               {isUser
                 ? <div className="bubble" dangerouslySetInnerHTML={{ __html: esc(m.content).replace(/\n/g, '<br>') }} />
                 : <AiBubble content={m.content} streaming={streaming} />}

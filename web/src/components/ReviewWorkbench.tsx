@@ -38,10 +38,10 @@ export default function ReviewWorkbench({
   if (!repo) {
     return (
       <div className="rw-empty">
-        <div className="big">🛡️</div>
+        <div className="big">审</div>
         <p><b>代码审核官</b>：配置一个代码仓库，我会按设定的间隔轮询开放 PR，自动审核并给出修改意见。</p>
         <p className="dim">支持 GitHub / GitLab，私有仓库填 Access Token；意见默认只给你看，也可以一键回帖到 PR。</p>
-        <button className="btn btn-primary btn-sm" onClick={onAddRepo}>＋ 添加代码仓库</button>
+        <button className="btn btn-primary btn-sm" onClick={onAddRepo}>添加代码仓库</button>
       </div>
     );
   }
@@ -101,7 +101,7 @@ export default function ReviewWorkbench({
               disabled={runningPr === selected}
               onClick={() => onReview(selected)}
             >
-              {runningPr === selected ? '审核中…' : '🛡️ 立即审核这个 PR'}
+              {runningPr === selected ? '审核中…' : '立即审核这个 PR'}
             </button>
           </div>
         </div>
@@ -130,7 +130,7 @@ export default function ReviewWorkbench({
 
           <div className="rw-actions">
             <button className="btn btn-ghost btn-sm" onClick={() => onAsk('请解释这次审核里最严重的问题，并给出可以直接粘贴的修复代码')}>
-              💬 讲修复方案
+              讲修复方案
             </button>
             <button
               className="btn btn-ghost btn-sm"
@@ -148,7 +148,7 @@ export default function ReviewWorkbench({
                 disabled={review.posted}
                 onClick={() => onPost(review)}
               >
-                {review.posted ? '✅ 已回帖' : '回帖到 PR'}
+                {review.posted ? '已回帖' : '回帖到 PR'}
               </button>
             )}
             <a className="btn btn-ghost btn-sm" href={review.prUrl || pr?.url} target="_blank" rel="noreferrer">

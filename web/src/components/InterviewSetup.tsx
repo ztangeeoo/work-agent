@@ -81,7 +81,7 @@ export default function InterviewSetup({
     <div className="modal-mask show" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal modal-wide modal-tall">
         <div className="modal-head">
-          <span className="modal-title">🎯 面试出题官 · 面试配置</span>
+          <span className="modal-title">面试出题官 · 面试配置</span>
           <button className="modal-close" onClick={onClose} title="关闭">✕</button>
         </div>
 
@@ -138,14 +138,20 @@ export default function InterviewSetup({
               if (f) handleFile(f);
             }}
           >
-            <div className="icon">📄</div>
+            <div className="icon">
+              {/* 单色线稿图标：不引入彩色 emoji，跟随当前文字色 */}
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+                <path d="M14 3v5h5M9 13h6M9 17h4" />
+              </svg>
+            </div>
             <div>点击或拖拽上传简历<br /><span style={{ fontSize: 11 }}>支持 .pdf / .docx / .txt / .md / 图片(.png .jpg)</span></div>
           </div>
           <input ref={fileRef} type="file" accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.webp,.bmp" style={{ display: 'none' }}
             onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
           {profile.resumeName && (
             <div className="file-badge" style={{ display: 'flex' }}>
-              <span>{thumb ? <img src={thumb} alt="" style={{ width: 26, height: 26, objectFit: 'cover', borderRadius: 4, display: 'block' }} /> : '📄'}</span>
+              <span>{thumb ? <img src={thumb} alt="" style={{ width: 26, height: 26, objectFit: 'cover', borderRadius: 4, display: 'block' }} /> : null}</span>
               <span className="name">
                 {profile.resumeName}（{profile.resumeText ? profile.resumeText.length + ' 字' : '原文未保留，请重新上传'}）
               </span>
@@ -167,7 +173,7 @@ export default function InterviewSetup({
               return;
             }
             onConfirm();
-          }}>🚀 确认并生成面试题</button>
+          }}>确认并生成面试题</button>
         </div>
       </div>
     </div>

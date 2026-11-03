@@ -69,7 +69,7 @@ export default function AgentTrace({ trace, active }: Props) {
       ? `已中止${totalMs ? ' · 已用 ' + fmtSec(totalMs) : ''}`
       : (() => {
           const cur = rows.find(r => r.status === 'running' || r.status === 'tool');
-          return cur ? `${cur.icon} ${cur.label}执行中 · ${fmtSec(elapsed)}` : '调度中…';
+          return cur ? `${cur.label}执行中 · ${fmtSec(elapsed)}` : '调度中…';
         })();
 
   return (
@@ -89,7 +89,7 @@ export default function AgentTrace({ trace, active }: Props) {
             return (
               <div key={r.key} className={'trace-step s-' + st}>
                 <span className="trace-rail">
-                  <span className="trace-dot">{r.icon}</span>
+                  <span className="trace-dot">{i + 1}</span>
                   {i < rows.length - 1 && <span className="trace-line"></span>}
                 </span>
                 <span className="trace-name">{r.label}</span>
