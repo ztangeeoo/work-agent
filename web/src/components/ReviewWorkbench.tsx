@@ -76,8 +76,7 @@ export default function ReviewWorkbench({
               >
                 <span className="pr-no">#{p.number}</span>
                 <span
-                  className="pr-dot"
-                  style={{ background: running ? '#4f6ef7' : rm ? undefined : '#c4c9d6' }}
+                  className={'pr-dot' + (running ? ' is-running' : '')}
                   data-risk={p.review?.risk || 'none'}
                 />
                 <span className="pr-title">{p.title || '(无标题)'}</span>
