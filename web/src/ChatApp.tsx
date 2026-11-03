@@ -70,8 +70,8 @@ export default function ChatApp() {
 
   /* ---------- 视图：对话 / 专家选择 ---------- */
   const [view, setView] = useState<'chat' | 'experts'>('chat');
-  /** 从专家入口选了审核官后，等仓库配置保存完成再真正创建任务 */
-  const pendingTaskRef = useRef<'' | 'review'>('');
+  /** 从专家入口选中、等待填配置的专家；确认后新建任务会话并永久绑定 */
+  const [pendingExpert, setPendingExpert] = useState<AgentMode | null>(null);
   /** 新会话建好后要发送的首轮指令（等 reset 落地再发） */
   const pendingPromptRef = useRef('');
 
@@ -449,17 +449,18 @@ export default function ChatApp() {
   }, [isLoading, messages, mode, profile, reset, saveCurrent, toast]);
 
   /**
-   * 新建一个任务会话（专家确认后调用）。
-   * 当前会话还没有内容时直接复用它（改名 + 绑定专家），否则另开一个，避免堆积空会话。
+   * 新建一个任务会话（专家确认后调用），会话建好后即与该专家永久绑定。
+   * 当前会话还没有内容时直接复用它（改名 + 绑定专家），否则另开一个，绝不改动已有会话的专家。
    */
   const startTask = useCallback((m: AgentMode, title: string, firstPrompt?: string) => {
     if (isLoading) { toast('当前任务进行中，请稍候'); return; }
-    setMode(m);
-    localStorage.setItem(LS_MODE, m);
     setView('chat');
+    pendingPromptRef.current = firstPrompt || '';
 
     const hasMsgs = asChatMessages(messages).some(x => String(x.content || '').trim());
     if (!hasMsgs) {
+      setMode(m);
+      localStorage.setItem(LS_MODE, m);
       setConvos(prev => {
         const list = prev.list.map(c =>
           c.id === prev.activeId ? { ...c, title, mode: m, updatedAt: Date.now() } : c);
@@ -467,20 +468,18 @@ export default function ChatApp() {
         persistConvos(nd);
         return nd;
       });
-      if (firstPrompt) void send(firstPrompt);
       return;
     }
-    pendingPromptRef.current = firstPrompt || '';
     newConvo(true, { mode: m, title });
-  }, [isLoading, messages, newConvo, send, toast]);
+  }, [isLoading, messages, newConvo, toast]);
 
-  /* 新会话 reset 落地后再发首轮指令，避免和 reset() 抢消息 */
+  /* 新会话 / 切换专家落地后再发首轮指令：此时 send 的 mode 已是新专家，避免用旧专家发请求 */
   useEffect(() => {
     const p = pendingPromptRef.current;
     if (!p || isLoading) return;
     pendingPromptRef.current = '';
     void send(p);
-  }, [messages, isLoading, send]);
+  }, [messages, isLoading, send, mode]);
 
   const switchConvo = useCallback((id: string) => {
     if (isLoading || id === convoId) return;
@@ -547,24 +546,32 @@ export default function ChatApp() {
   /* ---------- 专家选择 ----------
    * 左侧「专家」入口 → 右侧专家卡片 → 选中后弹出该专家的任务配置 → 确认新建任务。
    */
-  const pickExpert = useCallback((m: AgentMode) => {
+  const pickExpert = useCallback(async (m: AgentMode) => {
     if (isLoading) { toast('当前任务进行中，请稍候'); return; }
-    setMode(m);
-    localStorage.setItem(LS_MODE, m);
+    /* 只记录「待用专家」，不动当前会话的绑定；确认后统一走 startTask 新建任务 */
+    setPendingExpert(m);
     setView('chat');
     if (m === 'review') {
-      /* 审核任务要等仓库配置保存后再建（保存=确认），避免弹出空任务会话 */
-      pendingTaskRef.current = 'review';
-      setRepoEditing(repos.find(r => r.id === repoId) || null);
+      /* 当前可能还停在面试模式，仓库列表没加载过：先取一次，保证弹框能回填已有仓库 */
+      let list = repos;
+      if (!list.length) {
+        try {
+          list = await fetchRepos();
+          setRepos(list);
+        } catch (_) { list = []; }
+      }
+      const cur = list.find(r => r.id === repoId) || list[0] || null;
+      if (cur) setRepoId(cur.id);
+      setRepoEditing(cur);
       setRepoOpen(true);
     } else {
-      pendingTaskRef.current = '';
       setSetupOpen(true);
     }
   }, [isLoading, repos, repoId, toast]);
 
-  /* 对话头部：打开当前专家的配置弹框 */
+  /* 对话头部：打开当前专家的配置弹框（不新建任务） */
   const openAgentConfig = useCallback(() => {
+    setPendingExpert(null);
     if (mode === 'review') {
       setRepoEditing(repos.find(r => r.id === repoId) || null);
       setRepoOpen(true);
@@ -573,7 +580,7 @@ export default function ChatApp() {
     }
   }, [mode, repos, repoId]);
 
-  /* ---------- 面试配置确认：确认即新建一个面试任务 ---------- */
+  /* ---------- 面试配置确认：确认即新建一个面试任务（会话与专家永久绑定） ---------- */
   const onAgentConfirm = useCallback(() => {
     if (!cfg.base || !cfg.model) {
       setGenErr('请先点击右上角齿轮图标完成「模型配置」');
@@ -582,8 +589,10 @@ export default function ChatApp() {
     }
     setGenErr('');
     setSetupOpen(false);   // 生成后关掉弹框，把屏幕还给对话
-    startTask('interview', `面试任务 · ${profile.track} ${profile.level}`, buildGeneratePrompt(profile));
-  }, [cfg.base, cfg.model, profile, startTask]);
+    const m: AgentMode = pendingExpert || mode;
+    setPendingExpert(null);
+    startTask(m, `面试任务 · ${profile.track} ${profile.level}`, buildGeneratePrompt(profile));
+  }, [cfg.base, cfg.model, pendingExpert, mode, profile, startTask]);
 
   /* ---------- 派生数据 ---------- */
   const activeAgent = useMemo(() => AGENTS.find(a => a.mode === mode) || AGENTS[0], [mode]);
@@ -760,7 +769,7 @@ export default function ChatApp() {
       {/* 三个弹框：面试配置 / 仓库配置 / 模型配置（模型配置叠在最上层） */}
       <InterviewSetup
         open={setupOpen}
-        onClose={() => setSetupOpen(false)}
+        onClose={() => { setSetupOpen(false); setPendingExpert(null); }}
         profile={profile}
         onProfileChange={setProfile}
         onConfirm={onAgentConfirm}
@@ -772,15 +781,15 @@ export default function ChatApp() {
 
       <RepoSetup
         open={repoOpen}
-        onClose={() => { setRepoOpen(false); pendingTaskRef.current = ''; }}
+        onClose={() => { setRepoOpen(false); setPendingExpert(null); }}
         repo={repoEditing}
         onSaved={(repo, isNew) => {
           setRepos(prev => (isNew ? [...prev, repo] : prev.map(r => (r.id === repo.id ? repo : r))));
           setRepoId(repo.id);
           setRepoEditing(repo);
           /* 从专家入口选了审核官时，保存仓库 = 确认任务：新建审核会话并立刻拉一次 PR */
-          if (pendingTaskRef.current === 'review') {
-            pendingTaskRef.current = '';
+          if (pendingExpert === 'review') {
+            setPendingExpert(null);
             startTask('review', `代码审核 · ${repo.owner}/${repo.name}`);
             window.setTimeout(() => { void pollRepo(repo.id).catch(() => {}); }, 0);
           }

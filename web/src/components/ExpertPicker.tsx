@@ -23,7 +23,8 @@ export default function ExpertPicker({ agents, mode, onPick, onBack }: Props) {
           <button type="button" className="btn btn-ghost btn-sm" onClick={onBack}>← 返回对话</button>
         </div>
         <p className="lead">
-          选中专家后填写任务信息，确认即新建一个独立任务会话；历史会话会记住它属于哪位专家。
+          选中专家后填写任务信息，确认即新建一个任务会话。会话与专家永久绑定，之后不能更换；
+          想换专家就新建任务。
         </p>
         <div className="expert-grid">
           {agents.map(a => (
