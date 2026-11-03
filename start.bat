@@ -26,14 +26,15 @@ if not defined PY (
   set "PY=.venv\Scripts\python.exe"
 )
 
-rem ---------- 2. 安装/确认依赖 ----------
+rem ---------- 2. 安装/确认依赖（AgentScope 必须 2.0+） ----------
 echo [2/4] 检查 Python 依赖（首次较慢，请耐心等待）...
-"%PY%" -c "import agentscope, fastapi, uvicorn, httpx" >nul 2>nul
+"%PY%" -c "import agentscope, fastapi, uvicorn, httpx, sys; sys.exit(0 if int(agentscope.__version__.split('.')[0]) >= 2 else 1)" >nul 2>nul
 if errorlevel 1 (
-  "%PY%" -m pip install -r requirements.txt
+  echo      安装 / 升级依赖到 AgentScope 2.0 ...
+  "%PY%" -m pip install -U -r requirements.txt
   if errorlevel 1 (
     echo [错误] 依赖安装失败，请手动执行：
-    echo   "%PY%" -m pip install -r requirements.txt
+    echo   "%PY%" -m pip install -U -r requirements.txt
     pause
     exit /b 1
   )
@@ -93,7 +94,7 @@ pause
 exit /b 0
 
 :no_python
-echo [错误] 未检测到 Python 3.10+，也没有可用的虚拟环境。
+echo [错误] 未检测到 Python 3.11+（AgentScope 2.0 的最低要求），也没有可用的虚拟环境。
 echo   请先安装 Python：https://www.python.org/downloads/
 echo   安装时勾选 "Add Python to PATH"，然后重新双击本文件。
 pause

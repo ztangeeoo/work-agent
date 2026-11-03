@@ -12,10 +12,18 @@ IT 面试出题官 · AgentScope 智能体服务（默认端口 8790）
             评分官  Evaluator  Agent + 结构化输出（Pydantic）：回答评分卡
 
 每次请求无状态：按前端传来的 messages 重建 Agent 的 context，多人同时使用互不串场。
+
+运行时基线：AgentScope 2.0（Python 3.11+）
+  - 编排用 2.0 的 `Agent` + `reply_stream()` 事件流（TextBlockDelta / ToolCallStart / ReplyEnd）
+  - 模型用 `OpenAIChatModel` + `OpenAICredential`，可接任意 OpenAI 兼容接口
+  - 工具用 `FunctionTool` + `Toolkit`，显式 ALLOW 免人工确认
+  - 评分卡用 2.0 原生 `structured_schema` 结构化输出，失败时回退到文本解析
+  - 不再依赖已归档的 `agentscope-runtime` 包
 """
 
 import os
 import re
+import sys
 import json
 import time
 import uuid
@@ -27,6 +35,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+import agentscope
 from agentscope.agent import Agent
 from agentscope.credential import OpenAICredential
 from agentscope.event import (
@@ -34,15 +43,26 @@ from agentscope.event import (
     ToolCallStartEvent,
     ReplyEndEvent,
 )
-from agentscope.message import Msg, UserMsg, AssistantMsg, SystemMsg
+from agentscope.message import Msg, UserMsg, AssistantMsg
 from agentscope.model import OpenAIChatModel
 from agentscope.permission import PermissionBehavior, PermissionDecision
-from agentscope.state import AgentState
 from agentscope.tool import FunctionTool, Toolkit
 from agentscope.types import ReplyFinishedReason
 
 import harness_adapter
 from question_bank import query_question_bank
+
+# ------------------------------------------------------------------ 版本闸门
+# 本项目按 AgentScope 2.0 的 API 编写（Agent / reply_stream / Event / structured_schema）。
+# 1.x 的 ReActAgent + agentscope_runtime 写法已不再适用，装错版本会报一堆看不懂的
+# ImportError，这里提前拦截并给出可执行的修复命令。
+AS_VERSION = str(getattr(agentscope, "__version__", "0.0.0"))
+_as_major = AS_VERSION.split(".")[0]
+if not _as_major.isdigit() or int(_as_major) < 2:
+    raise RuntimeError(
+        f"本项目需要 AgentScope 2.0+，当前安装的是 {AS_VERSION}。\n"
+        f"请执行：python -m pip install -U 'agentscope>=2.0.11'"
+    )
 
 # ------------------------------------------------------------------ 配置
 PORT = int(os.environ.get("AGENT_PORT", "8790"))
@@ -641,7 +661,7 @@ async def run_review(payload: dict) -> dict:
 
     # ---------- 1. 侦察官 ----------
     t0 = time.time()
-    scout = make_agent("侦察官", scout_sys_prompt(pr), model, False, [])
+    scout = make_agent("侦察官", scout_sys_prompt(pr), model, False)
     scout_text = ""
     async for kind, val in drive_agent(
         scout,
@@ -656,7 +676,7 @@ async def run_review(payload: dict) -> dict:
 
     # ---------- 2. 审核官（结构化问题清单） ----------
     t1 = time.time()
-    reviewer = make_agent("审核官", reviewer_sys_prompt(pr), model, False, [])
+    reviewer = make_agent("审核官", reviewer_sys_prompt(pr), model, False)
     review_inputs = [
         UserMsg("侦察官", f"【侦察官的改动概览】\n{scout_text or '（无）'}"),
         UserMsg("user", f"请审核下面这个 PR 的 diff，输出问题清单。\n\n```diff\n{diff}\n```"),
@@ -678,7 +698,7 @@ async def run_review(payload: dict) -> dict:
 
     # ---------- 3. 裁决官 ----------
     t2 = time.time()
-    judge = make_agent("裁决官", judge_sys_prompt(pr), model, False, [])
+    judge = make_agent("裁决官", judge_sys_prompt(pr), model, False)
     issues_json = json.dumps(
         [{**i, "severity": normalize_severity(i.get("severity"))} for i in issues],
         ensure_ascii=False, indent=1,
@@ -856,15 +876,20 @@ async def drive_agent(
         yield ("structured", card if isinstance(card, dict) else None)
 
 
-def make_agent(name: str, sys_prompt: str, model: OpenAIChatModel, with_tools: bool, context: list[Msg]) -> Agent:
-    """构造一个带独立 context 的 Agent（无状态服务，每次请求新建）"""
+def make_agent(name: str, sys_prompt: str, model: OpenAIChatModel, with_tools: bool) -> Agent:
+    """构造一个全空状态的 Agent（无状态服务，每次请求新建）。
+
+    注意 AgentScope 2.0 的语义：`reply_stream(inputs)` 会把 inputs **追加**进
+    `state.context`，所以历史对话只应该通过 inputs 传一次。之前这里既预置
+    `state.context=history` 又传 `inputs=history`，导致每轮上下文翻倍、最后一条
+    用户消息出现三次（既费 token 也干扰模型判断）。现在统一走 inputs。
+    """
     toolkit = Toolkit(tools=[_bank_tool()]) if with_tools else Toolkit()
     return Agent(
         name=name,
         system_prompt=sys_prompt,
         model=model,
         toolkit=toolkit,
-        state=AgentState(context=context),
     )
 
 
@@ -928,10 +953,13 @@ async def run_pipeline(payload: dict, base_override: Optional[str] = None):
         t_adv = time.time()
         status = StatusFlusher()
         status.set("🛡️ 审核官正在整理答复…\n\n")
-        advisor = make_agent("代码审核官", reviewer_chat_sys_prompt(review_ctx), model, False, history)
+        advisor = make_agent("代码审核官", reviewer_chat_sys_prompt(review_ctx), model, False)
         ask = last_user or "请总结这次审核的要点"
         produced = False
-        async for kind, val in drive_agent(advisor, [*history, UserMsg("user", ask)]):
+        # 历史里的最后一条就是用户这次的问题，再追加一份同样的 ask 会让模型
+        # 看到重复提问；只有历史为空（例如刚打开页面就追问）时才兜底造一条。
+        adv_inputs = list(history) or [UserMsg("user", ask)]
+        async for kind, val in drive_agent(advisor, adv_inputs):
             if kind == "error":
                 if not produced:
                     raise val
@@ -950,7 +978,7 @@ async def run_pipeline(payload: dict, base_override: Optional[str] = None):
 
     # ================= 评分官：结构化输出 =================
     if intent == "score":
-        agent = make_agent("评分官", evaluator_sys_prompt(profile), model, False, history)
+        agent = make_agent("评分官", evaluator_sys_prompt(profile), model, False)
         ask = UserMsg(
             "user",
             "请对下面这场面试对话中候选人的最后一次回答进行结构化评分。"
@@ -997,7 +1025,7 @@ async def run_pipeline(payload: dict, base_override: Optional[str] = None):
     if USE_PLANNER and not has_assistant:
         yield sse_stage("planner", "running")
         t_planner = time.time()
-        planner = make_agent("策划官", planner_sys_prompt(profile), model, False, [])
+        planner = make_agent("策划官", planner_sys_prompt(profile), model, False)
         plan_ask = UserMsg("user", f"请为下面这次面试规划考察大纲：\n{last_user}")
         status.set("🧭 策划官正在规划考察大纲…\n\n")
         async for kind, val in drive_agent(planner, [plan_ask]):
@@ -1019,7 +1047,7 @@ async def run_pipeline(payload: dict, base_override: Optional[str] = None):
     yield sse_stage("grader", "skipped")
     yield sse_stage("interviewer", "running")
     t_interviewer = time.time()
-    interviewer = make_agent("面试官", interviewer_sys_prompt(profile), model, True, history)
+    interviewer = make_agent("面试官", interviewer_sys_prompt(profile), model, True)
     inputs = list(history)
     if plan_text:
         # 注意：AgentScope 的 inputs 不允许带 system 消息，大纲用 user 角色承载
@@ -1157,12 +1185,12 @@ app = FastAPI(title="IT面试出题官 · AgentScope 服务", lifespan=lifespan)
 
 @app.get("/health")
 async def health():
-    import agentscope
-
     info = {
         "ok": True,
         "service": AGENT_NAME,
-        "agentscope": getattr(agentscope, "__version__", "unknown"),
+        "agentscope": AS_VERSION,
+        "agentscopeMin": "2.0.0",
+        "python": sys.version.split()[0],
         "agents": ["策划官", "面试官", "评分官", "侦察官", "审核官", "裁决官"],
         "modes": ["interview", "review"],
         "planner": USE_PLANNER,
