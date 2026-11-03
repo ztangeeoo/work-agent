@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-代码托管平台适配层测试（Python / reviewer.py）
+代码托管平台适配层测试（Python / services/review_client.py）
 
 覆盖：仓库地址解析（GitHub / GitLab / 简写 / SSH / 带后缀 / 非法）、
 diff 统计与截断、代理选择规则。不发起真实外网请求（那部分在 e2e 里验证）。
@@ -13,7 +13,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import reviewer as rv  # noqa: E402
+from backend.app.services import review_client as rv  # noqa: E402
 
 pass_n = 0
 fail_n = 0

@@ -1,6 +1,6 @@
 /**
  * AgentScope 服务适配器（CopilotKit ServiceAdapter）
- * 作用：把 CopilotKit runtime 的聊天请求转成 agent_server.py 的
+ * 作用：把 CopilotKit runtime 的聊天请求转成智能体服务（app/）的
  *       OpenAI 兼容请求（/v1/chat/completions），SSE 流转发回 CopilotKit。
  *       「策划官 / 面试官 / 评分官」三智能体流水线因此完整保留。
  *

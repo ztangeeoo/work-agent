@@ -9,8 +9,8 @@
     LocalWorkspace      宿主机直接执行，不隔离 —— 开发机够用，别对公网开放
 
 用法：
-    .venv\\Scripts\\python.exe sandbox_probe.py                       （默认容器，需 Docker 引擎）
-    set SANDBOX=local && .venv\\Scripts\\python.exe sandbox_probe.py  （不隔离，快）
+    .venv\\Scripts\\python.exe backend\\scripts\\sandbox_probe.py    （默认容器，需 Docker 引擎）
+    set SANDBOX=local && .venv\\Scripts\\python.exe backend\\scripts\\sandbox_probe.py  （不隔离，快）
 """
 
 import asyncio
@@ -20,7 +20,8 @@ import time
 
 from agentscope.workspace import DockerWorkspace, LocalWorkspace
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(BACKEND_DIR)  # 仓库根：沙箱工作目录落在根目录 data/ 下
 SANDBOX = (os.environ.get("SANDBOX") or "docker").strip().lower()
 WORKDIR = os.path.abspath(
     os.environ.get("AGENT_WORKSPACE_DIR") or os.path.join(ROOT, "data", "probe-workspace"),

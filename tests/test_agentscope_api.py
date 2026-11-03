@@ -35,7 +35,7 @@ from agentscope.state import AgentState  # noqa: E402
 from agentscope.permission import PermissionBehavior  # noqa: E402
 from agentscope.types import ReplyFinishedReason  # noqa: E402
 
-import agent_server as A  # noqa: E402
+from backend.app import main as A  # noqa: E402
 
 pass_n = 0
 fail_n = 0

@@ -20,7 +20,7 @@ IM 渠道，以及一套 REST + SSE 接口和 /docs。
     AGENT_SERVICE_TITLE  服务标题，默认「IT 面试出题官 · Agent 服务」
 
 启动：
-    .venv\\Scripts\\python.exe agent_service.py
+    .venv\\Scripts\\python.exe backend\\scripts\\agent_service.py
     浏览器打开 http://localhost:8799/docs
 """
 
@@ -38,7 +38,8 @@ from agentscope.app.workspace_manager import (
     WorkspaceManagerBase,
 )
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(BACKEND_DIR)  # 仓库根：data/ 与出题官服务共用同一个数据目录
 
 PORT = int(os.environ.get("AGENT_SERVICE_PORT", "8799"))
 # 默认容器模式：agent 的工具/代码在 Docker 沙箱里执行，不碰宿主机。

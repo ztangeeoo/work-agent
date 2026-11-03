@@ -19,7 +19,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ADAPTERS = os.path.join(ROOT, "adapters")
+ADAPTERS = os.path.join(ROOT, "backend", "adapters")
 
 pass_n = 0
 fail_n = 0
@@ -40,8 +40,8 @@ def fresh(**env):
     for k in ("HARNESS_ADAPTER", "HARNESS_ADAPTER_MAX", "HARNESS_ADAPTER_DIR"):
         os.environ.pop(k, None)
     os.environ.update({k: str(v) for k, v in env.items()})
-    import harness_adapter
-    return importlib.reload(harness_adapter)
+    from backend.app.services import harness
+    return importlib.reload(harness)
 
 
 BASE = "你是面试官。\n\n### 第 N 题【题型】\n【考察点】一句话。"
@@ -126,15 +126,20 @@ WANT = {
     "judge_sys_prompt": "review",
     "reviewer_chat_sys_prompt": "review",
 }
-src = open(os.path.join(ROOT, "agent_server.py"), encoding="utf-8").read()
-tree = ast.parse(src)
+# 提示词按业务拆在两个模块里，两个都要扫
+PROMPT_FILES = [
+    os.path.join(ROOT, "backend", "app", "prompts", "interview.py"),
+    os.path.join(ROOT, "backend", "app", "prompts", "review.py"),
+]
 found = {}
-for node in tree.body:
-    if isinstance(node, ast.FunctionDef) and node.name in WANT:
-        ret = next((n for n in ast.walk(node) if isinstance(n, ast.Return)), None)
-        val = getattr(ret, "value", None)
-        if isinstance(val, ast.Call) and getattr(val.func, "attr", "") == "compose":
-            found[node.name] = val.args[1].value if len(val.args) > 1 else None
+for path in PROMPT_FILES:
+    tree = ast.parse(open(path, encoding="utf-8").read())
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name in WANT:
+            ret = next((n for n in ast.walk(node) if isinstance(n, ast.Return)), None)
+            val = getattr(ret, "value", None)
+            if isinstance(val, ast.Call) and getattr(val.func, "attr", "") == "compose":
+                found[node.name] = val.args[1].value if len(val.args) > 1 else None
 for fn, name in WANT.items():
     ok(found.get(fn) == name, f"{fn} → compose(..., {name!r})")
 
