@@ -1,5 +1,5 @@
 /* ==========================================================================
-   IT 面试出题官 · 全局样式主题标准 v1.0 —— Token 落地文件
+   工作智能体集合 · 全局样式主题标准 v1.0 —— Token 落地文件
    --------------------------------------------------------------------------
    引入顺序（必须，见 main.tsx）：
      import './styles/tokens.css'   ← 本文件，先
@@ -12,39 +12,40 @@
      ③ 组件样式          —— 只消费 ①，不出现 #hex
 
    ★ 核心约定：品牌色拆「填充 / 文字」双轨
-     · 填充轨 --md-brand          #07C160  白底 2.38:1
+     · 填充轨 --md-brand          #7FC9B2  白底 1.93:1
        → 只做色块、色条、图标、选中态、进度、图表。不承载小字。
-     · 文字轨 --md-brand-text     #0E7C46  白底 5.26:1  → 绿色文字、链接、plain 文字
-     · 实底轨 --md-brand-solid    #0E7C46  白字 5.26:1  → 实心按钮 / 用户气泡（白字必须可读）
-     微信绿够嫩，作为文字只有 2.38:1，达不到 AA，所以它只能做填充。
+     · 文字轨 --md-brand-text     #2A6E5C  白底 6.03:1  → 绿色文字、链接、plain 文字
+     · 实底轨 --md-brand-solid    #2E7A66  白字 5.13:1  → 实心按钮 / 用户气泡（白字必须可读）
+     主题是「柔和小清新」的薄荷绿：低饱和、偏灰绿，只保留这一个色相；
+     题型分类色 / 审核低风险色都是它的深浅变体，不再引入蓝紫橙红。
    ========================================================================== */
 
 :root {
   color-scheme: light;
 
-  /* ===== 1. 品牌色（微信绿 · 双轨）=====================================
+  /* ===== 1. 品牌色（薄荷绿 · 双轨）=====================================
      对比度均按白底实测，详见规范 §1 / 附录。 */
 
   /* -- 1.1 填充轨 ------------------------------------------------------ */
-  --md-brand: #07c160; /* 主色 · 只做填充 2.38:1 */
-  --md-brand-hover: #51d490; /* hover 底 */
-  --md-brand-active: #069a4d; /* 按下态（比主色深） */
-  --md-brand-disabled: #83e0b0; /* 禁用底：只做填充，不要在上面写字（白字仅 1.9:1） */
-  --md-brand-rgb: 7, 193, 96; /* 半透明场景：rgba(var(--md-brand-rgb), .1) */
+  --md-brand: #7fc9b2; /* 主色 · 只做填充 1.93:1 */
+  --md-brand-hover: #96d5c1; /* hover 底 */
+  --md-brand-active: #66b79e; /* 按下态（比主色深） */
+  --md-brand-disabled: #bce6d9; /* 禁用底：只做填充，不要在上面写字 */
+  --md-brand-rgb: 127, 201, 178; /* 半透明场景：rgba(var(--md-brand-rgb), .1) */
 
   /* -- 1.2 浅色阶（底 / 边框）------------------------------------------ */
-  --md-brand-subtle: #e6f9ef; /* 选中行底、plain 底、弱提示底 */
-  --md-brand-subtle-2: #cdf3df; /* 选中行边框、次级描边 */
-  --md-brand-border: #83e0b0; /* plain 边框 */
+  --md-brand-subtle: #ecf7f3; /* 选中行底、plain 底、弱提示底 */
+  --md-brand-subtle-2: #d9efe8; /* 选中行边框、次级描边 */
+  --md-brand-border: #a9dfce; /* plain 边框 */
 
   /* -- 1.3 文字轨 ------------------------------------------------------ */
-  --md-brand-text: #0e7c46; /* 5.26:1 */
-  --md-brand-text-hover: #0a6b3a;
+  --md-brand-text: #2a6e5c; /* 6.03:1 */
+  --md-brand-text-hover: #235c4d;
 
   /* -- 1.4 实底轨（白字可达 AA）---------------------------------------- */
-  --md-brand-solid: #0e7c46; /* 白字 5.26:1 */
-  --md-brand-solid-hover: #0a6b3a;
-  --md-brand-solid-active: #085c30;
+  --md-brand-solid: #2e7a66; /* 白字 5.13:1 */
+  --md-brand-solid-hover: #276a58;
+  --md-brand-solid-active: #1f5849;
   --md-on-brand: #ffffff; /* 品牌实底上的前景色（深色主题会翻转） */
 
   /* -- 1.5 固定前景 -----------------------------------------------------
@@ -52,91 +53,92 @@
      所以不能跟随 --md-on-brand 翻转 —— 深色主题下 --md-on-brand 是深绿。 */
   --md-on-accent: #ffffff; /* 永不翻转的白 */
   --md-on-cat: #ffffff; /* 题型徽标文字：浅色白字，深色翻成深字 */
-  --md-inverse-surface: #2a2f3a; /* toast / tooltip 这类反色浮层底 */
+  --md-inverse-surface: #2a3230; /* toast / tooltip 这类反色浮层底 */
   --md-inverse-text: #ffffff;
 
   /* ===== 2. 语义色（每组四件套：主色 / 浅底 / 描边 / 文字轨）==========
      主色用于色块、图标（要求 3:1）；文字轨用于文本（要求 4.5:1）。
-     success 复用品牌轨 —— 全站只有一种绿。 */
-  --md-success: var(--md-brand); /* 7C160 填充 */
+     success 复用品牌轨 —— 全站只有一种绿；warning / danger 也压低了饱和度，
+     只在出错时才出现一点暖色，不抢主题色。 */
+  --md-success: var(--md-brand); /* 填充 */
   --md-success-subtle: var(--md-brand-subtle);
   --md-success-border: var(--md-brand-border);
-  --md-success-text: #0e7c46; /* 5.26:1 */
+  --md-success-text: #2a6e5c; /* 6.03:1 */
 
-  --md-warning: #e6a23c; /* 2.19:1 仅填充 */
-  --md-warning-subtle: #fdf5e6;
-  --md-warning-border: #f5d3a8;
-  --md-warning-text: #b45309; /* 5.02:1 */
+  --md-warning: #e0b478; /* 仅填充 */
+  --md-warning-subtle: #fbf4e8;
+  --md-warning-border: #eedcbe;
+  --md-warning-text: #8a6520; /* 4.85:1 on subtle */
 
-  --md-danger: #f56c6c; /* 2.90:1 仅填充 */
-  --md-danger-subtle: #fdecea;
-  --md-danger-border: #fbc4c4;
-  --md-danger-text: #dc2626; /* 4.83:1 */
+  --md-danger: #d98a8d; /* 仅填充 */
+  --md-danger-subtle: #fbeeee;
+  --md-danger-border: #f0d2d3;
+  --md-danger-text: #a94a4d; /* 4.92:1 */
 
-  --md-info: #909399; /* 3.08:1 仅填充 */
-  --md-info-subtle: #f4f5f8;
-  --md-info-border: #dcdfe6;
-  --md-info-text: #6b7280; /* 4.83:1 */
+  --md-info: #a7b3ae; /* 仅填充 */
+  --md-info-subtle: #f3f7f5;
+  --md-info-border: #dde7e2;
+  --md-info-text: #5d6b66; /* 5.58:1 */
 
   /* ===== 3. 中性色 ==================================================== */
   /* -- 3.1 文字：4 级，值都过 AA（含禁用态只要求可辨识）---------------- */
-  --md-text-1: #303133; /* 标题 / 主要正文 13.02:1 */
-  --md-text-2: #606266; /* 正文 / 表格内容 6.11:1 */
-  --md-text-3: #6b7280; /* 辅助文字、说明 4.83:1 */
-  --md-text-4: #a8abb2; /* 禁用、占位符 2.30:1（非正文） */
+  --md-text-1: #2b3a35; /* 标题 / 主要正文 11.94:1 */
+  --md-text-2: #52615c; /* 正文 / 表格内容 6.52:1 */
+  --md-text-3: #5d6b66; /* 辅助文字、说明 5.58:1 */
+  --md-text-4: #a9b4b0; /* 禁用、占位符 2.13:1（非正文） */
   --md-text-inverse: #ffffff;
 
   /* -- 3.2 边框：3 级，越往下越淡 -------------------------------------- */
-  --md-border: #dcdfe6; /* 可交互控件边框 */
-  --md-border-weak: #e5e7eb; /* 卡片 / 面板分割线 */
-  --md-border-hair: #f0f1f3; /* 表格内线、极淡分隔 */
+  --md-border: #d7e5df; /* 可交互控件边框 */
+  --md-border-weak: #e6efeb; /* 卡片 / 面板分割线 */
+  --md-border-hair: #f0f6f3; /* 表格内线、极淡分隔 */
 
   /* -- 3.3 表面：4 级，暗色下整体翻转 -----------------------------------
-     页面底最深 → 卡片比它亮一级，靠这一级色差 + 1px 描边把内容托起来。
-     页面底不要用 #f5f7f9 这类极浅灰：与白卡只有 1.07:1，肉眼分辨不出。 */
-  --md-surface-0: #ebeef2; /* 页面底 1.16:1（对白卡） */
+     页面底带一点薄荷灰（#eef3f1），白卡浮在上面；底色再浅就分不出层级。 */
+  --md-surface-0: #eef3f1; /* 页面底 1.12:1（对白卡） */
   --md-surface-1: #ffffff; /* 卡片 / 面板 / 输入框 */
-  --md-surface-2: #f5f7fa; /* 次级块、表头、hover 底 */
-  --md-surface-3: #eff1f5; /* 更实的次级块 */
-  --md-overlay: rgba(20, 24, 40, 0.45); /* 遮罩 */
+  --md-surface-2: #f6faf8; /* 次级块、表头、hover 底 */
+  --md-surface-3: #f0f5f3; /* 更实的次级块 */
+  --md-overlay: rgba(24, 40, 34, 0.42); /* 遮罩 */
 
   /* ===== 4. 业务涨跌色（与品牌色隔离）=================================
-     只在「增减 / 流入流出」类数据里启用。国内习惯：正=红、负=绿；
-     负值的绿取偏青的 #0e7490，避免与品牌绿混为一谈。 */
-  --md-up: #cf1322; /* 5.57:1 */
-  --md-up-subtle: #fdecea;
-  --md-down: #0e7490; /* 5.36:1 */
-  --md-down-subtle: #e8f6f9;
-  --md-flat: #6b7280;
+     只在「增减 / 流入流出」类数据里启用。国内习惯：正=红、负=绿。
+     同一套低饱和约束：红是柔和的砖红，绿取品牌同色相，不会跳出来。 */
+  --md-up: #b34a4d; /* 5.34:1 */
+  --md-up-subtle: #fbeeee;
+  --md-down: #4a7f72; /* 4.60:1 */
+  --md-down-subtle: #eff7f4;
+  --md-flat: #5d6b66;
 
   /* ===== 5. 题型分类色（本项目扩展）===================================
-     一题一卡的左侧色条 + 题型标签。分类色不是语义色：它表达「题型」，
-     不表达「状态」，所以不走 success / danger。
+     一题一卡的左侧色条 + 题型标签。主题色单一化之后，分类不再用五个色相，
+     改成同一薄荷绿的深浅档位（basic → scenario → deep 逐级加深，algo 偏浅，
+     trouble / neutral 落到中性灰绿），靠明度差区分，整体仍然只有一个色调。
      每个值同时满足两种用法：作徽标底（白字 ≥4.5:1）与作浅底上的文字（≥4.5:1），
      所以「色条色 == 文字色」只需要一个变量。 */
-  --md-cat-basic: #2f5fd8; /* 基础概念 · 白字 5.65:1 / 浅底 5.09:1 */
-  --md-cat-basic-bg: #eef3ff;
-  --md-cat-basic-border: #b9cbf5;
+  --md-cat-basic: #3a7c6c; /* 基础概念 · 白字 5.19:1 */
+  --md-cat-basic-bg: #edf7f3;
+  --md-cat-basic-border: #c3e5d9;
 
-  --md-cat-scenario: #0a7d74; /* 场景设计 · 5.00:1 / 4.52:1 */
-  --md-cat-scenario-bg: #ecfaf8;
-  --md-cat-scenario-border: #a5e2dc;
+  --md-cat-scenario: #2f6e60; /* 场景设计 · 白字 5.97:1 */
+  --md-cat-scenario-bg: #eaf5f1;
+  --md-cat-scenario-border: #b6ddd2;
 
-  --md-cat-deep: #6d3fd4; /* 深挖追问 · 6.24:1 / 5.56:1 */
-  --md-cat-deep-bg: #f5f0ff;
-  --md-cat-deep-border: #d3c2f5;
+  --md-cat-deep: #2a5548; /* 深挖追问 · 白字 8.43:1 */
+  --md-cat-deep-bg: #e8f2ee;
+  --md-cat-deep-border: #a9d2c4;
 
-  --md-cat-algo: #b25a00; /* 算法编码 · 4.86:1 / 4.58:1 */
-  --md-cat-algo-bg: #fff5e8;
-  --md-cat-algo-border: #f5d3a8;
+  --md-cat-algo: #4a7f72; /* 算法编码 · 白字 4.60:1 */
+  --md-cat-algo-bg: #eff7f4;
+  --md-cat-algo-border: #cbe6dc;
 
-  --md-cat-trouble: #c0392b; /* 排查诊断 · 5.44:1 / 4.87:1 */
-  --md-cat-trouble-bg: #fdf0ee;
-  --md-cat-trouble-border: #f2c1bb;
+  --md-cat-trouble: #6b756f; /* 排查诊断 · 白字 4.77:1 */
+  --md-cat-trouble-bg: #f3f7f5;
+  --md-cat-trouble-border: #d9e4df;
 
-  --md-cat-neutral: #5a6172; /* 未分类 / 其他 */
-  --md-cat-neutral-bg: #f4f5f8;
-  --md-cat-neutral-border: #d4d8e2;
+  --md-cat-neutral: #5d6b66; /* 未分类 / 其他 */
+  --md-cat-neutral-bg: #f4f7f6;
+  --md-cat-neutral-border: #dbe5e1;
 
   /* ===== 6. 字体 ====================================================== */
   /* 不要覆盖为纯中文栈：拉丁字符走 Helvetica，中文回落苹方 / 雅黑。 */
@@ -194,8 +196,8 @@
   --md-shadow-2: 0 2px 8px rgba(20, 30, 60, 0.08); /* hover / 悬浮 */
   --md-shadow-3: 0 8px 24px rgba(20, 30, 60, 0.12); /* 下拉、浮层 */
   --md-shadow-4: 0 12px 40px rgba(20, 24, 40, 0.18); /* 弹窗 */
-  --md-shadow-focus: 0 0 0 3px rgba(7, 193, 96, 0.12); /* 聚焦光晕 */
-  --md-shadow-brand: 0 4px 16px rgba(7, 193, 96, 0.14); /* 卡片 hover（品牌色） */
+  --md-shadow-focus: 0 0 0 3px rgba(127, 201, 178, 0.28); /* 聚焦光晕 */
+  --md-shadow-brand: 0 4px 16px rgba(127, 201, 178, 0.18); /* 卡片 hover（品牌色） */
 
   /* ===== 10. 动效 ===================================================== */
   --md-ease: cubic-bezier(0.2, 0, 0, 1); /* 通用 */
@@ -214,14 +216,14 @@
 
   /* ===== 12. 代码块（本产品特色：对话里大量代码）======================
      代码块在两种主题下都保持深色，不跟随主题反色 —— 反色会让语法高亮失真。 */
-  --md-code-bg: #1f2430;
-  --md-code-head: #2a2f3a;
-  --md-code-border: #2a2f3a;
-  --md-code-text: #e6e9f0;
-  --md-code-dim: #a9b2c6; /* 语言标签、次要说明 */
-  --md-code-line: #4a5060; /* 复制按钮描边 */
-  --md-code-line-hover: #8a92a8;
-  --md-code-inline-bg: #f0f2f8; /* 行内 code 底 */
+  --md-code-bg: #212a27;
+  --md-code-head: #293431;
+  --md-code-border: #293431;
+  --md-code-text: #e8efec;
+  --md-code-dim: #a8b6b1; /* 语言标签、次要说明 */
+  --md-code-line: #4a5852; /* 复制按钮描边 */
+  --md-code-line-hover: #8b9994;
+  --md-code-inline-bg: #f0f5f3; /* 行内 code 底 */
 
   /* ===== 13. 尺寸骨架 ================================================= */
   --md-header-h: 56px; /* 顶栏 */
@@ -248,107 +250,107 @@ html.dark {
   color-scheme: dark;
 
   /* -- 品牌：填充轨色相不变，文字轨换亮版 ------------------------------ */
-  --md-brand: #07c160;
-  --md-brand-hover: #35d07f;
-  --md-brand-active: #39cd80; /* 深色下「按下」应更亮 */
-  --md-brand-subtle: #082a19;
-  --md-brand-subtle-2: #0d3b23;
-  --md-brand-border: #1d6b40;
+  --md-brand: #7fc9b2;
+  --md-brand-hover: #93d6c0;
+  --md-brand-active: #8fd0ba; /* 深色下「按下」应更亮 */
+  --md-brand-subtle: #16302a;
+  --md-brand-subtle-2: #1d4038;
+  --md-brand-border: #2f5f52;
 
-  --md-brand-text: #35d07f; /* 8.4:1 on #1d1e1f */
-  --md-brand-text-hover: #5cdc98;
+  --md-brand-text: #8ed7c0; /* 9.64:1 on #1c2320 */
+  --md-brand-text-hover: #a6e3cf;
 
-  /* 深色下实底用亮绿 + 深字：比「深绿底 + 白字」更清晰，也更像原生暗色控件 */
-  --md-brand-solid: #07c160;
-  --md-brand-solid-hover: #2ed07b;
-  --md-brand-solid-active: #069a4d;
-  --md-on-brand: #04240f; /* 6.74:1 on #07c160 */
+  /* 深色下实底用亮薄荷 + 深字：比「深绿底 + 白字」更清晰，也更像原生暗色控件 */
+  --md-brand-solid: #7fc9b2;
+  --md-brand-solid-hover: #93d6c0;
+  --md-brand-solid-active: #6bb8a1;
+  --md-on-brand: #0c2a22; /* 7.96:1 on #7fc9b2 */
 
   --md-on-accent: #ffffff;
-  --md-on-cat: #10131a; /* 徽标底色在深色主题下变亮，文字必须翻成深字 */
-  --md-inverse-surface: #3a3d44;
+  --md-on-cat: #0e1a17; /* 徽标底色在深色主题下变亮，文字必须翻成深字 */
+  --md-inverse-surface: #38433f;
   --md-inverse-text: #ffffff;
 
   /* -- 语义 ------------------------------------------------------------ */
   --md-success: var(--md-brand);
   --md-success-subtle: var(--md-brand-subtle);
   --md-success-border: var(--md-brand-border);
-  --md-success-text: #35d07f;
+  --md-success-text: #8ed7c0;
 
-  --md-warning-subtle: #2e2415;
-  --md-warning-border: #5a4522;
-  --md-warning-text: #e6a23c; /* 8.42:1 */
+  --md-warning-subtle: #2b2418;
+  --md-warning-border: #55452b;
+  --md-warning-text: #e3ba82;
 
-  --md-danger-subtle: #2e1a1a;
-  --md-danger-border: #5c2b2b;
-  --md-danger-text: #f56c6c; /* 6.35:1 */
+  --md-danger-subtle: #2c1e1f;
+  --md-danger-border: #553234;
+  --md-danger-text: #e79a9d;
 
-  --md-info-subtle: #262727;
-  --md-info-border: #3a3b3d;
-  --md-info-text: #a3a6ad; /* 7.56:1 */
+  --md-info-subtle: #232b28;
+  --md-info-border: #38433f;
+  --md-info-text: #a8b4af;
 
   /* -- 中性：表面比页面亮一级 ------------------------------------------ */
-  --md-text-1: #e5eaf3;
-  --md-text-2: #cfd3dc;
-  --md-text-3: #a3a6ad;
-  --md-text-4: #6c6e72;
-  --md-text-inverse: #141414;
+  --md-text-1: #e6edea;
+  --md-text-2: #cbd4d0;
+  --md-text-3: #a5b1ac;
+  --md-text-4: #6f7b76;
+  --md-text-inverse: #121614;
 
-  --md-border: #4c4d4f;
-  --md-border-weak: #363637;
-  --md-border-hair: #2a2b2c;
+  --md-border: #3e4a45;
+  --md-border-weak: #2c3633;
+  --md-border-hair: #232b28;
 
-  --md-surface-0: #141414; /* 页面底（最深） */
-  --md-surface-1: #1d1e1f; /* 卡片、面板 */
-  --md-surface-2: #262727; /* hover 底、次级块 */
-  --md-surface-3: #2e2f30;
+  --md-surface-0: #121614; /* 页面底（最深） */
+  --md-surface-1: #1c2320; /* 卡片、面板 */
+  --md-surface-2: #232b28; /* hover 底、次级块 */
+  --md-surface-3: #2a332f;
   --md-overlay: rgba(0, 0, 0, 0.6);
 
   /* -- 涨跌 ------------------------------------------------------------ */
-  --md-up: #ff7875;
-  --md-up-subtle: #2e1a1a;
-  --md-down: #22a6b3;
-  --md-down-subtle: #10262a;
-  --md-flat: #a3a6ad;
+  --md-up: #e79a9d;
+  --md-up-subtle: #2c1e1f;
+  --md-down: #8ed7c0;
+  --md-down-subtle: #17302a;
+  --md-flat: #a5b1ac;
 
-  /* -- 题型分类：暗底上整体提亮 ---------------------------------------- */
-  --md-cat-basic: #8ab4ff;
-  --md-cat-basic-bg: #1b2434;
-  --md-cat-basic-border: #2f4470;
+  /* -- 题型分类：暗底上整体提亮，仍是同一薄荷绿 ------------------------ */
+  --md-cat-basic: #9ad9c3;
+  --md-cat-basic-bg: #162e28;
+  --md-cat-basic-border: #2c584c;
 
-  --md-cat-scenario: #4fd1c5;
-  --md-cat-scenario-bg: #132a29;
-  --md-cat-scenario-border: #245652;
+  --md-cat-scenario: #8ed7c0;
+  --md-cat-scenario-bg: #142a25;
+  --md-cat-scenario-border: #2a5449;
 
-  --md-cat-deep: #bfa8ff;
-  --md-cat-deep-bg: #241d38;
-  --md-cat-deep-border: #453469;
+  --md-cat-deep: #aee5d2;
+  --md-cat-deep-bg: #132622;
+  --md-cat-deep-border: #285044;
 
-  --md-cat-algo: #f5b971;
-  --md-cat-algo-bg: #2e2417;
-  --md-cat-algo-border: #5a4527;
+  --md-cat-algo: #86ccb6;
+  --md-cat-algo-bg: #172e29;
+  --md-cat-algo-border: #2d5a4e;
 
-  --md-cat-trouble: #ff8a8a;
-  --md-cat-trouble-bg: #2e1a1a;
-  --md-cat-trouble-border: #5c2b2b;
+  --md-cat-trouble: #a8b4af;
+  --md-cat-trouble-bg: #232b28;
+  --md-cat-trouble-border: #38433f;
 
-  --md-cat-neutral: #b6bcc8;
-  --md-cat-neutral-bg: #262727;
-  --md-cat-neutral-border: #3a3b3d;
+  --md-cat-neutral: #b6c1bc;
+  --md-cat-neutral-bg: #232b28;
+  --md-cat-neutral-border: #36413d;
 
   /* -- 阴影：深色下靠描边区分层级，阴影更重但更淡 ---------------------- */
   --md-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
   --md-shadow-2: 0 2px 8px rgba(0, 0, 0, 0.4);
   --md-shadow-3: 0 8px 24px rgba(0, 0, 0, 0.5);
   --md-shadow-4: 0 12px 40px rgba(0, 0, 0, 0.6);
-  --md-shadow-focus: 0 0 0 3px rgba(7, 193, 96, 0.2);
-  --md-shadow-brand: 0 4px 16px rgba(7, 193, 96, 0.18);
+  --md-shadow-focus: 0 0 0 3px rgba(127, 201, 178, 0.22);
+  --md-shadow-brand: 0 4px 16px rgba(127, 201, 178, 0.2);
 
   /* -- 代码块在深色下压深一档，与卡片区分 ------------------------------ */
-  --md-code-bg: #16191f;
-  --md-code-head: #1e222a;
-  --md-code-border: #2e333d;
-  --md-code-inline-bg: #2a2c30;
+  --md-code-bg: #101715;
+  --md-code-head: #18201d;
+  --md-code-border: #26332e;
+  --md-code-inline-bg: #2a332f;
 }
 
 /* ==========================================================================

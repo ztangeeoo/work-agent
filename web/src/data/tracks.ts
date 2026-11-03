@@ -18,10 +18,11 @@ export const LEVELS = ['初级', '中级', '高级', '专家'];
 export const EXPS = ['应届/实习', '1-3年', '3-5年', '5-10年', '10年以上'];
 export const INDUSTRIES = ['不限', '互联网/电商', '金融/银行', '证券/基金', '游戏', '在线教育', '医疗健康', '智能制造', '汽车/自动驾驶', '云计算/SaaS', '社交/内容', '物流/供应链', '政务/国企', '通信/运营商'];
 
-/** 智能体列表：聊天框上方可切换 */
+/** 智能体列表：聊天框上方可切换
+ *  icon 只作头像用的单字标记 —— 界面主题色单一，不再塞彩色 emoji */
 export const AGENTS: AgentDef[] = [
-  { id: 'interviewer', name: '面试出题官', icon: '🎯', desc: '按方向 / 级别 / 经验 / 简历智能出题', mode: 'interview' },
-  { id: 'reviewer', name: '代码审核官', icon: '🛡️', desc: '配置代码地址，轮询 PR 自动审核并给出修改意见', mode: 'review' },
+  { id: 'interviewer', name: '面试出题官', icon: '面', desc: '按方向 / 级别 / 经验 / 简历智能出题', mode: 'interview' },
+  { id: 'reviewer', name: '代码审核官', icon: '审', desc: '配置代码地址，轮询 PR 自动审核并给出修改意见', mode: 'review' },
 ];
 
 export const DEFAULT_PROFILE = {

@@ -140,12 +140,12 @@ function qCardHtml(s: { no: number; head: string; body: string }, live = false):
     head = (first || '').replace(/[#*`\s]/g, '').slice(0, 40) || '面试题';
   }
   const bodyHtml = (live ? mdRichStreaming(body) : mdRich(body)).replace(/\u0001([\s\S]*?)\u0001/g, (_mm, inner: string) =>
-    '<div class="q-followup"><b>💬 追问</b>' +
+    '<div class="q-followup"><b>追问</b>' +
     mdRich(inner.replace(/^[ \t]*(?:[-*]\s*)?(?:\*\*)?追问(?:\*\*)?\s*[:：]\s*/, '')) + '</div>');
   const tagHtml = tags.map(t => '<span class="q-tag ' + qTagClass(t) + '">' + esc(t) + '</span>').join('');
   const accent = qTagClass(tags[0] || '');
   const focusHtml = focus.length
-    ? '<div class="q-focus"><b>🎯 考察点</b>' + focus.map(f => '<span>' + mdRich(f) + '</span>').join('') + '</div>'
+    ? '<div class="q-focus"><b>考察点</b>' + focus.map(f => '<span>' + mdRich(f) + '</span>').join('') + '</div>'
     : '';
   return '<div class="q-card ' + accent + (live ? ' is-live' : '') + '">' +
     '<div class="q-card-head"><span class="q-no">Q' + s.no + '</span>' +

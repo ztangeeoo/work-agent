@@ -21,7 +21,6 @@ export default function ReviewBar({
 
   return (
     <div className="review-bar">
-      <span className="rb-icon">📦</span>
       {repos.length ? (
         <select className="rb-select" value={repoId} onChange={(e) => onPick(e.target.value)} title="切换仓库">
           {repos.map(r => (
@@ -49,7 +48,7 @@ export default function ReviewBar({
         {polling ? '轮询中…' : '立即轮询'}
       </button>
       <button className="btn btn-ghost btn-sm" onClick={repo ? onSettings : onAdd}>
-        {repo ? '⚙️ 仓库设置' : '＋ 添加仓库'}
+        {repo ? '仓库设置' : '添加仓库'}
       </button>
     </div>
   );

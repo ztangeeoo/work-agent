@@ -125,7 +125,7 @@ export default function RepoSetup({ open, onClose, repo, onSaved, onDeleted, toa
     <div className="modal-mask show" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal modal-wide">
         <div className="modal-head">
-          <span className="modal-title">🛡️ 代码审核官 · 仓库配置</span>
+          <span className="modal-title">代码审核官 · 仓库配置</span>
           <button className="modal-close" onClick={onClose} title="关闭">✕</button>
         </div>
 

@@ -1,10 +1,10 @@
 @echo off
 chcp 65001 >nul
-title IT 面试出题官 · 启动器
+title 工作智能体集合 · 启动器
 cd /d "%~dp0"
 
 rem ============================================================
-rem  IT 面试出题官 一键启动（前后端分离 + CopilotKit）
+rem  工作智能体集合 一键启动（前后端分离 + CopilotKit）
 rem    1. AgentScope 智能体服务（agent_server.py，Python，端口 8790）
 rem    2. React 前端构建（web/，Vite，产物输出到 web/dist）
 rem    3. 页面与转发服务（server.js，Node，端口 8787，托管 web/dist + CopilotKit runtime）
@@ -78,7 +78,7 @@ rem ---------- 4. 启动两个服务 ----------
 echo [4/4] 启动服务...
 start "AgentScope 智能体服务" "%PY%" agent_server.py
 timeout /t 2 /nobreak >nul
-start "IT面试出题官 页面服务" node server.js
+start "工作智能体集合 页面服务" node server.js
 timeout /t 2 /nobreak >nul
 start "" http://localhost:8787
 
