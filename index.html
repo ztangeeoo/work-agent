@@ -191,6 +191,63 @@
   .typing i:nth-child(3) { animation-delay: .4s; }
   @keyframes blink { 0%,80%,100% { opacity: .25; } 40% { opacity: 1; } }
 
+  /* ---- 左侧「专家」入口 ---- */
+  .expert-entry {
+    display: flex; align-items: center; gap: 10px; padding: 9px 11px;
+    border: 1px solid var(--border); border-radius: 10px; cursor: pointer;
+    background: linear-gradient(135deg, #f7f9ff, #ffffff); transition: all .13s;
+  }
+  .expert-entry:hover { border-color: var(--primary); box-shadow: 0 2px 10px rgba(79,110,247,.12); }
+  .expert-entry.active { border-color: var(--primary); background: var(--primary-light); }
+  .expert-entry .ex-avatar {
+    width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
+    background: linear-gradient(135deg, #4f6ef7, #7c5cf5); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 15px;
+  }
+  .expert-entry .ex-main { flex: 1; min-width: 0; }
+  .expert-entry .ex-t { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .expert-entry .ex-d { font-size: 11px; color: var(--sub); margin-top: 1px; }
+  .expert-entry .ex-arrow { color: var(--sub); font-size: 14px; flex-shrink: 0; }
+  .expert-entry .ex-count {
+    font-size: 10px; color: var(--primary); background: #fff; border: 1px solid var(--primary);
+    border-radius: 999px; padding: 0 7px; line-height: 1.6; font-weight: 500;
+  }
+
+  /* ---- 右侧：专家选择视图 ---- */
+  .expert-view { display: none; flex: 1; overflow-y: auto; min-width: 0; }
+  .expert-view.show { display: block; }
+  .expert-view-inner { max-width: 880px; margin: 0 auto; padding: 30px 26px 48px; }
+  .expert-view-inner h1 { font-size: 19px; font-weight: 700; }
+  .expert-view-inner .lead { font-size: 13px; color: var(--sub); margin-top: 7px; line-height: 1.7; }
+  .expert-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 22px; }
+  .expert-card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 18px; cursor: pointer; transition: all .16s; display: flex; flex-direction: column; gap: 11px;
+    text-align: left;
+  }
+  .expert-card:hover {
+    border-color: var(--primary); transform: translateY(-2px);
+    box-shadow: 0 10px 26px rgba(79, 110, 247, .14);
+  }
+  .expert-card .ex-top { display: flex; align-items: center; gap: 12px; }
+  .expert-avatar {
+    width: 46px; height: 46px; border-radius: 13px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 22px; color: #fff;
+  }
+  .expert-card h3 { font-size: 15px; font-weight: 700; }
+  .expert-card .ex-role { font-size: 11px; color: var(--sub); margin-top: 2px; }
+  .expert-card .ex-desc { font-size: 12.5px; color: #4a5060; line-height: 1.75; }
+  .expert-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .expert-tag {
+    font-size: 10.5px; color: var(--primary-dark); background: var(--primary-light);
+    border-radius: 999px; padding: 2px 9px; line-height: 1.6;
+  }
+  .expert-card .ex-go {
+    margin-top: auto; padding-top: 4px; font-size: 12px; font-weight: 600; color: var(--primary);
+    display: flex; align-items: center; gap: 5px;
+  }
+  .chat-wrap.hide { display: none; }
+
   /* ---- 智能体栏（聊天框上方） ---- */
   .agent-bar {
     display: flex; align-items: center; gap: 10px; padding: 10px 20px;
@@ -336,6 +393,8 @@
   @media (max-width: 860px) {
     main { flex-direction: column; }
     aside { width: 100%; border-right: none; border-bottom: 1px solid var(--border); max-height: 45vh; }
+    .expert-grid { grid-template-columns: 1fr; }
+    .expert-view-inner { padding: 18px 14px 32px; }
   }
 </style>
 </head>
@@ -361,6 +420,19 @@
       然后访问 <code>http://localhost:8787</code>
     </div>
 
+    <!-- 专家入口（在历史会话之上） -->
+    <div class="section" style="margin-bottom:16px">
+      <div class="section-title">专家</div>
+      <div class="expert-entry" id="expertEntry" title="点击查看全部专家">
+        <span class="ex-avatar">🧑‍💻</span>
+        <div class="ex-main">
+          <div class="ex-t">专家中心 <span class="ex-count" id="expertCount">2</span></div>
+          <div class="ex-d">面试出题官 · 代码审核官</div>
+        </div>
+        <span class="ex-arrow">›</span>
+      </div>
+    </div>
+
     <div class="side-head">
       <div class="section-title">历史会话</div>
       <button class="btn btn-ghost btn-sm" id="btnNewConvoSide" title="新建空白会话">＋ 新建</button>
@@ -368,8 +440,17 @@
     <div class="convo-list" id="convoList"></div>
   </aside>
 
+  <!-- ============ 右侧：专家选择 ============ -->
+  <div class="expert-view" id="expertView">
+    <div class="expert-view-inner">
+      <h1>选择一位专家，开启新任务</h1>
+      <p class="lead">选中专家后填写任务信息，确认即新建一个独立任务会话；历史会话会记录该任务所属的专家。</p>
+      <div class="expert-grid" id="expertGrid"></div>
+    </div>
+  </div>
+
   <!-- ============ 右侧对话 ============ -->
-  <div class="chat-wrap">
+  <div class="chat-wrap" id="chatView">
     <div class="chat-head">
       <div>
         <div class="title" id="chatTitle">面试对话</div>
@@ -430,10 +511,11 @@
 <div class="modal-mask" id="agentModal">
   <div class="modal modal-wide">
     <div class="modal-head">
-      <span class="modal-title">🎯 面试出题官 · 面试配置</span>
+      <span class="modal-title" id="agentModalTitle">🎯 面试出题官 · 面试配置</span>
       <button class="modal-close" id="btnAgentClose" title="关闭">✕</button>
     </div>
     <div class="modal-body">
+      <div id="interviewerFields">
       <label class="field">技术方向</label>
       <div class="chip-group" id="chipTrack"></div>
       <label class="field">细分方向（可不选，默认随机）</label>
@@ -477,6 +559,37 @@
       </div>
       <div class="hint" id="resumeHint">上传简历后，AI 将结合简历内容针对性出题</div>
       <div class="err-text" id="genErr"></div>
+      </div><!-- /interviewerFields -->
+
+      <div id="reviewerFields" style="display:none">
+        <label class="field">代码仓库地址</label>
+        <input type="text" id="rvRepo" placeholder="https://github.com/owner/repo 或 owner/repo">
+        <div class="hint">支持 GitHub / GitLab（含自建实例）。填好后会拉取该 PR 的 diff 做真实审核。</div>
+        <div class="row2">
+          <div>
+            <label class="field">PR / MR 编号</label>
+            <input type="text" id="rvPr" placeholder="如 128">
+          </div>
+          <div>
+            <label class="field">平台</label>
+            <select id="rvProvider">
+              <option value="">自动识别</option>
+              <option value="github">GitHub</option>
+              <option value="gitlab">GitLab</option>
+            </select>
+          </div>
+        </div>
+        <label class="field">Access Token（私有仓库必填）</label>
+        <input type="password" id="rvToken" placeholder="ghp_… / glpat-…，仅保存在本机">
+        <label class="field">审核重点（可多选）</label>
+        <div class="chip-group" id="chipRvFocus"></div>
+        <label class="field">严格程度</label>
+        <div class="chip-group" id="chipRvStrict"></div>
+        <label class="field">补充说明（可选）</label>
+        <input type="text" id="rvNote" placeholder="如：重点看支付回调的幂等与并发安全">
+        <div class="hint">确认后新建审核任务：优先拉取 PR diff 走「侦察官 → 审核官 → 裁决官」出报告；拉取失败会自动转为对话式审核。</div>
+        <div class="err-text" id="rvErr"></div>
+      </div><!-- /reviewerFields -->
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost btn-sm" id="btnAgentCancel">取消</button>
@@ -510,16 +623,31 @@ const LEVELS  = ['初级','中级','高级','专家'];
 const EXPS    = ['应届/实习','1-3年','3-5年','5-10年','10年以上'];
 const INDUSTRIES = ['不限','互联网/电商','金融/银行','证券/基金','游戏','在线教育','医疗健康','智能制造','汽车/自动驾驶','云计算/SaaS','社交/内容','物流/供应链','政务/国企','通信/运营商'];
 
-/* 智能体列表：面试出题官作为一个智能体（可扩展） */
-const AGENTS = [
-  { id:'interviewer', name:'面试出题官', icon:'🎯', desc:'按方向 / 级别 / 经验 / 简历智能出题' }
+/* 专家列表：可在历史会话上方入口进入并选择，确认配置后新建任务 */
+const EXPERTS = [
+  {
+    id: 'interviewer', name: '面试出题官', icon: '🎯', role: 'AI 技术面试官',
+    desc: '按技术方向 / 级别 / 经验 / 行业背景 / 简历智能出题，支持追问与结构化评分复盘。',
+    tags: ['智能出题', '简历深挖', '评分复盘'],
+    avatar: 'linear-gradient(135deg, #4f6ef7, #7c5cf5)', cta: '开始出题'
+  },
+  {
+    id: 'reviewer', name: '代码审核官', icon: '🛡️', role: 'AI Code Reviewer',
+    desc: '拉取 PR diff，按正确性 / 安全 / 并发性能 / 可维护性 / 测试五维审核，输出风险等级与合入结论。',
+    tags: ['PR 审核', '风险定级', '修复建议'],
+    avatar: 'linear-gradient(135deg, #0d9488, #22c55e)', cta: '开始审核'
+  }
 ];
+const RV_FOCUS = ['正确性', '安全', '并发与性能', '可维护性', '测试覆盖', '兼容性'];
+const RV_STRICT = ['宽松', '标准', '严格'];
 
 const state = {
-  activeAgent: 'interviewer',   // 当前智能体
+  expert: 'interviewer',        // 当前专家
+  view: 'chat',                 // chat | experts
   track: '前端开发', sub: '随机', level: '中级', exp: '1-3年', industry: '不限',
   count: 5, lang: '中文',
   resumeText: '', resumeName: '',
+  rv: { repo: '', pr: '', provider: '', token: '', focus: ['正确性', '安全'], strict: '标准', note: '' },
   history: [],   // {role, content}
   convoId: '',   // 当前会话 id
   busy: false,
@@ -528,6 +656,7 @@ const state = {
 
 /* ================= 工具 ================= */
 const $ = id => document.getElementById(id);
+function currentExpert(){ return EXPERTS.find(e=>e.id===state.expert) || EXPERTS[0]; }
 function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),2200); }
 function esc(s){ return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function mdLite(s){
@@ -655,8 +784,13 @@ function qCardHtml(s){
     '</span><span class="q-title">' + headInline(head) + '</span>' + tagHtml +
     '</div><div class="q-card-body">' + bodyHtml + '</div></div>';
 }
-/* AI 消息统一入口：含题目 → 卡片化；否则整段富文本 */
-function renderAiInto(bubble, text){
+/* AI 消息统一入口：含题目 → 卡片化；否则整段富文本。opts.cards=false 强制不分卡（审核报告用） */
+function renderAiInto(bubble, text, opts = {}){
+  if(opts.cards === false){
+    bubble.innerHTML = mdRich(text);
+    bindCodeCopy(bubble);
+    return;
+  }
   const segs = splitQuestions(text);
   const qCount = segs.filter(s=>s.no).length;
   if(qCount >= 1){
@@ -821,18 +955,20 @@ async function ocrImage(file){
 }
 
 /* ================= 聊天 UI ================= */
-function renderMsg(role, content){
+function renderMsg(role, content, opts = {}){
   $('emptyState') && $('emptyState').remove();
   const div = document.createElement('div');
   div.className = 'msg ' + (role==='user' ? 'user' : 'ai');
-  const who = role==='user' ? '🧑' : '🎯';
-  div.innerHTML = `<div class="avatar">${who}</div><div class="bubble"></div>`;
+  const ag = currentExpert();
+  const who = role==='user' ? '🧑' : ag.icon;
+  const avStyle = role==='user' ? '' : ` style="background:${ag.avatar}"`;
+  div.innerHTML = `<div class="avatar"${avStyle}>${who}</div><div class="bubble"></div>`;
   $('chatList').appendChild(div);
   const bubble = div.querySelector('.bubble');
   if(role === 'user'){
     bubble.innerHTML = esc(content).replace(/\n/g, '<br>');
   }else{
-    renderAiInto(bubble, content);
+    renderAiInto(bubble, content, opts);
   }
   $('chatList').scrollTop = 1e9;
   return bubble;
@@ -841,7 +977,8 @@ function renderTyping(){
   const div = document.createElement('div');
   div.className = 'msg ai';
   div.id = 'typingMsg';
-  div.innerHTML = `<div class="avatar">🎯</div><div class="bubble"><span class="typing"><i></i><i></i><i></i></span></div>`;
+  const ag = currentExpert();
+  div.innerHTML = `<div class="avatar" style="background:${ag.avatar}">${ag.icon}</div><div class="bubble"><span class="typing"><i></i><i></i><i></i></span></div>`;
   $('chatList').appendChild(div);
   $('chatList').scrollTop = 1e9;
 }
@@ -872,7 +1009,7 @@ ${state.resumeText ? `\n候选人简历摘要（出题时请针对简历中的�
       : `题目需结合「${state.industry}」行业的真实业务场景与约束（如数据规模、合规要求、稳定性/实时性诉求），场景题要具体可信，避免脱离行业的教科书式提问。`}`;
 }
 
-async function callLLM(userMsg, {stream=true, temperature=0.7}={}){
+async function callLLM(userMsg, {stream=true, temperature=0.7, extra=null}={}){
   const cfg = loadCfg();
   if(!cfg.base || !cfg.model){ throw new Error('请先点击右上角齿轮图标配置模型（API 地址 / 模型名称）'); }
 
@@ -891,6 +1028,7 @@ async function callLLM(userMsg, {stream=true, temperature=0.7}={}){
       body: JSON.stringify({
         base: cfg.base, key: cfg.key, model: cfg.model,
         messages, temperature, stream,
+        ...(extra || {}),   // agent_mode / review 等审核官上下文
         // 结构化画像：AgentScope 服务端据此构建「策划官/面试官/评分官」的提示词
         profile: {
           track: state.track, sub: state.sub, level: state.level, exp: state.exp,
@@ -926,22 +1064,22 @@ async function callLLM(userMsg, {stream=true, temperature=0.7}={}){
   return content;
 }
 
-/* 流式读取 */
-async function streamChat(userMsg){
+/* 流式读取。opts.display：界面展示的短消息（实际发给模型的仍是 userMsg）；opts.extra：附加请求字段 */
+async function streamChat(userMsg, opts = {}){
   // 先确认本地服务可用，避免出现莫名其妙的 404 / Failed to fetch
   if(!state.proxyOk && !(await checkHealth())){
-    renderMsg('user', userMsg);
+    if(!opts.skipUser) renderMsg('user', opts.display || userMsg);
     renderMsg('assistant', '⚠️ 无法请求模型：本地服务没有运行。\n\n请双击项目里的 start.bat（同时启动智能体服务与页面服务），启动后刷新本页即可。');
     return;
   }
 
-  renderMsg('user', userMsg);
+  if(!opts.skipUser) renderMsg('user', opts.display || userMsg);
   renderTyping();
   state.busy = true; setBusy(true);
 
   let full = '';
   try{
-    const res = await callLLM(userMsg, {stream:true});
+    const res = await callLLM(userMsg, {stream:true, extra: opts.extra});
     const reader = res.body.getReader();
     const dec = new TextDecoder();
     let buf = '';
@@ -971,7 +1109,7 @@ async function streamChat(userMsg){
         }catch(_){}
       }
     }
-    if(window._curBubble){ renderAiInto(window._curBubble, full); }   // 流式结束后正式卡片化重渲染
+    if(window._curBubble){ renderAiInto(window._curBubble, full, { cards: state.expert !== 'reviewer' }); }   // 流式结束后正式重渲染
     window._curBubble = null;
     if(!full) full = '(模型未返回内容)';
     state.history.push({role:'assistant', content: full});
@@ -982,6 +1120,86 @@ async function streamChat(userMsg){
     renderMsg('assistant', '❌ ' + err.message + '\n\n排查顺序：\n1. 本地服务是否已启动（双击 start.bat → http://localhost:8787）\n2. API 地址与模型名是否正确\n3. API Key 是否有效、额度是否充足\n4. 本地模型（Ollama）是否已启动');
   } finally {
     state.busy = false; setBusy(false);
+  }
+}
+
+/* ================= 代码审核任务 ================= */
+function setTypingText(text){
+  const t = $('typingMsg');
+  if(t) t.querySelector('.bubble').innerHTML = '<span style="font-size:12.5px;color:#6b7280">' + esc(text) + '</span>';
+}
+function buildReviewerPrompt(){
+  const rv = state.rv;
+  return `请审核 ${rv.repo} 的 PR #${rv.pr}。\n审核重点：${rv.focus.join('、')}\n严格程度：${rv.strict}${rv.note ? '\n补充说明：' + rv.note : ''}`;
+}
+/* 拉真实 PR diff 走三智能体审核；任一步失败都抛出，由调用方回退到对话式审核 */
+async function requestPrReview(rv){
+  if(!state.proxyOk && !(await checkHealth())) throw new Error('本地服务未启动');
+
+  const repoRes = await fetch(API + '/api/repos', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ url: rv.repo, provider: rv.provider || '', ...(rv.token ? { token: rv.token } : {}) })
+  });
+  const repoJ = await repoRes.json().catch(()=>({}));
+  if(!repoRes.ok || !repoJ.ok) throw new Error((repoJ.error && repoJ.error.message) || ('仓库配置失败 HTTP ' + repoRes.status));
+  const rid = repoJ.repo && repoJ.repo.id;
+  if(!rid) throw new Error('仓库配置返回异常');
+
+  setTypingText('正在拉取仓库的开放 PR…');
+  await fetch(API + '/api/repos/' + encodeURIComponent(rid) + '/poll?wait=1&force=1', {
+    method:'POST', headers:{'Content-Type':'application/json'}
+  }).catch(()=>null);
+
+  const prsRes = await fetch(API + '/api/repos/' + encodeURIComponent(rid) + '/prs?limit=100', {cache:'no-store'});
+  const prsJ = await prsRes.json().catch(()=>({}));
+  const list = (prsJ && prsJ.list) || [];
+  const target = list.find(p=>String(p.number) === String(rv.pr));
+  if(!target) throw new Error('未在开放 PR 中找到 #' + rv.pr + '（可能已合并、编号有误，或私有仓库缺少 Token）');
+
+  setTypingText('已找到 PR「' + (target.title || '#' + rv.pr) + '」，审核官正在按五维审核（约 1-2 分钟）…');
+  const res = await fetch(API + '/api/repos/' + encodeURIComponent(rid) + '/prs/' + encodeURIComponent(rv.pr) + '/review', {
+    method:'POST', headers:{'Content-Type':'application/json'}
+  });
+  const j = await res.json().catch(()=>({}));
+  if(!res.ok || !j.ok) throw new Error((j.error && j.error.message) || ('审核失败 HTTP ' + res.status));
+  const rev = j.review || {};
+  return '## 🛡️ 审核完成：' + shortRepo(rv.repo) + ' PR #' + rv.pr + '\n\n' + (rev.reportMd || rev.summary || '（审核完成，报告为空）');
+}
+
+async function runReviewerTask(){
+  if(state.busy) return;
+  const rv = { ...state.rv, focus: [...state.rv.focus] };
+  const display = '🛡️ 新建审核任务\n仓库：' + rv.repo + ' · PR #' + rv.pr +
+    '\n重点：' + rv.focus.join('、') + '｜严格程度：' + rv.strict + (rv.note ? '\n备注：' + rv.note : '');
+
+  state.busy = true; setBusy(true);
+  renderMsg('user', display);
+  renderTyping();
+  setTypingText('正在连接仓库并校验 PR…');
+
+  try{
+    const report = await requestPrReview(rv);
+    removeTyping();
+    const bubble = renderMsg('assistant', '');
+    renderAiInto(bubble, report, { cards: false });
+    state.history.push({ role:'user', content: display });
+    state.history.push({ role:'assistant', content: report });
+    saveHistory();
+    toast('✅ 审核完成');
+    state.busy = false; setBusy(false);
+  }catch(err){
+    removeTyping();
+    state.busy = false; setBusy(false);
+    toast('自动拉取 PR 失败，转为对话式审核');
+    renderMsg('assistant', '⚠️ 自动拉取 PR 失败：' + err.message + '\n\n已切换为对话式审核：可直接粘贴 diff / 代码片段，或让我给出该 PR 的审核清单。');
+    await streamChat(buildReviewerPrompt(), {
+      skipUser: true,
+      extra: {
+        agent_mode: 'review',
+        review: { repo: rv.repo, number: rv.pr, title: '', reportMd: '',
+                  focus: rv.focus, strict: rv.strict, note: rv.note }
+      }
+    });
   }
 }
 
@@ -1046,6 +1264,17 @@ function snapshotProfile(){
            industry: state.industry, resumeName: state.resumeName,
            resumeText: (state.resumeText || '').slice(0, 8000) };
 }
+function snapshotRv(){
+  return { ...state.rv, focus: [...state.rv.focus] };
+}
+/* 会话 → 当前专家 / 审核配置（切换会话时恢复上下文） */
+function applyConvoMeta(conv){
+  state.expert = (conv && conv.expert && EXPERTS.some(e=>e.id===conv.expert)) ? conv.expert : 'interviewer';
+  if(conv && conv.rv) state.rv = { ...state.rv, ...conv.rv, focus: Array.isArray(conv.rv.focus) ? [...conv.rv.focus] : state.rv.focus };
+  renderAgentBar();
+  syncRvInputs();
+  updateHeader();
+}
 /* 读取会话列表；兼容旧版单会话历史（interviewer_history_v1） */
 function loadConvos(){
   try{
@@ -1081,6 +1310,8 @@ function saveHistory(){
   conv.updatedAt = Date.now();
   if(!conv.title || conv.title === '新会话') conv.title = titleFromMessages(conv.messages);
   conv.profile = snapshotProfile();
+  conv.expert = state.expert;
+  conv.rv = snapshotRv();
   d.activeId = state.convoId;
   d.list.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
   d.list = d.list.slice(0, 30);   // 最多保留 30 个会话
@@ -1092,10 +1323,15 @@ function renderConversation(){
   const list = $('chatList');
   list.innerHTML = '';
   if(!state.history.length){
-    list.innerHTML = `<div class="empty-state" id="emptyState"><div class="big">🎯</div><p>点击下方「面试出题官」卡片，新建面试会话</p><p>填写面试配置（方向 / 级别 / 经验 / 简历）并确认，即可生成面试题</p><p>也可以直接在下方输入任何指令，例如"再出 3 道算法题"</p></div>`;
+    const ag = currentExpert();
+    const tip = ag.id === 'reviewer'
+      ? '在左侧「专家」中选择代码审核官，填写仓库与 PR 编号并确认，即可发起代码审核'
+      : '在左侧「专家」中选择面试出题官，填写面试配置（方向 / 级别 / 经验 / 简历）并确认，即可生成面试题';
+    list.innerHTML = `<div class="empty-state" id="emptyState"><div class="big">${ag.icon}</div><p>当前专家：${esc(ag.name)}</p><p>${esc(tip)}</p><p>也可以直接在下方输入任何指令继续追问</p></div>`;
     return;
   }
-  state.history.forEach(m=>renderMsg(m.role==='user'?'user':'assistant', m.content));
+  state.history.forEach(m=>renderMsg(m.role==='user'?'user':'assistant', m.content,
+    { cards: state.expert !== 'reviewer' }));
 }
 /* 应用会话保存的配置快照（方向/级别/经验/行业），并重画 chips */
 function redrawChips(){
@@ -1142,8 +1378,10 @@ function restoreHistory(){
   persistConvos(d);   // 统一落盘：迁移/新建的空会话也要写回，避免旧数据只留在内存
   state.convoId = conv.id;
   state.history = (conv.messages || []).slice(-40);
+  applyConvoMeta(conv);
   renderConversation();
   if(conv.profile) applyProfile(conv.profile);
+  updateHeader();
   if(state.history.length) $('chatMeta').textContent = `已恢复 ${state.history.length} 条对话 · ${conv.title}`;
   localStorage.removeItem(LS_HIST);   // 旧版 key 已迁移，清理
 }
@@ -1155,14 +1393,17 @@ function renderConvoList(){
   const keepScroll = el.scrollTop;
   if(!d.list.length){ el.innerHTML = '<div class="convo-empty">暂无历史会话</div>'; return; }
   el.innerHTML = d.list.map(c=>{
+    const ag = EXPERTS.find(e=>e.id===c.expert) || EXPERTS[0];
     const meta = [
       fmtTime(c.updatedAt || c.createdAt),
       (c.messages || []).length + ' 条消息',
-      c.profile ? (c.profile.track + (c.profile.sub && c.profile.sub !== '随机' ? ' / ' + c.profile.sub : '')) : ''
+      c.expert === 'reviewer'
+        ? [c.rv && c.rv.repo, c.rv && c.rv.pr ? 'PR #' + c.rv.pr : ''].filter(Boolean).join(' · ')
+        : (c.profile ? (c.profile.track + (c.profile.sub && c.profile.sub !== '随机' ? ' / ' + c.profile.sub : '')) : '')
     ].filter(Boolean).join(' · ');
     return `<div class="convo-item${c.id===state.convoId?' active':''}" data-id="${c.id}">
       <div class="convo-main">
-        <div class="convo-title">${esc(c.title || '新会话')}</div>
+        <div class="convo-title">${ag.icon} ${esc(c.title || '新会话')}</div>
         <div class="convo-meta">${esc(meta)}</div>
       </div>
       <button class="convo-del" data-del="${c.id}" title="删除此会话">✕</button>
@@ -1186,9 +1427,11 @@ function switchConvo(id){
   state.history = (conv.messages || []).slice(-40);
   d.activeId = conv.id;
   persistConvos(d);
+  applyConvoMeta(conv);
   renderConversation();
   if(conv.profile) applyProfile(conv.profile);
-  $('chatMeta').textContent = `已恢复 ${state.history.length} 条对话 · ${conv.title}`;
+  updateHeader();
+  if(state.history.length) $('chatMeta').textContent = `已恢复 ${state.history.length} 条对话 · ${conv.title}`;
   renderConvoList();
   toast('已切换会话：' + conv.title);
 }
@@ -1202,10 +1445,13 @@ function deleteConvo(id){
     if(next){
       state.convoId = next.id;
       state.history = (next.messages || []).slice(-40);
+      applyConvoMeta(next);
       if(next.profile) applyProfile(next.profile);
     }else{
       state.convoId = genId();
       state.history = [];
+      state.expert = 'interviewer';
+      renderAgentBar();
     }
     renderConversation();
   }
@@ -1214,67 +1460,222 @@ function deleteConvo(id){
 }
 function newConvo(opts = {}){
   if(state.busy) return;
-  saveHistory();                      // 保存当前会话后开新的
+  if(!opts.skipSave) saveHistory();   // 保存当前会话后开新的（selectExpert 已存过则跳过）
   const id = genId();
   const d = loadConvos();
-  d.list.unshift({ id, title: '新会话', createdAt: Date.now(), updatedAt: Date.now(),
-                   messages: [], profile: snapshotProfile() });
+  d.list.unshift({ id, title: opts.title || '新会话', createdAt: Date.now(), updatedAt: Date.now(),
+                   messages: [], profile: snapshotProfile(), expert: state.expert, rv: snapshotRv() });
   d.activeId = id;
   d.list = d.list.slice(0, 30);
   persistConvos(d);
   state.convoId = id;
   state.history = [];
+  updateHeader();
   renderConversation();
   renderConvoList();
   if(!opts.silent) toast('已创建新会话');
 }
+/* 新建任务会话：当前会话还没开始过任何任务（空且未命名）才复用，否则另开一个并写入专家与配置 */
+function createTaskSession(title){
+  const d = loadConvos();
+  const cur = d.list.find(c=>c.id===state.convoId);
+  const fresh = cur && (cur.messages || []).length === 0 && (!cur.title || cur.title === '新会话');
+  if(state.history.length || !fresh){
+    newConvo({ silent: true, skipSave: true, title });
+    return;
+  }
+  if(cur){
+    cur.expert = state.expert;
+    cur.rv = snapshotRv();
+    cur.profile = snapshotProfile();
+    if(title) cur.title = title;
+    cur.updatedAt = Date.now();
+    d.activeId = cur.id;
+    persistConvos(d);
+  }
+  state.history = [];
+  updateHeader();
+  renderConversation();
+  renderConvoList();
+}
+function shortRepo(url){
+  const s = String(url || '').replace(/\.git$/, '').replace(/\/+$/, '');
+  const parts = s.split(/[\/:]/).filter(Boolean);
+  return parts.length >= 2 ? parts.slice(-2).join('/') : s;
+}
 
-/* ================= 智能体栏（聊天框上方） ================= */
+/* ================= 专家：左侧入口 + 右侧选择 ================= */
+function renderExpertGrid(){
+  const grid = $('expertGrid');
+  grid.innerHTML = EXPERTS.map(e=>`
+    <div class="expert-card" data-id="${e.id}">
+      <div class="ex-top">
+        <div class="expert-avatar" style="background:${e.avatar}">${e.icon}</div>
+        <div><h3>${esc(e.name)}</h3><div class="ex-role">${esc(e.role)}</div></div>
+      </div>
+      <div class="ex-desc">${esc(e.desc)}</div>
+      <div class="expert-tags">${e.tags.map(t=>`<span class="expert-tag">${esc(t)}</span>`).join('')}</div>
+      <div class="ex-go">${esc(e.cta)} <span>→</span></div>
+    </div>`).join('');
+  grid.querySelectorAll('.expert-card').forEach(c=>{
+    c.onclick = ()=>selectExpert(c.dataset.id);
+  });
+  $('expertCount').textContent = String(EXPERTS.length);
+}
+function showExpertView(){
+  state.view = 'experts';
+  renderExpertGrid();
+  $('expertView').classList.add('show');
+  $('chatView').classList.add('hide');
+  $('expertEntry').classList.add('active');
+}
+function showChatView(){
+  state.view = 'chat';
+  $('expertView').classList.remove('show');
+  $('chatView').classList.remove('hide');
+  $('expertEntry').classList.remove('active');
+}
+/* 选中专家 → 弹出该专家的任务配置弹框 */
+function selectExpert(id){
+  if(state.busy){ toast('当前任务进行中，请稍候'); return; }
+  if(!EXPERTS.some(e=>e.id===id)) return;
+  saveHistory();                 // 先把当前会话按「原专家」落盘，避免被新专家覆盖
+  state.expert = id;
+  renderAgentBar();
+  openAgentModal(id);
+  toast('已选择「' + currentExpert().name + '」，填写任务信息后确认新建任务');
+}
+$('expertEntry').onclick = ()=>{ state.view === 'experts' ? showChatView() : showExpertView(); };
+
+/* ================= 当前专家栏（聊天框上方） ================= */
 function renderAgentBar(){
-  const el = $('agentCard');
-  const ag = AGENTS.find(a=>a.id===state.activeAgent) || AGENTS[0];
-  el.innerHTML = `
-    <span class="agent-icon">${ag.icon}</span>
+  const ag = currentExpert();
+  $('agentCard').innerHTML = `
+    <span class="agent-icon" style="background:${ag.avatar}">${ag.icon}</span>
     <div class="agent-info">
       <div class="agent-name">${esc(ag.name)}<span class="agent-badge">当前</span></div>
-      <div class="agent-desc">${esc(ag.desc)} · 点击卡片切换到该智能体并新建会话</div>
+      <div class="agent-desc">${esc(ag.role)} · 点击更换专家 / 新建任务</div>
     </div>`;
+  $('btnAgentCfg').textContent = ag.id === 'reviewer' ? '🛡️ 仓库配置' : '⚙️ 面试配置';
 }
-/* 点击智能体卡片：切换到该智能体 → 新建会话 → 弹出面试配置等待用户填写 */
-function activateAgent(id){
-  if(state.busy) return;
-  state.activeAgent = id;
-  renderAgentBar();
-  if(state.history.length) newConvo({silent:true});   // 当前会话已有内容才新建，避免堆积空会话
-  openAgentModal();
-  const ag = AGENTS.find(a=>a.id===id) || AGENTS[0];
-  toast('已切换到「' + ag.name + '」，请填写面试配置');
-}
-$('agentCard').onclick = ()=>activateAgent(state.activeAgent);
+$('agentCard').onclick = ()=>{ if(!state.busy) showExpertView(); };
 
-/* ================= 面试配置弹框 ================= */
+/* ================= 任务配置弹框（面试 / 审核 两套字段） ================= */
 const agentModal = $('agentModal');
-function openAgentModal(){ agentModal.classList.add('show'); }
+function openAgentModal(expertId){
+  if(expertId && EXPERTS.some(e=>e.id===expertId)) state.expert = expertId;
+  const ag = currentExpert();
+  const isRv = ag.id === 'reviewer';
+  $('agentModalTitle').textContent = isRv ? '🛡️ 代码审核官 · 仓库配置' : '🎯 面试出题官 · 面试配置';
+  $('interviewerFields').style.display = isRv ? 'none' : 'block';
+  $('reviewerFields').style.display = isRv ? 'block' : 'none';
+  $('btnAgentConfirm').textContent = isRv ? '🚀 确认并开始审核' : '🚀 确认并生成面试题';
+  $('genErr').style.display = 'none';
+  $('rvErr').style.display = 'none';
+  syncRvInputs();
+  agentModal.classList.add('show');
+}
 function closeAgentModal(){ agentModal.classList.remove('show'); }
-$('btnAgentCfg').onclick = openAgentModal;
+$('btnAgentCfg').onclick = ()=>openAgentModal();
 $('btnAgentClose').onclick = closeAgentModal;
 $('btnAgentCancel').onclick = closeAgentModal;
 agentModal.addEventListener('click', (e)=>{ if(e.target===agentModal) closeAgentModal(); });
-/* 确认：先校验模型配置 → 关闭弹框 → 生成面试题 */
+
+/* ---------- 审核配置：表单 ↔ state ---------- */
+function syncRvInputs(){
+  if(!$('rvRepo')) return;
+  $('rvRepo').value = state.rv.repo || '';
+  $('rvPr').value = state.rv.pr || '';
+  $('rvProvider').value = state.rv.provider || '';
+  $('rvToken').value = state.rv.token || '';
+  $('rvNote').value = state.rv.note || '';
+  renderRvChips();
+}
+function readRvInputs(){
+  state.rv = {
+    repo: $('rvRepo').value.trim(),
+    pr: $('rvPr').value.trim().replace(/^#/, ''),
+    provider: $('rvProvider').value,
+    token: $('rvToken').value.trim(),
+    focus: [...state.rv.focus],
+    strict: state.rv.strict || '标准',
+    note: $('rvNote').value.trim()
+  };
+  return state.rv;
+}
+function renderRvChips(){
+  const f = $('chipRvFocus');
+  f.innerHTML = '';
+  RV_FOCUS.forEach(v=>{
+    const c = document.createElement('div');
+    c.className = 'chip' + (state.rv.focus.includes(v) ? ' active' : '');
+    c.textContent = v;
+    c.onclick = ()=>{
+      const i = state.rv.focus.indexOf(v);
+      if(i >= 0) state.rv.focus.splice(i, 1); else state.rv.focus.push(v);
+      c.classList.toggle('active');
+    };
+    f.appendChild(c);
+  });
+  const s = $('chipRvStrict');
+  s.innerHTML = '';
+  RV_STRICT.forEach(v=>{
+    const c = document.createElement('div');
+    c.className = 'chip' + (state.rv.strict === v ? ' active' : '');
+    c.textContent = v;
+    c.onclick = ()=>{
+      state.rv.strict = v;
+      s.querySelectorAll('.chip').forEach(x=>x.classList.remove('active'));
+      c.classList.add('active');
+    };
+    s.appendChild(c);
+  });
+}
+
+/* ---------- 确认：校验 → 新建任务会话 → 执行 ---------- */
 $('btnAgentConfirm').onclick = ()=>{
   const cfg = loadCfg();
+  const isRv = state.expert === 'reviewer';
+  const errEl = isRv ? $('rvErr') : $('genErr');
   if(!cfg.base || !cfg.model){
-    $('genErr').textContent = '请先点击右上角齿轮图标完成「模型配置」';
-    $('genErr').style.display = 'block';
-    openCfgModal();      // 顺手打开模型配置弹框（z-index 更高，叠在本弹框之上）
-    return;              // 不关闭面试配置，用户配好模型后可直接再点确认
+    errEl.textContent = '请先点击右上角齿轮图标完成「模型配置」';
+    errEl.style.display = 'block';
+    openCfgModal();      // 模型配置弹框 z-index 更高，可叠在本弹框之上
+    return;
+  }
+  if(isRv){
+    const rv = readRvInputs();
+    if(!rv.repo){ errEl.textContent = '请填写代码仓库地址'; errEl.style.display = 'block'; return; }
+    if(!/^\d+$/.test(rv.pr)){ errEl.textContent = '请填写有效的 PR / MR 编号（纯数字）'; errEl.style.display = 'block'; return; }
+    if(!rv.focus.length){ errEl.textContent = '请至少选择一个审核重点'; errEl.style.display = 'block'; return; }
+    errEl.style.display = 'none';
+    closeAgentModal();
+    showChatView();
+    createTaskSession('代码审核 · ' + shortRepo(rv.repo) + ' #' + rv.pr);
+    runReviewerTask();
+    return;
   }
   $('genErr').style.display = 'none';
   closeAgentModal();
+  showChatView();
+  createTaskSession('面试任务 · ' + state.track + ' ' + state.level);
   generate();
 };
 
 /* ================= 初始化 UI ================= */
+function updateHeader(){
+  if(state.expert === 'reviewer'){
+    if(state.rv.repo){
+      $('chatTitle').textContent = '代码审核 · ' + shortRepo(state.rv.repo) + (state.rv.pr ? ' #' + state.rv.pr : '');
+      $('chatMeta').textContent = '重点：' + (state.rv.focus.join('、') || '未选择') + '｜严格程度：' + state.rv.strict;
+    }else{
+      $('chatTitle').textContent = '代码审核';
+      $('chatMeta').textContent = '在左侧「专家」选择代码审核官，填写仓库与 PR 后发起任务';
+    }
+    return;
+  }
+  updateTitle();
+}
 function updateTitle(){
   const sub = state.sub && state.sub !== '随机' ? ' / ' + state.sub : '';
   $('chatTitle').textContent = `${state.track}${sub} · ${state.level} · ${state.exp}`;
@@ -1331,6 +1732,8 @@ makeChips($('chipIndustry'), INDUSTRIES, 'industry');
 renderSubChips();
 updateTitle();
 renderAgentBar();
+renderExpertGrid();
+showChatView();
 
 /* 恢复模型配置 */
 const savedCfg = loadCfg();
@@ -1443,7 +1846,21 @@ async function sendMsg(){
   const t = $('inputBox').value.trim();
   if(!t) return;
   $('inputBox').value = '';
-  await streamChat(t);
+  let extra = null;
+  if(state.expert === 'reviewer'){
+    extra = {
+      agent_mode: 'review',
+      review: { repo: state.rv.repo, number: state.rv.pr, title: '', reportMd: lastAssistantText().slice(0, 8000),
+                focus: state.rv.focus, strict: state.rv.strict, note: state.rv.note }
+    };
+  }
+  await streamChat(t, { extra });
+}
+function lastAssistantText(){
+  for(let i = state.history.length - 1; i >= 0; i--){
+    if(state.history[i].role === 'assistant') return String(state.history[i].content || '');
+  }
+  return '';
 }
 
 /* 左侧栏「＋ 新建」：新建空白会话 */
@@ -1452,7 +1869,8 @@ $('btnNewConvoSide').onclick = ()=>newConvo();
 $('btnClear').onclick = ()=>{
   state.history = [];
   saveHistory();
-  $('chatList').innerHTML = `<div class="empty-state" id="emptyState"><div class="big">🎯</div><p>对话已清空</p></div>`;
+  const ag = currentExpert();
+  $('chatList').innerHTML = `<div class="empty-state" id="emptyState"><div class="big">${ag.icon}</div><p>对话已清空</p></div>`;
   toast('已清空当前会话');
 };
 
