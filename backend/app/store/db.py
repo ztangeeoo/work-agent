@@ -44,7 +44,10 @@ CREATE TABLE IF NOT EXISTS msg (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_msg_convo ON msg(convo_id, seq);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_msg_id ON msg(id);
+/* 只在同一会话内要求消息 id 唯一：
+   整场覆盖保存时，同一条消息可能（历史上因切换会话串场）出现在两个会话里，
+   若全局唯一，后保存的那个会话会直接 500（UNIQUE constraint failed: msg.id） */
+CREATE UNIQUE INDEX IF NOT EXISTS idx_msg_id ON msg(convo_id, id);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS msg_fts USING fts5(content, tokenize = 'trigram');
 
@@ -147,6 +150,18 @@ def _ensure_convo_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE convo ADD COLUMN repo_id TEXT")
 
 
+def _ensure_msg_index(conn: sqlite3.Connection) -> None:
+    """老库里 idx_msg_id 是「全表唯一」，改成「同一会话内唯一」（幂等）。"""
+    for r in conn.execute("PRAGMA index_list(msg)").fetchall():
+        if r["name"] != "idx_msg_id":
+            continue
+        cols = [c["name"] for c in conn.execute("PRAGMA index_info('idx_msg_id')").fetchall()]
+        if cols == ["id"]:
+            conn.execute("DROP INDEX IF EXISTS idx_msg_id")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_msg_id ON msg(convo_id, id)")
+        return
+
+
 def init() -> sqlite3.Connection:
     """建立（并缓存）连接；首次会建表并打开 WAL。"""
     global _conn, _available, _unavailable_reason
@@ -165,6 +180,7 @@ def init() -> sqlite3.Connection:
             conn.execute("PRAGMA busy_timeout = 5000")
             conn.executescript(SCHEMA)
             _ensure_convo_columns(conn)
+            _ensure_msg_index(conn)
             conn.commit()
             _conn = conn
             _available = True

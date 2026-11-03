@@ -101,11 +101,17 @@ def save_convo(data: dict, user: str = DEFAULT_USER) -> dict:
                 (cid, user, title, profile_json, agent_mode, repo_id, created_at, updated_at),
             )
             db.execute("DELETE FROM msg WHERE convo_id = ?", (cid,))
+            seen_ids = set()
             for i, m in enumerate(msgs):
+                mid = str(m.get("id") or f"{cid}_{i}")
+                # 同一会话内 id 重复时补序号，避免整场保存败在唯一索引上
+                if mid in seen_ids:
+                    mid = f"{mid}_{i}"
+                seen_ids.add(mid)
                 db.execute(
                     "INSERT INTO msg (id, convo_id, seq, role, content, created_at) VALUES (?, ?, ?, ?, ?, ?)",
                     (
-                        str(m.get("id") or f"{cid}_{i}"),
+                        mid,
                         cid,
                         i,
                         "user" if m.get("role") == "user" else "assistant",
