@@ -257,6 +257,44 @@ Node :8787  /api/convos  ──反向代理──►  Python :8790 /api/convos
 | `DB_PATH` | `data/interview.db` | SQLite 库文件路径 |
 | `HTTP_PROXY` / `HTTPS_PROXY` | 读取系统环境 | 拉取 PR / 回帖时自动走代理；`localhost` 与代理自身地址直连 |
 | `COPILOTKIT_TELEMETRY_DISABLED` | 自动设为 `1` | server.js 启动 runtime 时自动关闭 CopilotKit 匿名遥测，保证纯本地/局域网部署零外网请求 |
+| `HARNESS_ADAPTER` | `1` | 设为 `0` 完全旁路可训练指令层，行为与接入前逐字节一致 |
+| `HARNESS_ADAPTER_MAX` | `6000` | 单份 adapter 文本的字符上限，防止误写超长文件 |
+| `HARNESS_ADAPTER_DIR` | `adapters/` | adapter 根目录，换一份实验版本时指向别处 |
+
+## 可训练指令层（harness adapter）
+
+各 Agent 的 system prompt 有一段**外挂的、可训练的部分**，放在 `adapters/<name>/ADAPTER.md`：
+
+```
+adapters/
+  interview/  ADAPTER.md  adapter.yaml   → 面试官 + 策划官
+  review/     ADAPTER.md  adapter.yaml   → 侦察官 + 审核官 + 裁决官 + 审核追问
+```
+
+加载链：`agent_server.py` 各 `*_sys_prompt()` → `harness_adapter.compose(base, name)` → `Session(...).context()`（装了 `hermit-harness` 时）或直接读 `ADAPTER.md`（没装时）。最后拼成 `base + "\n\n" + ADAPTER.md`。
+
+为什么要这一层：
+
+- **提示词从代码里搬出来**：调风格改 markdown 就行，不用改 Python，也不用重启（按目录 mtime 热加载）；
+- **可版本化、可回滚**：adapter 目录进 Git，改坏了 revert 即可；
+- **可训练**：目录格式遵循 [Hermit](https://github.com/Infini-AI-Lab/hermit) 的 harness adapter 约定（`template` / `exports` / `structure` 三段），以后可以直接用 `hermit train` 拿真实出题记录演化这份文件，产物仍然是 markdown。
+
+边界与取舍：
+
+- **只增不改**：`ADAPTER.md` 只补充 base prompt 没规定的细节，覆盖不了 base 里的格式契约（`### 第 N 题【题型】`、JSON schema）——回归测试会守住这一点；
+- **评分官不接**：评分标准需要稳定可复现，先不让它参与演化，等有 held-out 标注再单独开一个 `scoring` adapter；
+- **零成本**：`context()` 只读本地文件，不调模型，不影响首字延迟；
+- **可关**：`set HARNESS_ADAPTER=0 && node server.js` 即刻退回原行为。
+
+接入前的状态可以用 `GET /api/db/stats` 里的 `harness` 字段自检：
+
+```json
+"harness": {"enabled": true, "backend": "hermit", "dir": "...\\adapters",
+            "adapters": {"interview": 309, "review": 330}}
+```
+
+`backend` 为 `hermit` 表示走 Hermit 的 Session（会校验清单合法性），`file` 表示降级直读，`none` 表示关闭或目录不存在。
+
 
 ## CopilotKit 授权 key 说明
 
@@ -286,8 +324,10 @@ VITE_COPILOTKIT_KEY=ckpb_你的key
 | `reviewer.py` | 代码托管平台适配：解析仓库地址、拉开放 PR 与 diff、回帖；自动识别 `HTTP(S)_PROXY`，`localhost` 直连 |
 | `review_poller.py` | PR 轮询调度：同仓库串行、单轮限流、到期触发、事件广播；模型配置从页面内存读取 |
 | `question_bank.py` | 内置高频面试题库（11 个主方向 × 细分），作为面试官的检索工具 |
+| `harness_adapter.py` | 可训练指令层加载：`compose(base, name)` 把 `adapters/<name>/ADAPTER.md` 接到 system prompt 后；hermit 可缺省、按 mtime 热加载、`HARNESS_ADAPTER=0` 可旁路 |
+| `adapters/` | 可训练的外挂指令（Hermit 格式）：`interview/`（面试官 + 策划官）、`review/`（侦察官 + 审核官 + 裁决官 + 审核追问） |
 | `data/interview.db` | 会话 / 仓库 / 审核报告数据库（自动创建，已加入 `.gitignore`） |
-| `tests/` | 回归测试：`test_store.py`（持久层）、`test_reviewer.py`（地址解析 / diff / 代理规则）、`test_web.ts`（渲染逻辑）、`test_qcard.ts`（卡片布局与历史守卫）、`test_stages.ts`（流水线状态）、`test_layout.ts`（布局约束）、`test_render.js`（旧版渲染逻辑）、`mock_llm.js`（mock 上游验全链路） |
+| `tests/` | 回归测试：`test_store.py`（持久层）、`test_reviewer.py`（地址解析 / diff / 代理规则）、`test_adapter.py`（指令层加载 / 降级 / 热更新 / 格式契约）、`test_web.ts`（渲染逻辑）、`test_qcard.ts`（卡片布局与历史守卫）、`test_stages.ts`（流水线状态）、`test_layout.ts`（布局约束）、`test_render.js`（旧版渲染逻辑）、`mock_llm.js`（mock 上游验全链路） |
 | `index.html` | 旧版单文件应用（保留作回退，不再维护） |
 | `start.bat` | 一键启动 |
 
@@ -296,6 +336,7 @@ VITE_COPILOTKIT_KEY=ckpb_你的key
 ```bash
 .venv\Scripts\python.exe tests/test_store.py          # 持久层：会话/检索/隔离/仓库/审核报告（85 断言）
 .venv\Scripts\python.exe tests/test_reviewer.py       # 仓库地址解析 / diff 统计 / 代理规则（32 断言）
+.venv\Scripts\python.exe tests/test_adapter.py        # 指令层：降级 / 拼接 / 开关 / 截断 / 热更新 / 格式契约 / 接线守卫（38 断言）
 node --experimental-strip-types tests/test_web.ts     # 渲染 / 题目卡片逻辑（47 断言）
 node --experimental-strip-types tests/test_qcard.ts   # 卡片布局 / 历史恢复守卫（27 断言）
 node --experimental-strip-types tests/test_stages.ts  # 智能体流水线状态归并（23 断言）

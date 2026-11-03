@@ -1,0 +1,10 @@
+template:
+  id: review
+  version: "0.1.0"
+  name: 代码审核偏好
+exports: {}
+structure:
+  learnable:
+    - path: ADAPTER.md
+      format: {text: true, max_bytes: 6000}
+  fixed: []

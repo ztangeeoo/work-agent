@@ -41,6 +41,7 @@ from agentscope.state import AgentState
 from agentscope.tool import FunctionTool, Toolkit
 from agentscope.types import ReplyFinishedReason
 
+import harness_adapter
 from question_bank import query_question_bank
 
 # ------------------------------------------------------------------ 配置
@@ -187,7 +188,7 @@ def interviewer_sys_prompt(p: dict) -> str:
     )
     note_rule = f"\n7. 用户的补充要求：{note}" if note else ""
 
-    return f"""你是一位资深 IT 技术面试官，称呼「面试官」。你只做两件事：出题、答追问。
+    return harness_adapter.compose(f"""你是一位资深 IT 技术面试官，称呼「面试官」。你只做两件事：出题、答追问。
 
 ## 候选人画像
 {profile_text(p)}
@@ -211,11 +212,11 @@ def interviewer_sys_prompt(p: dict) -> str:
 
 ## 对话中的追问
 用户可能要求：讲解某题的思路、给出参考答案或评分标准、按同样风格再出几道、换个方向出题。
-追问必须基于你之前问过的题目，保持上下文连续；回答要直接给结论，再给推理过程。"""
+追问必须基于你之前问过的题目，保持上下文连续；回答要直接给结论，再给推理过程。""", "interview")
 
 
 def planner_sys_prompt(p: dict) -> str:
-    return f"""你是面试团队的「出题策划官」。你不负责写题，只负责规划考察大纲。
+    return harness_adapter.compose(f"""你是面试团队的「出题策划官」。你不负责写题，只负责规划考察大纲。
 
 ## 候选人画像
 {profile_text(p)}
@@ -231,7 +232,7 @@ def planner_sys_prompt(p: dict) -> str:
 规则：
 - 大纲条目数与用户要求的题量匹配（默认 {p.get("count", 5)} 道）。
 - 有简历时，至少一条大纲必须指向简历中的项目或技术栈。
-- 只输出大纲本身，不要任何前后缀说明。"""
+- 只输出大纲本身，不要任何前后缀说明。""", "interview")
 
 
 def evaluator_sys_prompt(p: dict) -> str:
@@ -382,7 +383,7 @@ def pr_brief(pr: dict) -> str:
 
 
 def scout_sys_prompt(pr: dict) -> str:
-    return f"""你是代码审核团队的「侦察官」。你只负责读 diff、讲清楚这次改了什么，不下结论、不提修改建议。
+    return harness_adapter.compose(f"""你是代码审核团队的「侦察官」。你只负责读 diff、讲清楚这次改了什么，不下结论、不提修改建议。
 
 ## 本次审核对象
 {pr_brief(pr)}
@@ -393,11 +394,11 @@ def scout_sys_prompt(pr: dict) -> str:
 2. 涉及文件：列出主要文件（超过 5 个时按目录归并）
 3. 重点风险区：2-4 条，指出哪里最值得审核官细看（如鉴权、并发、数据迁移、错误处理、兼容性）
 
-只输出这三块，不要寒暄，不要复述整段代码。全程中文。"""
+只输出这三块，不要寒暄，不要复述整段代码。全程中文。""", "review")
 
 
 def reviewer_sys_prompt(pr: dict) -> str:
-    return f"""你是代码审核团队的「审核官」，负责逐处找出真实存在的问题。
+    return harness_adapter.compose(f"""你是代码审核团队的「审核官」，负责逐处找出真实存在的问题。
 
 ## 本次审核对象
 {pr_brief(pr)}
@@ -425,11 +426,11 @@ def reviewer_sys_prompt(pr: dict) -> str:
 
 ## 输出格式
 只输出一个 JSON 对象，不要解释、不要 markdown 代码块，格式严格如下：
-{ISSUES_JSON_SHAPE}"""
+{ISSUES_JSON_SHAPE}""", "review")
 
 
 def judge_sys_prompt(pr: dict) -> str:
-    return f"""你是代码审核团队的「裁决官」。基于侦察官概览与审核官的问题清单，给出最终结论。
+    return harness_adapter.compose(f"""你是代码审核团队的「裁决官」。基于侦察官概览与审核官的问题清单，给出最终结论。
 
 ## 本次审核对象
 {pr_brief(pr)}
@@ -448,7 +449,7 @@ def judge_sys_prompt(pr: dict) -> str:
 
 ## 输出格式
 只输出一个 JSON 对象，不要解释、不要 markdown 代码块，格式严格如下：
-{VERDICT_JSON_SHAPE}"""
+{VERDICT_JSON_SHAPE}""", "review")
 
 
 def diff_stats(diff: str) -> dict:
@@ -719,7 +720,7 @@ async def run_review(payload: dict) -> dict:
 def reviewer_chat_sys_prompt(review: dict) -> str:
     """审核模式下的追问智能体：带着当前 PR 的审核报告回答"""
     report_md = str(review.get("reportMd") or "")[:8000]
-    return f"""你是「代码审核官」。你刚刚完成了一个 PR 的审核，现在回答用户关于这次审核的追问。
+    return harness_adapter.compose(f"""你是「代码审核官」。你刚刚完成了一个 PR 的审核，现在回答用户关于这次审核的追问。
 
 ## 当前审核对象
 - 仓库：{review.get('repo') or '-'}
@@ -734,7 +735,7 @@ def reviewer_chat_sys_prompt(review: dict) -> str:
 2. 用户要修复方案时，给出可直接粘贴的代码片段，并标明文件路径与位置。
 3. 用户问「能不能合」时，先给明确结论，再说前置条件。
 4. 用户要求「写一条 PR 评论」时，输出一段可直接粘贴到 PR 的中文评论（Markdown）。
-5. 回答用中文，简洁，别重复整份报告。"""
+5. 回答用中文，简洁，别重复整份报告。""", "review")
 
 
 # ------------------------------------------------------------------ SSE 输出
@@ -1206,7 +1207,7 @@ async def api_db_stats():
     if not store.available():
         return {"dbAvailable": False, "reason": store.unavailable_reason()}
     try:
-        return {"dbAvailable": True, **store.stats()}
+        return {"dbAvailable": True, **store.stats(), "harness": harness_adapter.status()}
     except Exception as e:
         return _err(str(e), 500)
 
