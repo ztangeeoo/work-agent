@@ -1,7 +1,14 @@
 # FastAPI 智能体 + 数据服务依赖（Python 3.11+，AgentScope 2.0 要求）
 # 运行时基线：AgentScope 2.0（Agent / reply_stream / 事件流 / structured_schema）
 # 不要再安装已归档的 agentscope-runtime：2.0 已把沙箱、服务化、可观测性内建
-agentscope>=2.0.11,<3.0
+#
+# 扩展（extras）说明：
+#   service          官方 Agent Service（agentscope.app.create_app：多租户/多会话/调度/实时语音）
+#   storage-sql      用 SQLite / Postgres 做持久化（不装只剩 RedisStorage）
+#   workspace-docker 容器级沙箱（DockerWorkspace，需 Docker 引擎在运行）
+#   aiosqlite        SQLite 的异步驱动（SQLAlchemy 不会代装）
+agentscope[service,storage-sql,workspace-docker]>=2.0.11,<3.0
+aiosqlite>=0.19
 fastapi>=0.110
 uvicorn>=0.29
 pydantic>=2.6

@@ -141,6 +141,32 @@ def main():
                               "reference_answer": "- 要点一"})
     ok("## 📊 回答评分：88 / 100" in md and "准确性" in md, "评分卡渲染 Markdown")
 
+    section("Sandbox / Agent Service 依赖就位")
+    try:
+        from agentscope.workspace import LocalWorkspace  # noqa: F401
+        from agentscope.workspace import DockerWorkspace  # noqa: F401
+
+        ok(True, "agentscope.workspace 可导入（LocalWorkspace / DockerWorkspace）")
+    except Exception as e:  # pragma: no cover
+        ok(False, f"agentscope.workspace 导入失败：{e}")
+
+    try:
+        from agentscope.app import create_app  # noqa: F401
+        from agentscope.app.message_bus import InMemoryMessageBus  # noqa: F401
+        from agentscope.app.workspace_manager import LocalWorkspaceManager  # noqa: F401
+
+        ok(True, "agentscope.app.create_app 可导入（Agent Service 入口）")
+    except Exception as e:  # pragma: no cover
+        ok(False, f"agentscope.app 导入失败：{e}")
+
+    try:
+        from agentscope.app.storage import AsyncSQLAlchemyStorage  # noqa: F401
+        import aiosqlite  # noqa: F401
+
+        ok(True, "SQL 存储 + aiosqlite 就位（不依赖 Redis）")
+    except Exception as e:  # pragma: no cover
+        ok(False, f"SQL 存储依赖缺失：{e}")
+
     print(f"\n结果：{pass_n} 通过 / {fail_n} 失败\n")
     return 1 if fail_n else 0
 

@@ -28,7 +28,7 @@ if not defined PY (
 
 rem ---------- 2. 安装/确认依赖（AgentScope 必须 2.0+） ----------
 echo [2/4] 检查 Python 依赖（首次较慢，请耐心等待）...
-"%PY%" -c "import agentscope, fastapi, uvicorn, httpx, sys; sys.exit(0 if int(agentscope.__version__.split('.')[0]) >= 2 else 1)" >nul 2>nul
+"%PY%" -c "import agentscope, fastapi, uvicorn, httpx, sqlalchemy, aiosqlite, sys; sys.exit(0 if int(agentscope.__version__.split('.')[0]) >= 2 else 1)" >nul 2>nul
 if errorlevel 1 (
   echo      安装 / 升级依赖到 AgentScope 2.0 ...
   "%PY%" -m pip install -U -r requirements.txt

@@ -78,6 +78,62 @@ agent_server.py（Python :8790，FastAPI + AgentScope）
 最后一条用户消息出现三次——token 翻倍且干扰判断。项目里 `make_agent()` 因此只造空状态 Agent，
 历史统一由 `drive_agent()` 的 `inputs` 带入；`tests/test_agentscope_api.py` 里有一条断言锁死这一点。
 
+## Sandbox 与 Agent Service（2.0 内建）
+
+两个能力都在 `agentscope` 主包里，**不需要** `agentscope-runtime`。安装时只要带上 extras：
+
+```bash
+.venv\Scripts\python.exe -m pip install -U -r requirements.txt   # 已含 [service,storage-sql] + aiosqlite
+```
+
+### Sandbox（工作区 / 工具执行环境）
+
+`agentscope.workspace` 是 Agent 执行 Shell、读写文件、挂 MCP 的落点，三种常见后端：
+
+| 后端 | 隔离性 | 适用 |
+|---|---|---|
+| `LocalWorkspace` | 无（直接在宿主机执行） | 开发机、单机自用 |
+| `DockerWorkspace` | 容器级（workdir 挂到 `/workspace`） | 多用户 / 跑不可信代码，需 Docker 引擎 |
+| `E2B / Daytona / K8s / OpenSandbox` | 远端沙箱 / 集群 | 生产弹性伸缩 |
+
+自检（会真的跑命令、读写文件）：
+
+```bash
+.venv\Scripts\python.exe sandbox_probe.py            # 默认本地工作区
+set SANDBOX=docker && .venv\Scripts\python.exe sandbox_probe.py   # 容器，需 Docker 引擎在跑
+```
+
+> 本机实测（Docker Desktop 4.50 / 引擎 28.5.1，Linux 容器）：容器后端 5 项全过，首次初始化 150s
+> （要构建 `agentscope-workspace:<hash>` 镜像，基底 `python:3.11-slim`），之后镜像命中缓存约 5s。
+> 容器里没有宿主机的 python.exe，`exec_shell` 要用容器内的 `python3`；本地后端则用 `sys.executable`。
+
+### Agent Service（官方服务化入口）
+
+`agent_service.py` 用 `agentscope.app.create_app()` 起官方服务，替掉归档的 runtime：
+
+```bash
+.venv\Scripts\python.exe agent_service.py
+# → http://localhost:8799/docs   共 77 个接口（会话 / 运行 / 模型 / 凭据 / RAG / 工作区 / 渠道 / 计划任务）
+```
+
+零外部依赖跑法（本项目默认配置）：
+
+| 组件 | 用了什么 | 说明 |
+|---|---|---|
+| 持久化 | `AsyncSQLAlchemyStorage("sqlite+aiosqlite:///data/agent_service.db")` | 不装 Redis 也能跑；多副本换 Postgres |
+| 消息总线 | `InMemoryMessageBus` | 单进程；多副本换 `RedisMessageBus` |
+| 工作区 | `LocalWorkspaceManager`（`SANDBOX=docker` 换 `DockerWorkspaceManager`） | 每个 agent 一个 workdir，TTL 回收；容器模式实测 `/health` 全组件 ok |
+
+调用注意：`/health` 等接口要求 `x-user-id` 头（多租户隔离），不带会返回 422：
+
+```bash
+curl -H "x-user-id: local" http://127.0.0.1:8799/health
+```
+
+端口占用：Node `8787` / 出题官 `8790` / Agent Service `8799`，互不冲突。
+`agent_service.py` 与出题官是**两套独立服务**，可以只跑其中一套；出题官页面仍走 `8787 → 8790`。
+
+
 ## 快速开始
 
 ```bash
@@ -372,6 +428,8 @@ VITE_COPILOTKIT_KEY=ckpb_你的key
 | `server.js` | Node 服务：静态托管、`/api/models`、`/api/chat`、`/api/model-config`、`/api/stages`（阶段事件 SSE）、`/api/copilotkit`（CopilotKit runtime），其余 `/api/*` 反向代理到 Python |
 | `agent_adapter.js` | CopilotKit → AgentScope 智能体服务的 ServiceAdapter（SSE 转接，并截获智能体阶段事件） |
 | `agent_server.py` | FastAPI 服务：AgentScope 多 Agent 编排、`/v1/chat/completions`（OpenAI 兼容 SSE）、`/v1/review`（审核流水线），以及全部 `/api/*` 数据接口 |
+| `agent_service.py` | AgentScope 2.0 官方 Agent Service（`create_app`）：SQLite 持久化 + 内存总线 + 本地工作区，独立端口 8799，自带 `/docs` |
+| `sandbox_probe.py` | 沙箱自检：建工作区 → 跑命令 / 读写文件 / 校验退出码；`SANDBOX=docker` 可切容器后端 |
 | `store.py` | 持久层（标准库 `sqlite3`，零依赖）：七张表建表迁移、会话读写、FTS5 检索、仓库 / PR / 审核报告 CRUD、容量上限保护 |
 | `reviewer.py` | 代码托管平台适配：解析仓库地址、拉开放 PR 与 diff、回帖；自动识别 `HTTP(S)_PROXY`，`localhost` 直连 |
 | `review_poller.py` | PR 轮询调度：同仓库串行、单轮限流、到期触发、事件广播；模型配置从页面内存读取 |
@@ -388,6 +446,7 @@ VITE_COPILOTKIT_KEY=ckpb_你的key
 
 ```bash
 .venv\Scripts\python.exe tests/test_agentscope_api.py # AgentScope 2.0 运行时基线：版本/API 面/事件字段/上下文语义（40 断言）
+.venv\Scripts\python.exe sandbox_probe.py             # 沙箱自检：命令执行 / 文件读写 / 退出码（本地或容器后端）
 .venv\Scripts\python.exe tests/test_store.py          # 持久层：会话/检索/隔离/仓库/审核报告（85 断言）
 .venv\Scripts\python.exe tests/test_reviewer.py       # 仓库地址解析 / diff 统计 / 代理规则（32 断言）
 .venv\Scripts\python.exe tests/test_adapter.py        # 指令层：降级 / 拼接 / 开关 / 截断 / 热更新 / 格式契约 / 接线守卫（38 断言）
