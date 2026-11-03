@@ -52,6 +52,32 @@ agent_server.py（Python :8790，FastAPI + AgentScope）
 为什么用 CopilotKit 而不引整套 React UI 框架：CopilotKit 只负责「消息状态 / 流式 / runtime 协议」，
 消息列表仍自渲染，保留「一题一卡」的卡片化出题显示。
 
+## 运行时基线：AgentScope 2.0
+
+| 项 | 要求 | 说明 |
+|---|---|---|
+| Python | **3.11+** | AgentScope 2.0 的硬性要求（1.x 时代 3.10 也能跑，现在不行） |
+| AgentScope | **>= 2.0.11, < 3.0** | 只在 `requirements.txt` 里声明，不要额外装 `agentscope-runtime` |
+| 模型接口 | 任意 OpenAI 兼容 | 通过 `OpenAIChatModel` + `OpenAICredential(base_url=...)` 接入 |
+
+项目用到的 2.0 API（升级时重点看这几处）：
+
+- `Agent(name, system_prompt, model, toolkit)` + `reply_stream(inputs, structured_schema=..., yield_final_msg=...)`
+- 事件流：`TextBlockDeltaEvent.delta` / `ToolCallStartEvent.tool_call_name` / `ReplyEndEvent.finished_reason|error`
+- 工具：`FunctionTool(func, permission=PermissionDecision(behavior=ALLOW, ...))` + `Toolkit(tools=[...])`（显式放行，服务端不会卡在人工确认）
+- 结构化输出：`structured_schema=ScoreCard`，最终消息的 `structured_output` 取 dict，失败回退到文本 JSON 解析
+
+> **关于 `agentscope-runtime`**：那个包（最后版本 1.1.6.post2）已随 AgentScope 2.0 发布而归档，
+> 沙箱、AaaS 服务化、全栈可观测性都已并入 `agentscope` 主包。本项目**不依赖它**，也不用
+> `ReActAgent` 那套 1.x 写法，升级时不要再把它装回来。
+
+### 上下文语义（易踩坑）
+
+2.0 的 `reply_stream(inputs)` 会把 `inputs` **追加**进 `state.context`。所以历史对话只能通过
+`inputs` 传一次：如果既 `AgentState(context=history)` 又传 `inputs=history`，模型会收到双份历史、
+最后一条用户消息出现三次——token 翻倍且干扰判断。项目里 `make_agent()` 因此只造空状态 Agent，
+历史统一由 `drive_agent()` 的 `inputs` 带入；`tests/test_agentscope_api.py` 里有一条断言锁死这一点。
+
 ## 快速开始
 
 ```bash
@@ -294,6 +320,7 @@ VITE_COPILOTKIT_KEY=ckpb_你的key
 ## 测试
 
 ```bash
+.venv\Scripts\python.exe tests/test_agentscope_api.py # AgentScope 2.0 运行时基线：版本/API 面/事件字段/上下文语义（40 断言）
 .venv\Scripts\python.exe tests/test_store.py          # 持久层：会话/检索/隔离/仓库/审核报告（85 断言）
 .venv\Scripts\python.exe tests/test_reviewer.py       # 仓库地址解析 / diff 统计 / 代理规则（32 断言）
 node --experimental-strip-types tests/test_web.ts     # 渲染 / 题目卡片逻辑（47 断言）
@@ -308,6 +335,9 @@ node tests/mock_llm.js                                # mock 上游（含审核�
 
 | 现象 | 原因 / 处理 |
 |---|---|
+| 启动报 `本项目需要 AgentScope 2.0+，当前安装的是 1.x` | 环境里是旧版本：`.venv\Scripts\python.exe -m pip install -U -r requirements.txt`；`start.bat` 也会自动检测升级 |
+| `ImportError: cannot import name 'ReActAgent'` 之类 | 代码已是 2.0 写法，装的是 1.x 或照旧教程装了 `agentscope-runtime`，按上一行升级即可 |
+| 上下文很长、模型重复回答同一个问题 | 检查是否又给 `AgentState(context=...)` 预置了历史又往 `inputs` 里传了一遍（见「上下文语义」） |
 | 页面提示「AgentScope 智能体服务未连接」 | Python 服务没起来：双击 `start.bat`，或手动 `.venv\Scripts\python.exe agent_server.py` |
 | 出题报「模型未配置」 | 点右上角齿轮完成模型配置；每次发消息前页面会自动同步配置到 Node 与 Python |
 | `模型 API Key 无效`（401） | 齿轮弹框里 Key 填错或额度不足 |
