@@ -5,6 +5,8 @@ web/node_modules/
 
 # 构建产物
 web/dist/
+web/dist.bak/
+web/vite.config.ts.timestamp-*
 
 # 本地数据（历史会话库，含个人面试记录，不要提交）
 # 注意必须有前导斜杠：写成 data/ 会把 web/src/data/ 也一起忽略掉，
