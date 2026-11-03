@@ -24,7 +24,7 @@ import AgentTrace from './components/AgentTrace';
 import ConfigModal from './components/ConfigModal';
 import InterviewSetup from './components/InterviewSetup';
 import RepoSetup from './components/RepoSetup';
-import ReviewBar from './components/ReviewBar';
+import ReviewStatus from './components/ReviewStatus';
 import ReviewWorkbench from './components/ReviewWorkbench';
 
 const LS_MODE = 'interviewer_mode_v1';
@@ -692,29 +692,37 @@ export default function ChatApp() {
               <span className="expert-chip-arrow" aria-hidden="true">›</span>
             </button>
             <div className="chat-head-main">
-              <div className="title">{chatTitle}</div>
-              <div className="meta">{chatMeta}</div>
+              {mode === 'review' ? (
+                <ReviewStatus
+                  repos={repos}
+                  repoId={repoId}
+                  onPick={setRepoId}
+                  polling={polling}
+                  prCount={prs.length}
+                  lastError={repoErr || currentRepo?.lastError || ''}
+                />
+              ) : (
+                <>
+                  <div className="title">{chatTitle}</div>
+                  <div className="meta">{chatMeta}</div>
+                </>
+              )}
             </div>
             <div className="spacer"></div>
+            {mode === 'review' && (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={handlePoll}
+                disabled={!currentRepo || polling}
+              >
+                {polling ? '轮询中…' : '立即轮询'}
+              </button>
+            )}
             <button className="btn btn-ghost btn-sm" onClick={openAgentConfig}>
               {mode === 'review' ? '仓库配置' : '面试配置'}
             </button>
             <button className="btn btn-ghost btn-sm" onClick={clearCurrent}>清空对话</button>
           </div>
-
-          {mode === 'review' && (
-            <ReviewBar
-              repos={repos}
-              repoId={repoId}
-              onPick={setRepoId}
-              onPoll={handlePoll}
-              onAdd={() => { setRepoEditing(null); setRepoOpen(true); }}
-              onSettings={() => { setRepoEditing(currentRepo); setRepoOpen(v => !v); }}
-              polling={polling}
-              prCount={prs.length}
-              lastError={repoErr || currentRepo?.lastError || ''}
-            />
-          )}
 
           <AgentTrace trace={trace} active={isLoading} />
 
