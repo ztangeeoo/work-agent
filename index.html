@@ -1930,7 +1930,7 @@ async function checkHealth(){
         const b = $('proxyBanner');
         b.innerHTML = '⚠️ 本地页面服务正常，但 <b>AgentScope 智能体服务</b>未连接，出题会失败。<br>' +
           '请双击项目里的 <code>start.bat</code> 启动全部服务；或手动运行 ' +
-          '<code>.venv\\Scripts\\python.exe agent_server.py</code>。';
+          '<code>.venv\\Scripts\\python.exe backend\\run.py</code>。';
         b.classList.add('show');
         $('connDot').className = 'conn-dot err';
         $('connText').textContent = '智能体服务未连接';

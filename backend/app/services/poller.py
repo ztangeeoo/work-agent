@@ -3,7 +3,7 @@
 代码审核 · 轮询调度器（Python / asyncio）
 
 每个仓库按自己的 intervalSec 到期触发：拉 PR → 发现未审的 head →
-交给三智能体审核流水线（由 agent_server 注入的 review_fn）→ 落库 → 广播事件。
+交给三智能体审核流水线（由 main 注入的 review_fn）→ 落库 → 广播事件。
 
 关键取舍
   - 同仓库串行：避免同一个 PR 被并发审两遍、也避免刷爆模型额度
@@ -14,8 +14,8 @@
 import asyncio
 import time
 
-import store
-import reviewer as rv
+from .. import store
+from . import review_client as rv
 
 TICK_SEC = 20  # 后台巡检间隔：谁到期谁跑
 
@@ -26,7 +26,7 @@ def _now_ms() -> int:
 
 class ReviewPoller:
     def __init__(self, get_model_cfg, review_fn, on_event=None, log=None):
-        """review_fn(payload) -> awaitable {report, reportMd, model}（由 agent_server 注入，避免循环依赖）"""
+        """review_fn(payload) -> awaitable {report, reportMd, model}（由 main 注入，避免循环依赖）"""
         self._get_model_cfg = get_model_cfg
         self._review_fn = review_fn
         self._on_event = on_event

@@ -2,9 +2,9 @@
 """
 Harness adapter 加载层（Hermit 兼容，可缺省）
 
-作用：把 `adapters/<name>/ADAPTER.md` 这段**可训练的外挂指令**接到各 Agent 的
+作用：把 `backend/adapters/<name>/ADAPTER.md` 这段**可训练的外挂指令**接到各 Agent 的
 system prompt 末尾。指令本身是纯文本文件，训练流程（hermit train）可以改写它，
-而不需要动 agent_server.py 里的任何代码。
+而不需要动 prompts/ 里的任何代码。
 
 设计约束：
 - **零硬依赖**：没装 `hermit-harness`、没有 adapters 目录、或清单不合法时，
@@ -23,8 +23,10 @@ import os
 import threading
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
-ADAPTERS_DIR = Path(os.environ.get("HARNESS_ADAPTER_DIR") or (ROOT / "adapters"))
+from .. import config
+
+# 目录在 import 时确定（便于测试热切换 HARNESS_ADAPTER_DIR：reload 即可生效）
+ADAPTERS_DIR = Path(os.environ.get("HARNESS_ADAPTER_DIR") or config.ADAPTERS_DIR)
 
 ENABLED = os.environ.get("HARNESS_ADAPTER", "1") not in ("0", "false", "False")
 MAX_CHARS = int(os.environ.get("HARNESS_ADAPTER_MAX", "6000"))

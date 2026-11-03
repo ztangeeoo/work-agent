@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _tmpdir = tempfile.mkdtemp(prefix="store_test_")
 os.environ["DB_PATH"] = os.path.join(_tmpdir, "interview.db")
 
-import store  # noqa: E402  必须在设置 DB_PATH 之后导入
+from backend.app import store  # noqa: E402  必须在设置 DB_PATH 之后导入
 
 pass_n = 0
 fail_n = 0

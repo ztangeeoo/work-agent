@@ -25,10 +25,10 @@ if not defined PY (
 echo [1/2] 检查 Agent Service 依赖（service / storage-sql / workspace-docker）...
 "%PY%" -c "import agentscope, sqlalchemy, aiosqlite, aiodocker" >nul 2>nul
 if errorlevel 1 (
-  "%PY%" -m pip install -U -r requirements.txt
+  "%PY%" -m pip install -U -r backend\requirements.txt
   if errorlevel 1 (
     echo [错误] 依赖安装失败，请手动执行：
-    echo   "%PY%" -m pip install -U -r requirements.txt
+    echo   "%PY%" -m pip install -U -r backend\requirements.txt
     pause
     exit /b 1
   )
@@ -36,5 +36,5 @@ if errorlevel 1 (
 
 echo [2/2] 启动 Agent Service（容器沙箱，端口 8799）...
 echo.
-"%PY%" agent_service.py
+"%PY%" backend\scripts\agent_service.py
 pause

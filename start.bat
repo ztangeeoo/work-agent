@@ -5,9 +5,9 @@ cd /d "%~dp0"
 
 rem ============================================================
 rem  工作智能体集合 一键启动（前后端分离 + CopilotKit）
-rem    1. AgentScope 智能体服务（agent_server.py，Python，端口 8790）
+rem    1. AgentScope 智能体服务（backend\run.py，Python，端口 8790）
 rem    2. React 前端构建（web/，Vite，产物输出到 web/dist）
-rem    3. 页面与转发服务（server.js，Node，端口 8787，托管 web/dist + CopilotKit runtime）
+rem    3. 页面与转发服务（backend\server.js，Node，端口 8787，托管 web/dist + CopilotKit runtime）
 rem ============================================================
 
 rem ---------- 1. 找到可用的 Python ----------
@@ -31,10 +31,10 @@ echo [2/4] 检查 Python 依赖（首次较慢，请耐心等待）...
 "%PY%" -c "import agentscope, fastapi, uvicorn, httpx, sqlalchemy, aiosqlite, sys; sys.exit(0 if int(agentscope.__version__.split('.')[0]) >= 2 else 1)" >nul 2>nul
 if errorlevel 1 (
   echo      安装 / 升级依赖到 AgentScope 2.0 ...
-  "%PY%" -m pip install -U -r requirements.txt
+  "%PY%" -m pip install -U -r backend\requirements.txt
   if errorlevel 1 (
     echo [错误] 依赖安装失败，请手动执行：
-    echo   "%PY%" -m pip install -U -r requirements.txt
+    echo   "%PY%" -m pip install -U -r backend\requirements.txt
     pause
     exit /b 1
   )
@@ -76,9 +76,9 @@ if not exist "web\dist\index.html" (
 
 rem ---------- 4. 启动两个服务 ----------
 echo [4/4] 启动服务...
-start "AgentScope 智能体服务" "%PY%" agent_server.py
+start "AgentScope 智能体服务" "%PY%" backend\run.py
 timeout /t 2 /nobreak >nul
-start "工作智能体集合 页面服务" node server.js
+start "工作智能体集合 页面服务" node backend\server.js
 timeout /t 2 /nobreak >nul
 start "" http://localhost:8787
 

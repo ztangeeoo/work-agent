@@ -7,13 +7,15 @@
 
 前端为 **React SPA（Vite）+ CopilotKit**，后端为 **Node（托管 + CopilotKit runtime + 反向代理）+ Python FastAPI（智能体 + 数据服务）**，前后端分离。
 
+代码分布：`web/` 前端、`backend/` 后端（Python 主包 + Node 网关 + adapters）、`tests/` 回归测试、`docs/` 设计稿。后端目录分层见 [backend/README.md](backend/README.md)。
+
 ## 架构
 
 ```
 浏览器（React SPA · web/，Vite 构建产物在 web/dist）
   │  CopilotKit（useCopilotChatHeadless_c，runtimeUrl=/api/copilotkit）
   ▼
-server.js（Node :8787）——只做「静态托管 + CopilotKit runtime + 反向代理」
+backend/server.js（Node :8787）——只做「静态托管 + CopilotKit runtime + 反向代理」
   ├── GET  /                    托管 React 构建产物（web/dist，未构建时回退旧 index.html）
   ├── GET  /assets/...          Vite 静态资源
   ├── POST /api/models          直接代理模型接口，拉取可用模型列表
@@ -21,20 +23,21 @@ server.js（Node :8787）——只做「静态托管 + CopilotKit runtime + 反�
   ├── POST /api/model-config    前端模型配置（内存留一份供适配器用，同时同步给 Python）
   ├── GET  /api/stages          智能体执行阶段 SSE（与适配器同进程）
   ├── POST /api/copilotkit      CopilotKit 自托管 runtime
-  │     └── agent_adapter.js（AgentScopeAdapter）
+  │     └── backend/agent_adapter.js（AgentScopeAdapter）
   │           ├── 读取模型配置（base / key / model / profile / agentMode）
   │           ├── 转成 OpenAI 兼容请求 POST :8790/v1/chat/completions
   │           └── SSE 增量流转发回 CopilotKit 事件流
   └── /api/convos · /api/search · /api/repos · /api/reviews · /api/review/events
         └── 反向代理 → :8790（持久化、仓库配置、PR 轮询、审核报告与事件流都在 Python 侧）
   ▼
-agent_server.py（Python :8790，FastAPI + AgentScope）
+backend/（Python :8790，FastAPI + AgentScope）
   ├── POST /v1/chat/completions   OpenAI 兼容，SSE 流式（面试问答 / 审核追问）
   ├── POST /v1/review             代码审核流水线（侦察官 → 审核官 → 裁决官）
   ├── /api/*                      数据服务：会话 / 检索 / 仓库 / PR / 审核报告 / 事件流
-  │     ├── store.py              持久层（标准库 sqlite3：七张表 + FTS5 中文检索）
-  │     ├── reviewer.py           代码托管适配（GitHub / GitLab 拉 PR、diff、回帖，自动走代理）
-  │     └── review_poller.py      轮询调度（同仓库串行、单轮限流、到期触发、事件广播）
+  │     ├── app/store/            持久层（标准库 sqlite3：七张表 + FTS5 中文检索）
+  │     ├── app/services/         代码托管适配（拉 PR、diff、回帖）+ PR 轮询 + 事件中心
+  │     └── app/agents/           智能体编排（面试流水线 / 审核流水线）
+  └── 目录细节见 backend/README.md
   ▼
 ┌─────────────── AgentScope 多 Agent 编排 ───────────────┐
 │  🧭 策划官 Planner     首次出题前产出考察大纲            │
@@ -99,8 +102,8 @@ agent_server.py（Python :8790，FastAPI + AgentScope）
 自检（会真的跑命令、读写文件）：
 
 ```bash
-.venv\Scripts\python.exe sandbox_probe.py                          # 默认容器后端（需 Docker 引擎）
-set SANDBOX=local && .venv\Scripts\python.exe sandbox_probe.py     # 宿主机直跑，快
+.venv\Scripts\python.exe backend\scripts\sandbox_probe.py                          # 默认容器后端（需 Docker 引擎）
+set SANDBOX=local && .venv\Scripts\python.exe backend\scripts\sandbox_probe.py     # 宿主机直跑，快
 ```
 
 > 本机实测（Docker Desktop 4.50 / 引擎 28.5.1，Linux 容器）：容器后端 5 项全过，首次初始化 150s
@@ -109,11 +112,11 @@ set SANDBOX=local && .venv\Scripts\python.exe sandbox_probe.py     # 宿主机�
 
 ### Agent Service（官方服务化入口）
 
-`agent_service.py` 用 `agentscope.app.create_app()` 起官方服务，替掉归档的 runtime：
+`backend/scripts/agent_service.py` 用 `agentscope.app.create_app()` 起官方服务，替掉归档的 runtime：
 
 ```bash
-.venv\Scripts\python.exe agent_service.py                # 默认容器沙箱（要求 Docker 引擎在跑）
-set SANDBOX=local && .venv\Scripts\python.exe agent_service.py   # 只本机调试，放弃隔离
+.venv\Scripts\python.exe backend\scripts\agent_service.py                # 默认容器沙箱（要求 Docker 引擎在跑）
+set SANDBOX=local && .venv\Scripts\python.exe backend\scripts\agent_service.py   # 只本机调试，放弃隔离
 # → http://localhost:8799/docs   共 77 个接口（会话 / 运行 / 模型 / 凭据 / RAG / 工作区 / 渠道 / 计划任务）
 ```
 
@@ -134,7 +137,7 @@ curl -H "x-user-id: local" http://127.0.0.1:8799/health
 ```
 
 端口占用：Node `8787` / 出题官 `8790` / Agent Service `8799`，互不冲突。
-`agent_service.py` 与出题官是**两套独立服务**，可以只跑其中一套；出题官页面仍走 `8787 → 8790`。
+`scripts/agent_service.py` 与出题官是**两套独立服务**，可以只跑其中一套；出题官页面仍走 `8787 → 8790`。
 
 
 ## 快速开始
@@ -154,12 +157,12 @@ cd work-agent
 手动启动：
 
 ```bash
-# 终端 1：智能体服务
-.venv\Scripts\python.exe agent_server.py
+# 终端 1：智能体服务（后端主包）
+.venv\Scripts\python.exe backend\run.py
 
 # 终端 2：页面服务（先装根目录依赖：npm install）
 npm install
-node server.js
+node backend\server.js
 
 # 浏览器打开
 http://localhost:8787
@@ -265,8 +268,8 @@ node --experimental-strip-types tests/test_qcard.ts
 数据链路：
 
 ```
-agent_server.py  run_pipeline() 各环节起止 → SSE 里发 {agent_stage: {...}}
-  → agent_adapter.js 捕获（不进正文）→ server.js 阶段中心按 runId 归集
+app/agents/interview.py 各环节起止 → SSE 里发 {agent_stage: {...}}
+  → backend/agent_adapter.js 捕获（不进正文）→ backend/server.js 阶段中心按 runId 归集
   → 前端 EventSource(/api/stages?runId=) → useAgentStages → AgentTrace 渲染
 ```
 
@@ -306,7 +309,7 @@ Node :8787  /api/convos  ──反向代理──►  Python :8790 /api/convos
                                               └──►  data/interview.db（单文件 SQLite）
 ```
 
-**为什么是 SQLite**：项目定位是本地/局域网一键启动，用 Python 标准库 `sqlite3`（`store.py`）**不需要任何额外依赖或服务**。1000 场面试 × 40 条消息 = 4 万行，查询在毫秒级。多人并发写或要上公网时再换 Postgres + pgvector。
+**为什么是 SQLite**：项目定位是本地/局域网一键启动，用 Python 标准库 `sqlite3`（`backend/app/store/`）**不需要任何额外依赖或服务**。1000 场面试 × 40 条消息 = 4 万行，查询在毫秒级。多人并发写或要上公网时再换 Postgres + pgvector。
 
 **表结构**（七张表，都在 `data/interview.db`）
 
@@ -370,19 +373,19 @@ Node :8787  /api/convos  ──反向代理──►  Python :8790 /api/convos
 | `COPILOTKIT_TELEMETRY_DISABLED` | 自动设为 `1` | server.js 启动 runtime 时自动关闭 CopilotKit 匿名遥测，保证纯本地/局域网部署零外网请求 |
 | `HARNESS_ADAPTER` | `1` | 设为 `0` 完全旁路可训练指令层，行为与接入前逐字节一致 |
 | `HARNESS_ADAPTER_MAX` | `6000` | 单份 adapter 文本的字符上限，防止误写超长文件 |
-| `HARNESS_ADAPTER_DIR` | `adapters/` | adapter 根目录，换一份实验版本时指向别处 |
+| `HARNESS_ADAPTER_DIR` | `backend/adapters/` | adapter 根目录，换一份实验版本时指向别处 |
 
 ## 可训练指令层（harness adapter）
 
-各 Agent 的 system prompt 有一段**外挂的、可训练的部分**，放在 `adapters/<name>/ADAPTER.md`：
+各 Agent 的 system prompt 有一段**外挂的、可训练的部分**，放在 `backend/adapters/<name>/ADAPTER.md`：
 
 ```
-adapters/
+backend/adapters/
   interview/  ADAPTER.md  adapter.yaml   → 面试官 + 策划官
   review/     ADAPTER.md  adapter.yaml   → 侦察官 + 审核官 + 裁决官 + 审核追问
 ```
 
-加载链：`agent_server.py` 各 `*_sys_prompt()` → `harness_adapter.compose(base, name)` → `Session(...).context()`（装了 `hermit-harness` 时）或直接读 `ADAPTER.md`（没装时）。最后拼成 `base + "\n\n" + ADAPTER.md`。
+加载链：`app/prompts/*.py` 各 `*_sys_prompt()` → `app/services/harness.compose(base, name)` → `Session(...).context()`（装了 `hermit-harness` 时）或直接读 `ADAPTER.md`（没装时）。最后拼成 `base + "\n\n" + ADAPTER.md`。
 
 为什么要这一层：
 
@@ -425,23 +428,30 @@ VITE_COPILOTKIT_KEY=ckpb_你的key
 
 ## 文件说明
 
-| 文件 | 作用 |
+后端全部集中在 `backend/`（分层与「改哪里」见 [backend/README.md](backend/README.md)）。
+
+| 路径 | 作用 |
 |---|---|
 | `web/` | React 前端（Vite + TS + CopilotKit）。`src/lib/markdown.ts` 负责题目卡片渲染，`src/lib/stageReducer.ts` 负责流水线状态归并，`src/lib/remote.ts` 负责与服务端历史库同步，`src/lib/review.ts` 负责代码审核接口与展示辅助，`src/components/` 为各界面区块（`AgentSwitcher.tsx` 输入框上方的智能体标签、`InterviewSetup.tsx` / `RepoSetup.tsx` 面试与仓库配置弹框、`AgentTrace.tsx` 流水线面板、`ReviewWorkbench.tsx` 审核工作台） |
-| `server.js` | Node 服务：静态托管、`/api/models`、`/api/chat`、`/api/model-config`、`/api/stages`（阶段事件 SSE）、`/api/copilotkit`（CopilotKit runtime），其余 `/api/*` 反向代理到 Python |
-| `agent_adapter.js` | CopilotKit → AgentScope 智能体服务的 ServiceAdapter（SSE 转接，并截获智能体阶段事件） |
-| `agent_server.py` | FastAPI 服务：AgentScope 多 Agent 编排、`/v1/chat/completions`（OpenAI 兼容 SSE）、`/v1/review`（审核流水线），以及全部 `/api/*` 数据接口 |
-| `agent_service.py` | AgentScope 2.0 官方 Agent Service（`create_app`）：SQLite 持久化 + 内存总线 + 本地工作区，独立端口 8799，自带 `/docs` |
-| `sandbox_probe.py` | 沙箱自检：建工作区 → 跑命令 / 读写文件 / 校验退出码；默认容器后端，`SANDBOX=local` 切宿主机 |
-| `store.py` | 持久层（标准库 `sqlite3`，零依赖）：七张表建表迁移、会话读写、FTS5 检索、仓库 / PR / 审核报告 CRUD、容量上限保护 |
-| `reviewer.py` | 代码托管平台适配：解析仓库地址、拉开放 PR 与 diff、回帖；自动识别 `HTTP(S)_PROXY`，`localhost` 直连 |
-| `review_poller.py` | PR 轮询调度：同仓库串行、单轮限流、到期触发、事件广播；模型配置从页面内存读取 |
-| `question_bank.py` | 内置高频面试题库（11 个主方向 × 细分），作为面试官的检索工具 |
-| `harness_adapter.py` | 可训练指令层加载：`compose(base, name)` 把 `adapters/<name>/ADAPTER.md` 接到 system prompt 后；hermit 可缺省、按 mtime 热加载、`HARNESS_ADAPTER=0` 可旁路 |
-| `adapters/` | 可训练的外挂指令（Hermit 格式）：`interview/`（面试官 + 策划官）、`review/`（侦察官 + 审核官 + 裁决官 + 审核追问） |
+| `backend/run.py` | 智能体服务启动入口（`python backend/run.py`，默认 :8790） |
+| `backend/server.js` | Node 网关 :8787：静态托管、`/api/models`、`/api/chat`、`/api/model-config`、`/api/stages`（阶段事件 SSE）、`/api/copilotkit`（CopilotKit runtime），其余 `/api/*` 反向代理到 Python |
+| `backend/agent_adapter.js` | CopilotKit → 智能体服务的 ServiceAdapter（SSE 转接，并截获智能体阶段事件） |
+| `backend/app/main.py` | 应用装配：FastAPI 实例、生命周期（建库 → 起轮询）、路由注册 |
+| `backend/app/agents/` | 智能体编排：`runtime.py`（构造 / 流式驱动）、`router.py`（意图路由）、`interview.py`（策划官→面试官→评分官）、`review.py`（侦察官→审核官→裁决官） |
+| `backend/app/prompts/` | 提示词：`profile.py`（画像 → 文本）、`interview.py`、`review.py`（一智能体一函数） |
+| `backend/app/llm/factory.py` | 任意 OpenAI 兼容接口 → `OpenAIChatModel`（按 base/key/model 缓存） |
+| `backend/app/tools/` | `question_bank.py` 内置高频题库（11 个主方向 × 细分）+ `registry.py` 工具箱装配（显式 ALLOW） |
+| `backend/app/store/` | 持久层（标准库 `sqlite3`，零依赖）：`db.py` 建表与连接、`convos.py` 会话与 FTS5 检索、`reviews.py` 仓库 / PR / 审核报告 |
+| `backend/app/services/` | `harness.py` 可训练指令层（`compose` 拼 ADAPTER.md，可缺省 / 热加载 / 可旁路）；`review_client.py` 代码托管适配；`poller.py` PR 轮询调度；`events.py` 审核事件中心 |
+| `backend/app/api/routes/` | 路由：`system`（健康检查 / 模型配置 / 库状态）、`chat`（`/v1/chat/completions`、`/v1/review`）、`convos`、`repos`、`reviews` |
+| `backend/app/schemas/` | 数据契约：`score_card.py`（Pydantic 结构化输出）、`review_report.py`（审核 JSON 形状与归一化） |
+| `backend/app/core/` | 版本闸门、日志、异常翻译、流水线阶段元信息 |
+| `backend/scripts/agent_service.py` | AgentScope 2.0 官方 Agent Service（`create_app`）：SQLite 持久化 + 内存总线 + 本地工作区，独立端口 8799，自带 `/docs` |
+| `backend/scripts/sandbox_probe.py` | 沙箱自检：建工作区 → 跑命令 / 读写文件 / 校验退出码；默认容器后端，`SANDBOX=local` 切宿主机 |
+| `backend/adapters/` | 可训练的外挂指令（Hermit 格式）：`interview/`（面试官 + 策划官）、`review/`（侦察官 + 审核官 + 裁决官 + 审核追问） |
 | `data/interview.db` | 会话 / 仓库 / 审核报告数据库（自动创建，已加入 `.gitignore`） |
-| `tests/` | 回归测试：`test_store.py`（持久层）、`test_reviewer.py`（地址解析 / diff / 代理规则）、`test_adapter.py`（指令层加载 / 降级 / 热更新 / 格式契约）、`test_web.ts`（渲染逻辑）、`test_qcard.ts`（卡片布局与历史守卫）、`test_stages.ts`（流水线状态）、`test_layout.ts`（布局约束）、`test_render.js`（旧版渲染逻辑）、`mock_llm.js`（mock 上游验全链路） |
-| `docs/` | `design-spec-v1.html` 全局样式主题规范 · `theme-demo.html` 主题实时预览（可切深浅） |
+| `tests/` | 回归测试：`test_store.py`（持久层）、`test_reviewer.py`（地址解析 / diff / 代理规则）、`test_adapter.py`（指令层加载 / 降级 / 热更新 / 格式契约）、`test_agentscope_api.py`（运行时基线）、`test_web.ts`（渲染逻辑）、`test_qcard.ts`（卡片布局与历史守卫）、`test_stages.ts`（流水线状态）、`test_layout.ts`（布局约束）、`test_render.js`（旧版渲染逻辑）、`mock_llm.js`（mock 上游验全链路） |
+| `docs/` | `design-spec-v1.html` 全局样式主题规范 · `theme-demo.html` 主题实时预览（可切深色） |
 | `index.html` | 旧版单文件应用（保留作回退，不再维护） |
 | `start.bat` | 一键启动（智能体服务 8790 + 页面服务 8787 + 打开浏览器） |
 | `start_service.bat` | 单独启动 Agent Service（8799，默认容器沙箱；和 start.bat 相互独立） |
@@ -450,7 +460,7 @@ VITE_COPILOTKIT_KEY=ckpb_你的key
 
 ```bash
 .venv\Scripts\python.exe tests/test_agentscope_api.py # AgentScope 2.0 运行时基线：版本/API 面/事件字段/上下文语义（40 断言）
-.venv\Scripts\python.exe sandbox_probe.py             # 沙箱自检：命令执行 / 文件读写 / 退出码（默认容器，SANDBOX=local 切本地）
+.venv\Scripts\python.exe backend\scripts\sandbox_probe.py  # 沙箱自检：命令执行 / 文件读写 / 退出码（默认容器，SANDBOX=local 切本地）
 .venv\Scripts\python.exe tests/test_store.py          # 持久层：会话/检索/隔离/仓库/审核报告（85 断言）
 .venv\Scripts\python.exe tests/test_reviewer.py       # 仓库地址解析 / diff 统计 / 代理规则（32 断言）
 .venv\Scripts\python.exe tests/test_adapter.py        # 指令层：降级 / 拼接 / 开关 / 截断 / 热更新 / 格式契约 / 接线守卫（38 断言）
@@ -469,7 +479,7 @@ node tests/mock_llm.js                                # mock 上游（含审核�
 | 启动报 `本项目需要 AgentScope 2.0+，当前安装的是 1.x` | 环境里是旧版本：`.venv\Scripts\python.exe -m pip install -U -r requirements.txt`；`start.bat` 也会自动检测升级 |
 | `ImportError: cannot import name 'ReActAgent'` 之类 | 代码已是 2.0 写法，装的是 1.x 或照旧教程装了 `agentscope-runtime`，按上一行升级即可 |
 | 上下文很长、模型重复回答同一个问题 | 检查是否又给 `AgentState(context=...)` 预置了历史又往 `inputs` 里传了一遍（见「上下文语义」） |
-| 页面提示「AgentScope 智能体服务未连接」 | Python 服务没起来：双击 `start.bat`，或手动 `.venv\Scripts\python.exe agent_server.py` |
+| 页面提示「AgentScope 智能体服务未连接」 | Python 服务没起来：双击 `start.bat`，或手动 `.venv\Scripts\python.exe backend\run.py` |
 | 出题报「模型未配置」 | 点右上角齿轮完成模型配置；每次发消息前页面会自动同步配置到 Node 与 Python |
 | `平台接口返回 HTTP 404` 且末尾是一段网页（如「你所访问的页面不存在」） | 自建实例的**平台类型判错了**：GitLab 走 `/api/v4`，Gitea 等走 `/api/v3`，猜错就会命中对方网页 404。在仓库配置里把「平台」明确选成 GitLab（或更新到带自动探测的版本，保存/测试时会自动识别） |
 | `模型 API Key 无效`（401） | 齿轮弹框里 Key 填错或额度不足 |

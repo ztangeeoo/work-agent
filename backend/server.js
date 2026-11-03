@@ -3,12 +3,14 @@
  * 作用：
  *  1. 托管 React 前端构建产物（web/dist），未构建时回退旧版 index.html
  *  2. /api/models 代理转发到任意 OpenAI 兼容接口（拉取模型列表）
- *  3. /api/chat 转发给 AgentScope 智能体服务（agent_server.py，默认 8790），
+ *  3. /api/chat 转发给 AgentScope 智能体服务（app/，默认 8790），
  *     由多 Agent（策划官/面试官/评分官）完成出题与对话
  *  4. /api/model-config 保存前端最新模型配置（内存），供 CopilotKit 适配器读取
  *  5. /api/copilotkit CopilotKit 自托管 runtime（适配器 → AgentScope 三智能体）
  *  6. /api/convos、/api/search、/api/repos、/api/reviews、/api/review/events
  *     反向代理到 FastAPI（:8790）；持久化用 Python 标准库 sqlite3，零额外依赖
+ *
+ * 位置：本文件在 backend/ 下，运行时 ROOT 指回仓库根（web/dist、index.html 都在根）。
  *
  * 启动：start.bat（会同时拉起 Python 智能体服务、构建前端并启动本服务）
  *       AGENTSCOPE=0 node server.js  → 回退到「直接转发模型 API」的老模式
@@ -21,11 +23,12 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 /* 持久化（SQLite）、代码托管适配、PR 轮询与全部 /api/* 业务接口
- * 都已归到 FastAPI 侧（agent_server.py + store.py + reviewer.py + review_poller.py），
+ * 都已归到 FastAPI 侧（app/store/ + app/services/ 与 app/api/routes/），
  * 本服务只做「静态托管 + CopilotKit runtime + 反向代理」。 */
 
 const PORT = Number(process.env.PORT) || 8787;
-const ROOT = __dirname;
+/* 仓库根：本文件在 backend/ 下，静态资源与构建产物都在上一层 */
+const ROOT = path.resolve(__dirname, '..');
 
 /* ---------- AgentScope 智能体服务配置 ---------- */
 const AGENTSCOPE_URL = (process.env.AGENTSCOPE_URL || 'http://127.0.0.1:8790').replace(/\/+$/, '');
@@ -410,10 +413,10 @@ function forwardToAgent(rawBody, res) {
 }
 
 const AGENT_DOWN_HINT =
-  'AgentScope 智能体服务（agent_server.py）没有运行。\n' +
+  'AgentScope 智能体服务（backend/）没有运行。\n' +
   '请双击项目里的 start.bat 启动全部服务；或手动执行：\n' +
-  '  .venv\\Scripts\\python.exe agent_server.py\n' +
-  '（首次运行需先 .venv\\Scripts\\python.exe -m pip install -r requirements.txt）';
+  '  .venv\\Scripts\\python.exe backend\\run.py\n' +
+  '（首次运行需先 .venv\\Scripts\\python.exe -m pip install -r backend\\requirements.txt）';
 
 /* ---------- /api/chat 代理 ---------- */
 async function handleChat(req, res) {
@@ -693,7 +696,7 @@ const server = http.createServer((req, res) => {
    * 前端仍只访问本服务的 /api/*，因此接口路径与响应结构保持不变。
    */
 
-  /* 会话持久化（SQLite：Python store.py） */
+  /* 会话持久化（SQLite：Python app/store/） */
   if (url.pathname === '/api/convos' || url.pathname.startsWith('/api/convos/')) {
     return void proxyApi(req, res, url.pathname + url.search);
   }
@@ -836,7 +839,7 @@ server.listen(PORT, async () => {
       console.log('  ➜  智能体:     AgentScope 已连接（' + (agent.detail || AGENTSCOPE_URL) + '）');
     } else {
       console.log('  ➜  智能体:     ⚠️ 未连接（' + AGENTSCOPE_URL + '），出题会失败');
-      console.log('                请先启动智能体服务：.venv\\Scripts\\python.exe agent_server.py');
+      console.log('                请先启动智能体服务：.venv\\Scripts\\python.exe backend\\run.py');
     }
   } else {
     console.log('  ➜  智能体:     已关闭（AGENTSCOPE=0，直接转发模型 API）');
