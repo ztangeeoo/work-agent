@@ -644,23 +644,43 @@ def truncate_diff(text, file_count=None) -> str:
     return head + note
 
 
+async def _post_gitee_comment(repo: dict, number, body: str) -> dict:
+    """Gitee（含企业版，也含只实现了 v5 的 GitLab 兼容层）回帖：PR comments"""
+    url = ("https://" + repo["host"] + "/api/v5/repos/"
+           + repo["owner"] + "/" + repo["name"]
+           + "/pulls/" + str(number) + "/comments")
+    await api_json(url, token=repo.get("token") or "", provider="gitee",
+                   method="POST", body={"body": body})
+    return {"ok": True, "url": repo["url"] + "/pulls/" + str(number), "via": "gitee-v5"}
+
+
 async def post_pr_comment(repo: dict, number, body: str) -> dict:
-    """回帖：GitHub 用 issue comments，GitLab 用 notes，Gitee 用 PR comments"""
+    """回帖：GitHub 用 issue comments，GitLab 用 notes，Gitee 用 PR comments。
+
+    注意：Gitee 企业版的「GitLab 兼容层」只实现了 /changes、/commits 之类的读接口，
+    `/merge_requests/:iid/notes` 直接 404（实测）。所以 gitlab 分支失败时按 404
+    回退到 v5 的 pulls/comments，否则这类实例永远回帖失败。
+    """
     repo = await ensure_provider(repo)
+    token = repo.get("token") or ""
+
     if repo.get("provider") == "gitee":
-        url = (_repo_api_base(repo) + "/repos/" + repo["owner"] + "/" + repo["name"]
-               + "/pulls/" + str(number) + "/comments")
-        await api_json(url, token=repo.get("token") or "", provider="gitee",
-                       method="POST", body={"body": body})
-        return {"ok": True, "url": repo["url"] + "/pulls/" + str(number)}
+        return await _post_gitee_comment(repo, number, body)
+
     if repo.get("provider") == "gitlab":
         url = (_repo_api_base(repo) + "/projects/" + _gitlab_project_id(repo)
                + "/merge_requests/" + str(number) + "/notes")
-        await api_json(url, token=repo.get("token") or "", provider="gitlab", method="POST", body={"body": body})
-        return {"ok": True, "url": repo["url"] + "/-/merge_requests/" + str(number)}
+        try:
+            await api_json(url, token=token, provider="gitlab", method="POST", body={"body": body})
+            return {"ok": True, "url": repo["url"] + "/-/merge_requests/" + str(number), "via": "gitlab"}
+        except RuntimeError as e:
+            if "HTTP 404" not in str(e):
+                raise
+        return await _post_gitee_comment(repo, number, body)
+
     url = _repo_api_base(repo) + "/repos/" + repo["owner"] + "/" + repo["name"] + "/issues/" + str(number) + "/comments"
-    j = await api_json(url, token=repo.get("token") or "", method="POST", body={"body": body})
-    return {"ok": True, "url": ((j or {}).get("html_url")) or (repo["url"] + "/pull/" + str(number))}
+    j = await api_json(url, token=token, method="POST", body={"body": body})
+    return {"ok": True, "url": ((j or {}).get("html_url")) or (repo["url"] + "/pull/" + str(number)), "via": "github"}
 
 
 async def test_repo(repo: dict) -> dict:
