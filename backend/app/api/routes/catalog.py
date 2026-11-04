@@ -41,7 +41,6 @@ async def api_expert_get(eid: str):
 
 
 @router.get("/api/agents")
-@router.get("/api/agents")
 async def api_agents_list(request: Request):
     blocked = db_blocked()
     if blocked:
