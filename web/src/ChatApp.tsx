@@ -9,14 +9,16 @@ import {
 } from './lib/storage';
 import { checkHealth } from './lib/health';
 import { applyTheme, loadTheme, nextTheme, saveTheme, type Theme } from './lib/theme';
-import { deleteRemoteConvo, fetchRemoteConvos, flushNow, queueSaveConvo } from './lib/remote';
+import { deleteRemoteConvo, fetchExperts, fetchRemoteConvos, flushNow, queueSaveConvo } from './lib/remote';
 import { useAgentStages } from './lib/stages';
 import { newProfile } from './lib/storage';
 import {
   fetchPRs, fetchRepos, fetchReviews, pollRepo, postReviewToPR,
   reviewPR as requestReview, sortPRs, useReviewEvents,
 } from './lib/review';
-import type { AgentMode, ChatMessage, Convo, ModelCfg, PRItem, Profile, Repo, ReviewItem } from './types';
+import type {
+  AgentMode, ChatMessage, Convo, ExpertDef, ModelCfg, PRItem, Profile, Repo, ReviewItem,
+} from './types';
 import ConvoSidebar from './components/ConvoSidebar';
 import ExpertPicker from './components/ExpertPicker';
 import ChatPanel from './components/ChatPanel';
@@ -27,8 +29,11 @@ import RepoSetup from './components/RepoSetup';
 import ReviewStatus from './components/ReviewStatus';
 import ReviewWorkbench from './components/ReviewWorkbench';
 
-const LS_MODE = 'interviewer_mode_v1';
-
+/**
+ * 会话与专家的关系不是直接一条边，而是两级：
+ *   convo.agentId → 智能体（agent） → 专家（expert，mode = interview / review）
+ * 服务端把这三层都落在 SQLite 里；前端只用 agentId 表达绑定，mode 由所属专家派生。
+ */
 export default function ChatApp() {
   /* ---------- 模型配置 ---------- */
   const [cfg, setCfg] = useState<ModelCfg>(() => {
@@ -52,10 +57,18 @@ export default function ChatApp() {
   const [setupOpen, setSetupOpen] = useState(false);
   const [genErr, setGenErr] = useState('');
 
-  /* ---------- 智能体模式：面试出题 / 代码审核 ---------- */
-  const [mode, setMode] = useState<AgentMode>(() =>
-    localStorage.getItem(LS_MODE) === 'review' ? 'review' : 'interview',
-  );
+  /* ---------- 专家与智能体（以服务端 SQLite 为准，内置常量兜底） ---------- */
+  const [experts, setExperts] = useState<ExpertDef[]>(AGENTS);
+  /**
+   * 当前会话绑定的智能体 id（落库在 convo.agent_id）。
+   * null = 该会话还没关联专家/智能体 —— 新建会话的默认状态。
+   */
+  const [agentId, setAgentId] = useState<string | null>(null);
+
+  /* ---------- 智能体模式：面试出题 / 代码审核 ----------
+   * 由绑定的智能体所属专家派生（agent → expert → mode），只用于界面布局与后端路由。
+   * 不再从 localStorage 继承上一次的专家，避免新会话「自动带上」某个专家。 */
+  const [mode, setMode] = useState<AgentMode | null>(null);
   const [repos, setRepos] = useState<Repo[]>([]);
   const [repoId, setRepoId] = useState('');
   const [prs, setPRs] = useState<PRItem[]>([]);
@@ -90,6 +103,42 @@ export default function ChatApp() {
   });
   const convoId = convos.activeId;
 
+  /* 专家 / 智能体查表：会话绑定用 agentId，界面布局与后端路由用 mode（= 专家所属能力包） */
+  const expertOfMode = useCallback(
+    (m: AgentMode | null) => (m ? experts.find(e => e.mode === m) || null : null),
+    [experts],
+  );
+
+  const primaryAgentOf = useCallback((m: AgentMode | null) => {
+    const list = expertOfMode(m)?.agents || [];
+    return list.find(a => a.primary) || list[0] || null;
+  }, [expertOfMode]);
+
+  const modeOfAgent = useCallback((id?: string | null): AgentMode | null => {
+    if (!id) return null;
+    const e = experts.find(x => (x.agents || []).some(a => a.id === id));
+    return e ? e.mode : null;
+  }, [experts]);
+
+  /**
+   * 会话绑定的专家模式：agentId → 所属专家 → mode。
+   * 老数据没有 agentId 时退回冗余的 mode；再没有就按「有消息=面试会话」兜底。
+   */
+  const boundModeOf = useCallback((c?: Convo | null): AgentMode | null => {
+    if (!c) return null;
+    const byAgent = modeOfAgent(c.agentId);
+    if (byAgent) return byAgent;
+    if (c.mode) return c.mode;
+    return (c.messages || []).length ? 'interview' : null;
+  }, [modeOfAgent]);
+
+  /** 会话绑定的智能体 id：优先库里的 agentId，老数据按主智能体补一个 */
+  const boundAgentIdOf = useCallback((c?: Convo | null): string | null => {
+    if (!c) return null;
+    if (c.agentId) return c.agentId;
+    return primaryAgentOf(boundModeOf(c))?.id || null;
+  }, [boundModeOf, primaryAgentOf]);
+
   /* ---------- 服务状态 ---------- */
   const [health, setHealth] = useState({ proxyOk: false, agentOk: false });
   const [toastMsg, setToastMsg] = useState('');
@@ -105,7 +154,7 @@ export default function ChatApp() {
 
   /* ---------- 智能体执行流水线 ---------- */
   const [runId, setRunId] = useState('');
-  const trace = useAgentStages(runId, isLoading, mode);
+  const trace = useAgentStages(runId, isLoading, mode ?? 'interview');
 
   /* 新建会话后的短暂窗口里，CopilotKit 的 reset() 可能把上一场消息又塞回来。
      这里记住「新建之前就存在的消息 id」，在出现真正的新消息之前一律不落到新会话。 */
@@ -124,9 +173,11 @@ export default function ChatApp() {
         setMessages(conv.messages.map(m => ({ id: m.id, role: m.role, content: m.content })));
         if (conv.profile) setProfile({ ...newProfile(), ...conv.profile });
       }
-      /* 会话绑定的专家与专家配置（空会话同样要恢复） */
-      if (conv.mode) setMode(conv.mode);
-      if (conv.mode === 'review' && conv.repoId) setRepoId(conv.repoId);
+      /* 会话绑定的智能体 → 专家（空会话未关联时 mode 为 null，界面显示「未关联专家」） */
+      const bound = boundModeOf(conv);
+      setMode(bound);
+      setAgentId(boundAgentIdOf(conv));
+      if (bound === 'review' && conv.repoId) setRepoId(conv.repoId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -157,8 +208,8 @@ export default function ChatApp() {
               map.set(c.id, c);
               toPush.push(c);
             } else if (r && !r.mode && c.mode) {
-              /* 服务端是加字段前的旧记录：保留本地已绑定的专家与配置 */
-              const merged: Convo = { ...r, mode: c.mode, repoId: c.repoId };
+              /* 服务端是加字段前的旧记录：保留本地已绑定的智能体/专家与配置 */
+              const merged: Convo = { ...r, agentId: c.agentId, agentName: c.agentName, mode: c.mode, repoId: c.repoId };
               map.set(c.id, merged);
               toPush.push(merged);
             }
@@ -185,10 +236,19 @@ export default function ChatApp() {
   }, []);
 
   /* 合并完成后（以及 reset/切会话后 messages 短暂为空时）：服务端版本消息更多就补回 */
+  const syncedModeRef = useRef(false);
   useEffect(() => {
     if (!synced) return;
     const conv = convos.list.find(c => c.id === convos.activeId);
     if (!conv) return;
+    /* 合并后当前会话可能换成了服务端的某一场：把它的专家绑定一并恢复，避免界面与数据不一致 */
+    if (!syncedModeRef.current) {
+      syncedModeRef.current = true;
+      const bound = boundModeOf(conv);
+      setMode(bound);
+      setAgentId(boundAgentIdOf(conv));
+      if (bound === 'review' && conv.repoId) setRepoId(conv.repoId);
+    }
     const remoteMsgs = conv.messages || [];
     if (remoteMsgs.length > messages.length) {
       setMessages(remoteMsgs.map(m => ({ id: m.id, role: m.role, content: m.content })));
@@ -216,6 +276,16 @@ export default function ChatApp() {
     run();
     const t = window.setInterval(run, 15000);
     return () => { alive = false; window.clearInterval(t); };
+  }, []);
+
+  /* 专家 / 智能体清单：库里有就以库为准（含各自的智能体），拿不到就继续用内置常量 */
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const list = await fetchExperts();
+      if (alive && list) setExperts(list);
+    })();
+    return () => { alive = false; };
   }, []);
 
   /* ---------- 代码审核：仓库 / PR / 审核报告 ---------- */
@@ -358,7 +428,10 @@ export default function ChatApp() {
         c.id === prev.activeId
           ? { ...c, messages: snapshot.slice(-40), updatedAt: Date.now(),
               title: c.title && c.title !== '新会话' ? c.title : titleFromMessages(snapshot),
-              profile: snapshotProfile(profile), mode,
+              profile: snapshotProfile(profile),
+              /* 会话 → 智能体：未关联时保持 undefined，不要让会话凭空「继承」专家 */
+              agentId: agentId ?? undefined,
+              mode: mode ?? undefined,
               /* 审核会话的专家配置 = 当前绑定的仓库 */
               repoId: mode === 'review' ? repoId : c.repoId }
           : c
@@ -372,7 +445,7 @@ export default function ChatApp() {
       if (active && (active.messages || []).length) queueSaveConvo(active);
       return nd;
     });
-  }, [messages, mode, profile, repoId]);
+  }, [agentId, messages, mode, profile, repoId]);
 
   /* 消息变化即落盘（流式过程中也会持续写，刷新不丢） */
   useEffect(() => {
@@ -404,7 +477,7 @@ export default function ChatApp() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           base: cfg.base, key: cfg.key, model: cfg.model, profile, runId: rid,
-          agentMode: mode, review: reviewCtx,
+          agentMode: mode || 'interview', review: reviewCtx,
           /* 当前仓库：审核官靠它绑定只读工具（列 MR / 拉 diff / 读文件） */
           repoId: repoId || '',
         }),
@@ -415,6 +488,12 @@ export default function ChatApp() {
   const send = useCallback(async (text: string) => {
     const t = (text || '').trim();
     if (!t || isLoading) return;
+    /* 未绑定专家的会话不能发消息：先让用户选专家（会话是空的，选中后会直接绑定当前会话） */
+    if (!mode) {
+      toast('请先在专家中心选择一位专家');
+      setView('experts');
+      return;
+    }
     if (!cfg.base || !cfg.model) {
       toast('❌ 请先点击右上角齿轮图标完成「模型配置」');
       setCfgOpen(true);
@@ -434,17 +513,17 @@ export default function ChatApp() {
       };
       setMessages(((prev: any[]) => [...prev, errMsg]) as any);
     }
-  }, [cfg, isLoading, sendMessage, setMessages, syncModelConfig, toast]);
+  }, [cfg, isLoading, mode, sendMessage, setMessages, syncModelConfig, toast]);
 
   /* ---------- 会话操作 ---------- */
-  const newConvo = useCallback((silent = false, opts: { mode?: AgentMode; title?: string; repoId?: string; persist?: boolean } = {}) => {
+  const newConvo = useCallback((silent = false, opts: { mode?: AgentMode; agentId?: string; agentName?: string; title?: string; repoId?: string; persist?: boolean } = {}) => {
     if (isLoading) return;
     saveCurrent();
-    const nextMode = opts.mode || mode;
-    if (opts.mode) {
-      setMode(opts.mode);
-      localStorage.setItem(LS_MODE, opts.mode);
-    }
+    /* 默认不继承当前会话的专家：新建出来的会话是「未关联专家」的空白会话 */
+    const nextMode = opts.mode ?? null;
+    const nextAgentId = opts.agentId ?? null;
+    setMode(nextMode);
+    setAgentId(nextAgentId);
     /* 记录旧消息 id：新会话在收到真正的新消息前，不接受这些旧消息 */
     staleMsgIdsRef.current = new Set(asChatMessages(messages).map(m => String(m.id)));
     freshConvoRef.current = true;
@@ -452,7 +531,10 @@ export default function ChatApp() {
     const boundRepoId = opts.repoId ?? repoId;
     const conv: Convo = {
       id, title: opts.title || '新会话', createdAt: Date.now(), updatedAt: Date.now(),
-      messages: [], profile: snapshotProfile(profile), mode: nextMode,
+      messages: [], profile: snapshotProfile(profile),
+      agentId: nextAgentId ?? undefined,
+      agentName: opts.agentName,
+      mode: nextMode ?? undefined,
       repoId: nextMode === 'review' ? boundRepoId : undefined,
     };
     setConvos(prev => {
@@ -464,12 +546,13 @@ export default function ChatApp() {
     if (opts.persist) queueSaveConvo(conv);
     reset();
     setRunId('');
+    setView('chat');
     if (!silent) toast('已创建新会话');
   }, [isLoading, messages, mode, profile, repoId, reset, saveCurrent, toast]);
 
   /**
-   * 新建一个任务会话（专家确认后调用），会话建好后即与该专家永久绑定。
-   * 当前会话还没有内容时直接复用它（改名 + 绑定专家），否则另开一个，绝不改动已有会话的专家。
+   * 新建一个任务会话（专家确认后调用），会话建好后即与「专家 + 其主智能体」永久绑定。
+   * 当前会话还没有内容时直接复用它（改名 + 绑定），否则另开一个，绝不改动已有会话的绑定。
    */
   const startTask = useCallback((m: AgentMode, title: string, firstPrompt?: string, opts: { repoId?: string } = {}) => {
     if (isLoading) { toast('当前任务进行中，请稍候'); return; }
@@ -477,15 +560,19 @@ export default function ChatApp() {
     pendingPromptRef.current = firstPrompt || '';
     /* 仓库刚保存就建任务时 state 里的 repoId 还没刷新，用调用方传入的 id 兜底 */
     const boundRepoId = opts.repoId ?? repoId;
+    /* 会话绑定的是智能体，不是专家：取该专家下的主智能体（库里 is_primary=1 那条） */
+    const boundAgent = primaryAgentOf(m);
+    const boundAgentId = boundAgent?.id;
 
     const hasMsgs = asChatMessages(messages).some(x => String(x.content || '').trim());
     if (!hasMsgs) {
       setMode(m);
-      localStorage.setItem(LS_MODE, m);
+      setAgentId(boundAgentId || null);
       setConvos(prev => {
         const list = prev.list.map(c =>
           c.id === prev.activeId
-            ? { ...c, title, mode: m, updatedAt: Date.now(),
+            ? { ...c, title, mode: m, agentId: boundAgentId, agentName: boundAgent?.name,
+                updatedAt: Date.now(),
                 repoId: m === 'review' ? boundRepoId : undefined }
             : c);
         const nd = { activeId: prev.activeId, list };
@@ -496,8 +583,11 @@ export default function ChatApp() {
       });
       return;
     }
-    newConvo(true, { mode: m, title, repoId: boundRepoId, persist: true });
-  }, [isLoading, messages, newConvo, repoId, toast]);
+    newConvo(true, {
+      mode: m, agentId: boundAgentId, agentName: boundAgent?.name,
+      title, repoId: boundRepoId, persist: true,
+    });
+  }, [isLoading, messages, newConvo, primaryAgentOf, repoId, toast]);
 
   /* 新会话 / 切换专家落地后再发首轮指令：此时 send 的 mode 已是新专家，避免用旧专家发请求 */
   useEffect(() => {
@@ -526,12 +616,15 @@ export default function ChatApp() {
     setRunId('');
     setMessages((conv.messages || []).slice(-40).map(m => ({ id: m.id, role: m.role, content: m.content })));
     if (conv.profile) setProfile({ ...newProfile(), ...conv.profile });
-    if (conv.mode) { setMode(conv.mode); localStorage.setItem(LS_MODE, conv.mode); }
+    /* 会话没关联专家（新建后未选专家）→ 回到「未关联专家」状态 */
+    const bound = boundModeOf(conv);
+    setMode(bound);
+    setAgentId(boundAgentIdOf(conv));
     /* 审核会话跟着它绑定的仓库走；面试会话不动仓库（仓库只在审核界面出现） */
-    if (conv.mode === 'review' && conv.repoId) setRepoId(conv.repoId);
+    if (bound === 'review' && conv.repoId) setRepoId(conv.repoId);
     setView('chat');
     toast('已切换会话：' + (conv.title || '新会话'));
-  }, [convoId, convos.list, isLoading, reset, saveCurrent, setMessages, toast]);
+  }, [boundAgentIdOf, boundModeOf, convoId, convos.list, isLoading, reset, saveCurrent, setMessages, toast]);
 
   /** 显式清空当前对话：先把会话历史置空（saveCurrent 的守卫才会放行），再清消息 */
   const clearCurrent = useCallback(() => {
@@ -569,11 +662,13 @@ export default function ChatApp() {
       setRunId('');
       setMessages((next?.messages || []).map(m => ({ id: m.id, role: m.role, content: m.content })));
       if (next?.profile) setProfile({ ...newProfile(), ...next.profile });
-      if (next?.mode) { setMode(next.mode); localStorage.setItem(LS_MODE, next.mode); }
-      if (next?.mode === 'review' && next.repoId) setRepoId(next.repoId);
+      const bound = boundModeOf(next);
+      setMode(bound);
+      setAgentId(boundAgentIdOf(next));
+      if (bound === 'review' && next?.repoId) setRepoId(next.repoId);
     }
     toast('已删除会话');
-  }, [convoId, reset, setMessages, toast]);
+  }, [boundAgentIdOf, boundModeOf, convoId, reset, setMessages, toast]);
 
   /* ---------- 专家选择 ----------
    * 左侧「专家」入口 → 右侧专家卡片 → 选中后弹出该专家的任务配置 → 确认新建任务。
@@ -621,22 +716,40 @@ export default function ChatApp() {
     }
     setGenErr('');
     setSetupOpen(false);   // 生成后关掉弹框，把屏幕还给对话
-    const m: AgentMode = pendingExpert || mode;
+    const m: AgentMode | null = pendingExpert || mode;
     setPendingExpert(null);
+    if (!m) {              // 没有关联专家的会话不能直接生成任务
+      setView('experts');
+      return;
+    }
     startTask(m, `面试任务 · ${profile.track} ${profile.level}`, buildGeneratePrompt(profile));
   }, [cfg.base, cfg.model, pendingExpert, mode, profile, startTask]);
 
   /* ---------- 派生数据 ---------- */
-  const activeAgent = useMemo(() => AGENTS.find(a => a.mode === mode) || AGENTS[0], [mode]);
+  /** 当前会话绑定的专家（null = 还没关联） */
+  const activeExpert = useMemo(() => expertOfMode(mode), [expertOfMode, mode]);
+  /** 当前会话绑定的智能体（convo → agent → expert 中间那一层） */
+  const activeAgent = useMemo(() => {
+    if (!agentId) return null;
+    for (const e of experts) {
+      const hit = (e.agents || []).find(a => a.id === agentId);
+      if (hit) return hit;
+    }
+    return null;
+  }, [agentId, experts]);
   const currentRepo = useMemo(() => repos.find(r => r.id === repoId) || null, [repos, repoId]);
   /* 左侧会话列表保持完整：不按智能体过滤，切换时也不新建会话 */
   const visibleConvos = convos;
 
   const indText = profile.industry === '不限' ? '行业不限' : profile.industry;
-  const chatTitle = mode === 'review'
+  const chatTitle = mode == null
+    ? '未关联专家'
+    : mode === 'review'
     ? (currentRepo ? `${currentRepo.owner}/${currentRepo.name}` : '代码审核官')
     : `${profile.track}${profile.sub && profile.sub !== '随机' ? ' / ' + profile.sub : ''} · ${profile.level} · ${profile.exp}`;
-  const chatMeta = mode === 'review'
+  const chatMeta = mode == null
+    ? '这个会话还没有关联专家 · 从专家中心选一位即可开始'
+    : mode === 'review'
     ? (currentRepo
         ? `${prs.length} 个开放 PR · 每 ${Math.round(currentRepo.intervalSec / 60) || 1} 分钟轮询 · ${currentRepo.hasToken ? '已配 Token' : '未配 Token'}`
         : '先填代码地址，再轮询 PR 自动审核')
@@ -696,7 +809,7 @@ export default function ChatApp() {
           onNew={() => newConvo()}
           onOpenExperts={() => setView(v => (v === 'experts' ? 'chat' : 'experts'))}
           expertsOpen={view === 'experts'}
-          expertCount={AGENTS.length}
+          expertCount={experts.length}
           repos={repos}
           banner={
             !health.proxyOk ? (
@@ -715,8 +828,9 @@ export default function ChatApp() {
 
         {view === 'experts' ? (
           <ExpertPicker
-            agents={AGENTS}
+            experts={experts}
             mode={mode}
+            agentId={agentId}
             onPick={pickExpert}
             onBack={() => setView('chat')}
           />
@@ -725,12 +839,14 @@ export default function ChatApp() {
           <div className="chat-head">
             <button
               type="button"
-              className="expert-chip"
+              className={'expert-chip' + (activeExpert ? '' : ' is-empty')}
               onClick={() => setView('experts')}
-              title="更换专家 / 新建任务"
+              title={activeExpert ? '更换专家 / 新建任务' : '选择一位专家开始任务'}
             >
-              <span className="expert-chip-ico" aria-hidden="true">{activeAgent.icon}</span>
-              <span className="expert-chip-name">{activeAgent.name}</span>
+              <span className="expert-chip-ico" aria-hidden="true">{activeExpert ? activeExpert.icon : '专'}</span>
+              <span className="expert-chip-name">{activeExpert ? activeExpert.name : '未关联专家'}</span>
+              {/* 会话 → 智能体：主智能体挂在专家名后面，两级关系一眼可见 */}
+              {activeAgent && <span className="expert-chip-agent">· {activeAgent.name}</span>}
               <span className="expert-chip-arrow" aria-hidden="true">›</span>
             </button>
             <div className="chat-head-main">
@@ -760,9 +876,12 @@ export default function ChatApp() {
                 {polling ? '轮询中…' : '立即轮询'}
               </button>
             )}
-            <button className="btn btn-ghost btn-sm" onClick={openAgentConfig}>
-              {mode === 'review' ? '仓库配置' : '面试配置'}
-            </button>
+            {/* 未关联专家时没有「专家配置」可填，直接不显示 */}
+            {mode && (
+              <button className="btn btn-ghost btn-sm" onClick={openAgentConfig}>
+                {mode === 'review' ? '仓库配置' : '面试配置'}
+              </button>
+            )}
             <button className="btn btn-ghost btn-sm" onClick={clearCurrent}>清空对话</button>
           </div>
 
@@ -773,7 +892,8 @@ export default function ChatApp() {
             isLoading={isLoading}
             onSend={send}
             onStop={stopGeneration}
-            avatar={activeAgent.icon}
+            disabled={mode == null}
+            avatar={activeAgent?.icon || activeExpert?.icon || '专'}
             header={mode === 'review' ? (
               <ReviewWorkbench
                 repo={currentRepo}
@@ -790,8 +910,19 @@ export default function ChatApp() {
                 onAsk={send}
               />
             ) : undefined}
-            empty={mode === 'review' ? null : undefined}
-            placeholder={mode === 'review'
+            empty={mode == null ? (
+              <div className="empty-state">
+                <div className="big">专</div>
+                <p>这个会话还没有关联专家</p>
+                <p>会话与专家绑定后才会开始工作：选好专家、填完任务信息，直接沿用当前这个空会话</p>
+                <button type="button" className="btn empty-cta" onClick={() => setView('experts')}>
+                  去专家中心选择
+                </button>
+              </div>
+            ) : mode === 'review' ? null : undefined}
+            placeholder={mode == null
+              ? '先选择一位专家…（点上面的「未关联专家」或左侧「专家中心」）'
+              : mode === 'review'
               ? '针对这份审核报告追问，例如「第 2 个问题怎么改？」'
               : '输入消息…（Enter 发送，Shift+Enter 换行）'}
           />

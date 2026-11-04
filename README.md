@@ -151,8 +151,15 @@ cd work-agent
 双击 start.bat
 ```
 
-`start.bat` 会自动：找到/创建 Python 虚拟环境 → 安装依赖 → `npm install` → 构建前端（`web/dist`）→ 启动两个服务 → 打开浏览器。
+`start.bat` 会自动：找到/创建 Python 虚拟环境 → 安装依赖 → `npm install` → 构建前端（`web/dist`）→ **清理占用 8787 / 8790 的残留进程** → 启动两个服务 → 打开浏览器。
 首次运行安装依赖需要几分钟（AgentScope 依赖树较大，CopilotKit 依赖树也不小）。
+
+端口清理只结束 `node.exe` / `python.exe` / `pythonw.exe`；被别的程序占用时只提示、不动手。
+没有这步的话，上次没关干净的进程会占着端口，新窗口直接 `EADDRINUSE` 闪退，而页面还是旧进程在服务——很难看出问题。
+
+> `start.bat` 保持**纯 ASCII**（提示信息用英文）。cmd.exe 按固定大小的缓冲区读取批处理，
+> 多字节字符一旦跨在缓冲区边界上就会被截断，该行剩余部分会被当成命令执行
+> （表现为一串 `'xxx' 不是内部或外部命令`）。中文写在这里属于运气问题，所以不用。
 
 手动启动：
 
@@ -453,7 +460,7 @@ VITE_COPILOTKIT_KEY=ckpb_你的key
 | `tests/` | 回归测试：`test_store.py`（持久层）、`test_reviewer.py`（地址解析 / diff / 代理规则）、`test_adapter.py`（指令层加载 / 降级 / 热更新 / 格式契约）、`test_agentscope_api.py`（运行时基线）、`test_web.ts`（渲染逻辑）、`test_qcard.ts`（卡片布局与历史守卫）、`test_stages.ts`（流水线状态）、`test_layout.ts`（布局约束）、`test_render.js`（旧版渲染逻辑）、`mock_llm.js`（mock 上游验全链路） |
 | `docs/` | `design-spec-v1.html` 全局样式主题规范 · `theme-demo.html` 主题实时预览（可切深色） |
 | `index.html` | 旧版单文件应用（保留作回退，不再维护） |
-| `start.bat` | 一键启动（智能体服务 8790 + 页面服务 8787 + 打开浏览器） |
+| `start.bat` | 一键启动（清理端口 → 智能体服务 8790 + 页面服务 8787 → 打开浏览器），纯 ASCII 以免 cmd 解析截断 |
 | `start_service.bat` | 单独启动 Agent Service（8799，默认容器沙箱；和 start.bat 相互独立） |
 
 ## 测试

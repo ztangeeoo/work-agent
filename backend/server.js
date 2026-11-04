@@ -7,7 +7,7 @@
  *     由多 Agent（策划官/面试官/评分官）完成出题与对话
  *  4. /api/model-config 保存前端最新模型配置（内存），供 CopilotKit 适配器读取
  *  5. /api/copilotkit CopilotKit 自托管 runtime（适配器 → AgentScope 三智能体）
- *  6. /api/convos、/api/search、/api/repos、/api/reviews、/api/review/events
+ *  6. /api/convos、/api/experts、/api/agents、/api/search、/api/repos、/api/reviews、/api/review/events
  *     反向代理到 FastAPI（:8790）；持久化用 Python 标准库 sqlite3，零额外依赖
  *
  * 位置：本文件在 backend/ 下，运行时 ROOT 指回仓库根（web/dist、index.html 都在根）。
@@ -699,6 +699,12 @@ const server = http.createServer((req, res) => {
 
   /* 会话持久化（SQLite：Python app/store/） */
   if (url.pathname === '/api/convos' || url.pathname.startsWith('/api/convos/')) {
+    return void proxyApi(req, res, url.pathname + url.search);
+  }
+
+  /* 专家与智能体清单（会话 → 智能体 → 专家 的关系也由 Python 侧落库） */
+  if (url.pathname === '/api/experts' || url.pathname.startsWith('/api/experts/')
+      || url.pathname === '/api/agents') {
     return void proxyApi(req, res, url.pathname + url.search);
   }
 

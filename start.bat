@@ -1,64 +1,71 @@
 @echo off
 chcp 65001 >nul
-title 工作智能体集合 · 启动器
+setlocal enabledelayedexpansion
+title Work Agent Launcher
 cd /d "%~dp0"
 
 rem ============================================================
-rem  工作智能体集合 一键启动（前后端分离 + CopilotKit）
-rem    1. AgentScope 智能体服务（backend\run.py，Python，端口 8790）
-rem    2. React 前端构建（web/，Vite，产物输出到 web/dist）
-rem    3. 页面与转发服务（backend\server.js，Node，端口 8787，托管 web/dist + CopilotKit runtime）
+rem  Work Agent one-click launcher (frontend + backend, CopilotKit)
+rem    1. AgentScope agent service (backend\run.py, Python, port 8790)
+rem    2. React build (web\ -> web\dist)
+rem    3. Page + gateway (backend\server.js, Node, port 8787)
+rem
+rem  IMPORTANT: keep this file ASCII-only.
+rem  cmd.exe reads batch files in fixed-size buffers; a multi-byte
+rem  character straddling a buffer boundary gets split and the rest
+rem  of that line is executed as a command ("... is not recognized").
+rem  Chinese text here is therefore fragile -- messages are English.
 rem ============================================================
 
-rem ---------- 1. 找到可用的 Python ----------
+rem ---------- 1. locate python ----------
 set "PY="
 if exist ".venv\Scripts\python.exe" set "PY=.venv\Scripts\python.exe"
 if not defined PY if exist "%LOCALAPPDATA%\WorkBuddy\binaries\python\envs\default\Scripts\python.exe" set "PY=%LOCALAPPDATA%\WorkBuddy\binaries\python\envs\default\Scripts\python.exe"
 if not defined PY if exist "C:\Users\m1821\.workbuddy\binaries\python\envs\default\Scripts\python.exe" set "PY=C:\Users\m1821\.workbuddy\binaries\python\envs\default\Scripts\python.exe"
 
 if not defined PY (
-  rem 项目内没有虚拟环境：用系统 Python 创建一个
+  rem no virtualenv in this folder: create one from system python
   where python >nul 2>nul
   if errorlevel 1 goto no_python
-  echo [1/4] 创建 Python 虚拟环境 .venv ...
+  echo [1/5] Creating virtualenv .venv ...
   python -m venv .venv
   if errorlevel 1 goto no_python
   set "PY=.venv\Scripts\python.exe"
 )
 
-rem ---------- 2. 安装/确认依赖（AgentScope 必须 2.0+） ----------
-echo [2/4] 检查 Python 依赖（首次较慢，请耐心等待）...
+rem ---------- 2. python dependencies (AgentScope must be 2.0+) ----------
+echo [2/5] Checking Python dependencies (slow on first run) ...
 "%PY%" -c "import agentscope, fastapi, uvicorn, httpx, sqlalchemy, aiosqlite, sys; sys.exit(0 if int(agentscope.__version__.split('.')[0]) >= 2 else 1)" >nul 2>nul
 if errorlevel 1 (
-  echo      安装 / 升级依赖到 AgentScope 2.0 ...
+  echo       Installing / upgrading dependencies to AgentScope 2.0 ...
   "%PY%" -m pip install -U -r backend\requirements.txt
   if errorlevel 1 (
-    echo [错误] 依赖安装失败，请手动执行：
+    echo [ERROR] Dependency install failed. Run manually:
     echo   "%PY%" -m pip install -U -r backend\requirements.txt
     pause
     exit /b 1
   )
 )
 
-rem ---------- 3. 构建 React 前端（CopilotKit + Vite） ----------
+rem ---------- 3. build react frontend ----------
 where node >nul 2>nul
 if errorlevel 1 (
-  echo [错误] 未检测到 Node.js，请先安装：https://nodejs.org
+  echo [ERROR] Node.js not found. Install it first: https://nodejs.org
   pause
   exit /b 1
 )
 
-echo [3/4] 检查 Node 依赖并构建前端（首次约需几分钟）...
+echo [3/5] Checking Node dependencies and building frontend ...
 if not exist "node_modules\@copilotkit\runtime" (
   call npm install --no-audit --no-fund
-  if errorlevel 1 echo [警告] 根目录依赖安装失败，CopilotKit runtime 可能不可用
+  if errorlevel 1 echo [WARN] Root dependency install failed, CopilotKit runtime may be unavailable
 )
 if not exist "web\node_modules" (
   pushd web
   call npm install --no-audit --no-fund
   popd
   if errorlevel 1 (
-    echo [错误] 前端依赖安装失败，请手动执行：cd web ^&^& npm install
+    echo [ERROR] Frontend dependency install failed. Run manually: cd web ^&^& npm install
     pause
     exit /b 1
   )
@@ -68,34 +75,82 @@ if not exist "web\dist\index.html" (
   call npm run build
   popd
   if errorlevel 1 (
-    echo [错误] 前端构建失败，请手动执行：cd web ^&^& npm run build
+    echo [ERROR] Frontend build failed. Run manually: cd web ^&^& npm run build
     pause
     exit /b 1
   )
 )
 
-rem ---------- 4. 启动两个服务 ----------
-echo [4/4] 启动服务...
-start "AgentScope 智能体服务" "%PY%" backend\run.py
-timeout /t 2 /nobreak >nul
-start "工作智能体集合 页面服务" node backend\server.js
-timeout /t 2 /nobreak >nul
+rem ---------- 4. free ports held by leftover processes ----------
+rem  Skipping this leaves the new windows dying with EADDRINUSE while
+rem  an old process keeps serving the page -- hard to notice.
+echo [4/5] Checking ports (8787 / 8790) ...
+call :free_port 8787
+call :free_port 8790
+
+rem ---------- 5. start both services ----------
+echo [5/5] Starting services ...
+start "AgentScope Agent Service" "%PY%" backend\run.py
+"%SystemRoot%\System32\ping.exe" -n 3 127.0.0.1 >nul
+start "Work Agent Page Service" node backend\server.js
+"%SystemRoot%\System32\ping.exe" -n 3 127.0.0.1 >nul
 start "" http://localhost:8787
 
 echo.
-echo   已启动两个窗口：
-echo     - AgentScope 智能体服务（策划官 / 面试官 / 评分官）
-echo     - 页面服务 http://localhost:8787 （React 前端 + CopilotKit runtime）
+echo   Two windows launched:
+echo     - AgentScope agent service (planner / interviewer / evaluator)
+echo     - Page service http://localhost:8787 (React + CopilotKit runtime)
 echo.
-echo   开发模式（热更新）：cd web ^&^& npm run dev，然后打开 http://localhost:5173
-echo   关闭任意一个窗口即停止对应服务；全部关闭请直接关掉这两个黑窗口。
-echo   本窗口可以关闭。
+echo   Dev mode (hot reload): cd web ^&^& npm run dev, then open http://localhost:5173
+echo   Closing a window stops that service; close both to stop everything.
+echo   This window can be closed now.
 pause
 exit /b 0
 
+rem ============================================================
+rem  Subroutine: free a TCP port
+rem    usage: call :free_port 8787
+rem    Only processes belonging to this project are stopped
+rem    (node.exe / python.exe / pythonw.exe). Anything else is
+rem    reported and left untouched.
+rem ============================================================
+:free_port
+set "PORT=%~1"
+set "FOUND="
+set "LASTPID="
+for /f "tokens=5" %%P in ('netstat -ano ^| findstr /R /C:":%PORT% " ^| findstr /I "LISTENING"') do (
+  rem  0.0.0.0 and [::] rows share the same PID and are adjacent
+  if not "%%P"=="!LASTPID!" (
+    set "LASTPID=%%P"
+    set "FOUND=1"
+    set "PNAME="
+    for /f "tokens=1 delims=," %%N in ('tasklist /FI "PID eq %%P" /NH /FO CSV 2^>nul') do set "PNAME=%%~N"
+    if not defined PNAME set "PNAME=unknown"
+    set "MINE="
+    if /i "!PNAME!"=="node.exe" set "MINE=1"
+    if /i "!PNAME!"=="python.exe" set "MINE=1"
+    if /i "!PNAME!"=="pythonw.exe" set "MINE=1"
+    if defined MINE (
+      taskkill /F /PID %%P >nul 2>nul
+      if errorlevel 1 (
+        echo        [WARN] Failed to stop !PNAME! ^(PID %%P^). Try running as administrator.
+      ) else (
+        echo        Stopped !PNAME! ^(PID %%P^), port %PORT% released
+      )
+    ) else (
+      echo        [SKIP] Port %PORT% is held by !PNAME! ^(PID %%P^), not part of this project.
+      echo        Start may fail -- close it manually first.
+    )
+  )
+)
+if not defined FOUND echo        Port %PORT% is free
+"%SystemRoot%\System32\ping.exe" -n 2 127.0.0.1 >nul
+exit /b 0
+
 :no_python
-echo [错误] 未检测到 Python 3.11+（AgentScope 2.0 的最低要求），也没有可用的虚拟环境。
-echo   请先安装 Python：https://www.python.org/downloads/
-echo   安装时勾选 "Add Python to PATH"，然后重新双击本文件。
+echo [ERROR] No usable Python 3.11+ found (AgentScope 2.0 requires it),
+echo         and no virtualenv could be created.
+echo   Install Python first: https://www.python.org/downloads/
+echo   Tick "Add Python to PATH" during setup, then run this file again.
 pause
 exit /b 1

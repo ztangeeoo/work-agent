@@ -7,7 +7,7 @@
  *  - 服务端不可用时静默失败，前端继续用本地缓存（不阻断使用）
  */
 
-import type { Convo } from '../types';
+import type { Convo, ExpertDef } from '../types';
 
 async function req<T = any>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(path, {
@@ -35,6 +35,21 @@ export async function fetchRemoteConvos(): Promise<Convo[] | null> {
   }
 }
 
+/**
+ * 拉取专家清单（含各自挂的智能体）。
+ * 专家 / 智能体 / 会话的关系都以服务端 SQLite 为准；拿不到就返回 null，由调用方回退内置常量。
+ */
+export async function fetchExperts(): Promise<ExpertDef[] | null> {
+  try {
+    const d = await req<{ dbAvailable?: boolean; list?: ExpertDef[] }>('/api/experts');
+    if (!d || d.dbAvailable === false) return null;
+    const list = Array.isArray(d.list) ? d.list : [];
+    return list.length ? list : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 /* ---------- 写入去抖 ---------- */
 const pending = new Map<string, Convo>();
 let timer = 0;
@@ -50,7 +65,8 @@ async function flush(): Promise<void> {
         method: 'POST',
         body: JSON.stringify({
           id: c.id, title: c.title, profile: c.profile,
-          mode: c.mode, repoId: c.repoId,
+          /* 会话 → 智能体 → 专家：agentId 是主键，mode 只作老接口兼容 */
+          agentId: c.agentId, mode: c.mode, repoId: c.repoId,
           messages: c.messages, createdAt: c.createdAt, updatedAt: c.updatedAt,
         }),
       });

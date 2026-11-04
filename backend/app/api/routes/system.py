@@ -19,6 +19,21 @@ from ..deps import err
 router = APIRouter(tags=["system"])
 
 
+DEFAULT_AGENT_NAMES = ["策划官", "面试官", "评分官", "侦察官", "审核官", "裁决官"]
+
+
+def _agent_names() -> list:
+    """智能体名单以库为准（expert → agent），库不可用时回退常量。"""
+    try:
+        if store.available():
+            names = [a["name"] for a in store.list_agents()]
+            if names:
+                return names
+    except Exception:
+        pass
+    return list(DEFAULT_AGENT_NAMES)
+
+
 @router.get("/health")
 async def health():
     info = {
@@ -27,7 +42,7 @@ async def health():
         "agentscope": AS_VERSION,
         "agentscopeMin": "2.0.0",
         "python": sys.version.split()[0],
-        "agents": ["策划官", "面试官", "评分官", "侦察官", "审核官", "裁决官"],
+        "agents": _agent_names(),
         "modes": ["interview", "review"],
         "planner": USE_PLANNER,
     }

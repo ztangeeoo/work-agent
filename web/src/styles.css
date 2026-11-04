@@ -315,10 +315,23 @@ html, body { height: 100%; }
     font-size: 10.5px; line-height: 1.6; padding: 2px 9px; border-radius: var(--md-radius-pill);
     color: var(--md-brand-text); background: var(--md-brand-subtle);
   }
+  /* 专家下挂的智能体（专家 → 智能体 一级关系） */
+  .expert-agents {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    padding-top: 9px; border-top: 1px dashed var(--border);
+  }
+  .expert-agents-label { font-size: 10.5px; color: var(--md-text-4); }
+  .expert-agent {
+    font-size: 10.5px; line-height: 1.6; padding: 1px 8px; border-radius: var(--md-radius-pill);
+    border: 1px solid var(--border); color: var(--sub); background: var(--md-surface-1);
+  }
+  .expert-agent.is-primary { border-color: var(--md-brand-border); color: var(--md-brand-text); background: var(--md-brand-subtle-2); }
+  .expert-agent.is-current { border-style: solid; border-color: var(--md-brand); font-weight: var(--md-fw-medium); }
   .expert-go {
     margin-top: auto; padding-top: 4px; display: flex; align-items: center; gap: 5px;
     font-size: 12px; font-weight: var(--md-fw-medium); color: var(--md-brand-text);
   }
+  .expert-go-agent { font-weight: 400; font-size: 11px; color: var(--sub); }
 
   /* ---- 对话头部：当前专家徽标（点击更换专家） ---- */
   .expert-chip {
@@ -336,6 +349,15 @@ html, body { height: 100%; }
     color: var(--md-on-brand); font-size: 12px;
   }
   .expert-chip-arrow { color: var(--sub); font-size: 11px; }
+  /* 专家名后面的主智能体（会话 → 智能体 → 专家，两级关系都露出来） */
+  .expert-chip-agent { font-size: 11px; font-weight: 400; color: var(--sub); }
+  /* 未关联专家的会话：徽标用虚线灰底，和已绑定的品牌色区分开 */
+  .expert-chip.is-empty { border-style: dashed; color: var(--sub); }
+  .expert-chip.is-empty .expert-chip-ico {
+    background: var(--md-surface-2); color: var(--md-text-3);
+    border: 1px dashed var(--border);
+  }
+  .expert-chip.is-empty:hover { color: var(--md-brand-text); }
 
   /* 会话标题前的专家标记 */
   .convo-badge {
@@ -345,6 +367,10 @@ html, body { height: 100%; }
     background: var(--md-brand-subtle); color: var(--md-brand-text);
   }
   .convo-badge.is-review { background: var(--md-surface-2); color: var(--md-text-2); }
+  .convo-badge.is-none {
+    background: transparent; color: var(--md-text-4);
+    border: 1px dashed var(--border);
+  }
 
   /* 输入区 */
   .chat-input {
@@ -355,6 +381,7 @@ html, body { height: 100%; }
     flex: 1; resize: none; height: 46px; max-height: 140px; line-height: 1.5; padding: 12px 14px;
     border-radius: var(--md-radius-xl);
   }
+  .chat-input textarea:disabled { background: var(--md-surface-2); cursor: not-allowed; }
   .send-btn {
     background: var(--md-brand-solid); color: var(--md-on-brand); border: none; border-radius: var(--md-radius-xl);
     padding: 0 22px; font-size: 14px; cursor: pointer;
@@ -376,6 +403,12 @@ html, body { height: 100%; }
     font-size: 22px; font-weight: var(--md-fw-medium);
   }
   .empty-state p { font-size: 13px; }
+  .empty-state .empty-cta {
+    margin-top: 6px; padding: 8px 18px;
+    background: var(--md-brand-solid); color: var(--md-on-brand);
+    border-radius: var(--md-radius-lg); font-size: 13px;
+  }
+  .empty-state .empty-cta:hover { background: var(--md-brand-solid-hover); }
 
   .err-text { color: var(--danger); font-size: 12px; margin-top: 6px; display: none; }
 

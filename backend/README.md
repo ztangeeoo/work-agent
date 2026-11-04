@@ -38,7 +38,8 @@ backend/
     │   ├── question_bank.py  内置高频题库（11 个主方向 × 细分）
     │   └── registry.py       FunctionTool / Toolkit 装配（显式 ALLOW）
     ├── store/                持久层（标准库 sqlite3，零第三方依赖）
-    │   ├── db.py             连接、建表（7 张表 + FTS5）、容量统计
+    │   ├── db.py             连接、建表（9 张表 + FTS5）、内置专家/智能体种子、容量统计
+    │   ├── catalog.py        专家（expert）与智能体（agent）：会话 → 智能体 → 专家
     │   ├── convos.py         会话与消息、中文全文检索
     │   ├── reviews.py        仓库 / PR / 审核报告 CRUD
     │   └── __init__.py      门面：`from .. import store` 后按 `store.xxx()` 调用
@@ -61,11 +62,27 @@ backend/
         ├── deps.py           用户标识、错误响应、SQLite 降级判断
         └── routes/
             ├── system.py     /health、/api/model-config、/api/db/stats
+            ├── catalog.py    /api/experts、/api/agents（专家与智能体清单）
             ├── chat.py       /v1/chat/completions、/v1/review
             ├── convos.py     /api/convos*、/api/search
             ├── repos.py      /api/repos*
             └── reviews.py    /api/reviews*、/api/review/events
 ```
+
+## 数据模型：会话 → 智能体 → 专家
+
+```
+convo.agent_id ──▶ agent(expert_id) ──▶ expert(mode: interview/review)
+```
+
+- `expert`：对外的能力包（面试出题官 / 代码审核官），带 icon / role / desc / tags / cta。
+- `agent`：专家下挂的流水线角色（策划官 / 面试官 / 评分官、侦察官 / 审核官 / 裁决官 / 审核答疑），
+  每个专家有且只有一个 `is_primary=1` 的主智能体，新会话默认绑定它。
+- `convo.agent_id`：会话绑定的智能体，`NULL` = 还没关联专家；`convo.agent_mode` 是
+  由 `agent → expert` 派生的冗余字段，只给老接口和路由用，写入时一律以 `agentId` 为准。
+- 内置数据由 `store/db.py` 的 `SEED_EXPERTS` / `SEED_AGENTS` 在首次建库时 `INSERT OR IGNORE`
+  灌入；之后以库为准，改文案 / 加专家直接改库即可，重启不覆盖。
+- 老库自动迁移：`convo` 补 `agent_id` 列，并按 `agent_mode` 回填成对应专家的主智能体。
 
 ## 分层与依赖方向
 

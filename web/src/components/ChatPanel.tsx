@@ -15,6 +15,8 @@ interface Props {
   empty?: ReactNode;
   avatar?: string;
   placeholder?: string;
+  /** 禁用输入（例如会话还没关联专家）：输入框与发送按钮都不可用 */
+  disabled?: boolean;
 }
 
 /** AI 消息：按块渲染（一题一卡）。每块独立 DOM 且 key 稳定，流式时已完成的卡片不重建 */
@@ -48,7 +50,7 @@ function AiBubble({ content, streaming }: { content: string; streaming: boolean 
 }
 
 export default function ChatPanel({
-  messages, isLoading, onSend, onStop, header, inputTop, empty, avatar = '面', placeholder,
+  messages, isLoading, onSend, onStop, header, inputTop, empty, avatar = '面', placeholder, disabled = false,
 }: Props) {
   const [text, setText] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
@@ -126,12 +128,13 @@ export default function ChatPanel({
         <textarea
           value={text}
           placeholder={placeholder || '输入消息…（Enter 发送，Shift+Enter 换行）'}
+          disabled={disabled}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
         />
         {isLoading
           ? <button className="send-btn" onClick={onStop}>停止</button>
-          : <button className="send-btn" onClick={submit} disabled={!text.trim()}>发送</button>}
+          : <button className="send-btn" onClick={submit} disabled={disabled || !text.trim()}>发送</button>}
       </div>
     </>
   );

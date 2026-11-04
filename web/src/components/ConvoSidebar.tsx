@@ -112,14 +112,21 @@ export default function ConvoSidebar({
         <div className="convo-list">
           {convos.list.length === 0 && <div className="convo-empty">暂无历史会话</div>}
           {convos.list.map(c => {
-            const isReview = c.mode === 'review';
+            /* 会话没关联专家（新建后还没选专家）时统一显示为「未选专家」 */
+            const hasMsgs = (c.messages || []).length > 0;
+            const bound = c.mode ?? (hasMsgs ? 'interview' : null);
+            const isReview = bound === 'review';
             const repo = isReview ? repos.find(r => r.id === c.repoId) : null;
-            const agentCfg = isReview
-              ? (repo ? `${repo.owner}/${repo.name}` : '代码审核')
+            /* 专家（expert）+ 智能体（agent）两级：agentName 由服务端 JOIN 返回 */
+            const expertCfg = isReview
+              ? (repo ? `${repo.owner}/${repo.name}` : (c.expertName || '代码审核'))
               : (c.profile
                   ? [c.profile.track, c.profile.level,
                      c.profile.sub && c.profile.sub !== '随机' ? c.profile.sub : ''].filter(Boolean).join(' · ')
-                  : '面试出题');
+                  : (c.expertName || '面试出题'));
+            const agentCfg = bound == null
+              ? '未选专家'
+              : [expertCfg, c.agentName || ''].filter(Boolean).join(' · ');
             const meta = [
               fmtTime(c.updatedAt || c.createdAt),
               (c.messages || []).length + ' 条消息',
@@ -129,7 +136,12 @@ export default function ConvoSidebar({
               <div key={c.id} className={'convo-item' + (c.id === activeId ? ' active' : '')} onClick={() => onSwitch(c.id)}>
                 <div className="convo-main">
                   <div className="convo-title">
-                    <span className={'convo-badge' + (isReview ? ' is-review' : '')}>{isReview ? '审' : '面'}</span>
+                    <span className={
+                      'convo-badge'
+                      + (bound == null ? ' is-none' : isReview ? ' is-review' : '')
+                    }>
+                      {bound == null ? '空' : isReview ? '审' : '面'}
+                    </span>
                     {c.title || '新会话'}
                   </div>
                   <div className="convo-meta">{meta}</div>

@@ -35,7 +35,15 @@ export interface Convo {
   updatedAt: number;
   messages: ChatMessage[];
   profile: Profile | null;
-  /** 这场会话属于哪个智能体；老数据没有该字段时按面试模式处理 */
+  /** 会话绑定的智能体 id（会话 → 智能体 → 专家，服务端落库）；空 = 未关联 */
+  agentId?: string;
+  /** 以下三项由服务端 JOIN 返回，仅供展示，不参与路由 */
+  agentName?: string;
+  agentStage?: string;
+  expertId?: string;
+  expertName?: string;
+  expertIcon?: string;
+  /** 专家所属能力包的路由键；老数据没有该字段时按未绑定处理 */
   mode?: AgentMode;
   /** 审核会话绑定的仓库 id（专家配置的一部分，切回该会话时恢复） */
   repoId?: string;
@@ -44,19 +52,38 @@ export interface Convo {
 /** 智能体工作模式：面试出题 / 代码审核 */
 export type AgentMode = 'interview' | 'review';
 
-export interface AgentDef {
+/** 智能体：专家下挂的流水线角色（策划官 / 面试官 / 评分官 / 侦察官 / 审核官…） */
+export interface AgentInfo {
   id: string;
+  expertId: string;
+  /** 流水线环节键：planner / interviewer / grader / scout / reviewer / judge / advisor */
+  stage: string;
   name: string;
   icon: string;
-  desc: string;
-  mode: AgentMode;
-  /** 专家卡片上的角色副标题 */
-  role?: string;
-  /** 专家卡片上的能力标签 */
-  tags?: string[];
-  /** 专家卡片主按钮文案 */
-  cta?: string;
+  role: string;
+  /** 是否该专家的主智能体（新会话默认绑定它） */
+  primary: boolean;
+  sort?: number;
 }
+
+/** 专家：对外的能力包，一个专家下挂多个智能体 */
+export interface ExpertDef {
+  id: string;
+  mode: AgentMode;
+  name: string;
+  icon: string;
+  /** 卡片上的角色副标题 */
+  role?: string;
+  desc: string;
+  /** 能力标签 */
+  tags?: string[];
+  /** 卡片主按钮文案 */
+  cta?: string;
+  agents: AgentInfo[];
+}
+
+/** 兼容旧命名：专家卡片以前叫 AgentDef */
+export type AgentDef = ExpertDef;
 
 /* ---------- 代码审核 ---------- */
 
