@@ -173,3 +173,65 @@ export interface ReviewEvent {
   review?: ReviewItem;
   ts: number;
 }
+
+/* ---------- 技能（Skill） ---------- */
+
+/** 技能归属：全局 / 绑定到某位专家 / 未声明（不生效） */
+export type SkillScope = 'global' | 'expert' | 'unassigned';
+
+export interface SkillInfo {
+  id: string;
+  name: string;
+  /** 展示名（SKILL.md 里的 title，缺省时用 name） */
+  title: string;
+  description: string;
+  scope: SkillScope;
+  /** 绑定的专家 id（scope=expert 时有效） */
+  experts: string[];
+  /** 进一步收窄到的流水线角色 */
+  agents: string[];
+  /** 最终生效的角色；空数组表示不会装载 */
+  stages: string[];
+  enabled: boolean;
+  /** 校验问题，非空时该技能不会生效 */
+  issues: string[];
+  chars: number;
+}
+
+/** 卡片上展示用的精简技能 */
+export interface SkillBrief {
+  id: string;
+  name: string;
+  /** 展示名（缺省时回退到 name） */
+  title: string;
+  description: string;
+  stages: string[];
+}
+
+export interface ExpertSkillBinding {
+  id: string;
+  /** 专家对外的模式（interview / review），前端按它匹配专家卡片 */
+  mode: AgentMode;
+  label: string;
+  icon: string;
+  /** 该专家下会跑到的角色 */
+  stages: string[];
+  /** 绑定到该专家的专属技能 */
+  skills: SkillBrief[];
+}
+
+export interface SkillAssignments {
+  /** 所有专家都会装载的技能 */
+  global: SkillBrief[];
+  experts: ExpertSkillBinding[];
+  /** 已发现但因配置问题未生效的技能 */
+  unassigned: { id: string; name: string; issues: string[] }[];
+}
+
+export interface SkillsPayload {
+  ok: boolean;
+  enabled: boolean;
+  dir: string;
+  skills: SkillInfo[];
+  assignments: SkillAssignments;
+}

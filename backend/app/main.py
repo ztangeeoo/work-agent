@@ -12,7 +12,7 @@ from fastapi import FastAPI
 
 from . import state, store
 from .agents.review import run_review
-from .api.routes import catalog, chat, convos, repos, reviews, system
+from .api.routes import catalog, chat, convos, repos, reviews, skills, system
 from .config import AGENT_NAME, PORT, USE_PLANNER
 from .core.errors import fmt_exc
 from .core.log import log
@@ -74,7 +74,8 @@ def create_app() -> FastAPI:
         log=lambda m: log("[审核] " + m),
     ))
 
-    for router in (system.router, catalog.router, convos.router, repos.router, reviews.router, chat.router):
+    for router in (system.router, catalog.router, convos.router, repos.router,
+                   reviews.router, skills.router, chat.router):
         app.include_router(router)
     return app
 

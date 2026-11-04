@@ -381,6 +381,8 @@ Node :8787  /api/convos  ──反向代理──►  Python :8790 /api/convos
 | `HARNESS_ADAPTER` | `1` | 设为 `0` 完全旁路可训练指令层，行为与接入前逐字节一致 |
 | `HARNESS_ADAPTER_MAX` | `6000` | 单份 adapter 文本的字符上限，防止误写超长文件 |
 | `HARNESS_ADAPTER_DIR` | `backend/adapters/` | adapter 根目录，换一份实验版本时指向别处 |
+| `SKILLS_ENABLED` | `1` | 设为 `0` 时所有 Agent 都不装载技能，行为与接入前一致 |
+| `SKILLS_DIR` | `backend/skills/` | 技能根目录，一个子目录一个 `SKILL.md` |
 
 ## 可训练指令层（harness adapter）
 
@@ -416,6 +418,46 @@ backend/adapters/
 
 `backend` 为 `hermit` 表示走 Hermit 的 Session（会校验清单合法性），`file` 表示降级直读，`none` 表示关闭或目录不存在。
 
+
+## 技能（Skill）与专家绑定
+
+技能是 **AgentScope 2.0 内建**的能力，格式与市面上的 Agent Skills 一致：
+一个目录一个 `SKILL.md`，frontmatter 写 `name` + `description`，正文是操作手册。
+Agent 平时只看到名字和一句描述，真要用时才读全文——所以装技能不占常驻上下文。
+
+```
+backend/skills/
+  question-design/         SKILL.md   → scope: expert, experts: [interviewer]
+  code-review-security/    SKILL.md   → scope: expert, experts: [reviewer]
+  cn-tech-writing/         SKILL.md   → scope: global
+```
+
+归属写在 frontmatter，三档（`name` 必须 kebab-case，另加一个可选的 `title` 供界面显示中文名）：
+
+| 写法 | 谁装载 |
+|---|---|
+| `scope: global` | 所有角色（策划官 / 面试官 / 评分官 / 侦察官 / 审核官 / 裁决官 / 审核答疑） |
+| `scope: expert` + `experts: [interviewer]` | 该专家下的所有角色 |
+| 再加 `agents: [planner, interviewer]` | 在专家范围内只给指定角色 |
+| 不写 `scope` | **不生效**，界面标为未绑定 |
+
+为什么缺失归属就不生效：市面上的技能是外部内容，默认让它进每次调用的 system prompt
+等于静默注入指令。显式声明才装载。
+
+**在哪看**：左侧「专家」→ 专家卡片底部列出这位专家实际装载的技能，专属技能是实线
+芯片、全局技能带「全局」标记，悬停可看它作用于哪几个角色。接口是 `GET /api/skills`。
+
+**怎么引入市面技能**：`npx skills add owner/repo` 拉到本地，或从 GitHub 直接下载，
+挑出要的那个技能目录放进 `backend/skills/`，然后在 frontmatter 补两行 `scope`/`experts`
+即可——不用改代码、不用重启（按 mtime 热加载）。
+
+**与 harness adapter 的分界**：adapter 是全局风格约束（常驻、必生效、可训练）；
+技能是按需能力（触发才读、分专家绑定）。调风格改 adapter，加本事放技能。
+
+**安全边界**：技能里的 `scripts/` 与 `references/` 属于第三级披露，需要文件读写与
+命令执行工具；本项目 Agent 没有这类工具，所以只用到前两级（元数据 + SKILL.md 正文）。
+副作用是——**技能里的脚本不会被执行**。社区技能不可信（公开技能里有相当比例带漏洞
+或外发指令），纳入前请通读 SKILL.md，不要因为"只是提示词"就跳过审阅。
 
 ## CopilotKit 授权 key 说明
 
@@ -456,6 +498,7 @@ VITE_COPILOTKIT_KEY=ckpb_你的key
 | `backend/scripts/agent_service.py` | AgentScope 2.0 官方 Agent Service（`create_app`）：SQLite 持久化 + 内存总线 + 本地工作区，独立端口 8799，自带 `/docs` |
 | `backend/scripts/sandbox_probe.py` | 沙箱自检：建工作区 → 跑命令 / 读写文件 / 校验退出码；默认容器后端，`SANDBOX=local` 切宿主机 |
 | `backend/adapters/` | 可训练的外挂指令（Hermit 格式）：`interview/`（面试官 + 策划官）、`review/`（侦察官 + 审核官 + 裁决官 + 审核追问） |
+| `backend/skills/` | 技能（Agent Skills 格式，一个目录一个 `SKILL.md`）：`question-design/`（出题方法）、`code-review-security/`（安全清单）、`cn-tech-writing/`（全局表达规范） |
 | `data/interview.db` | 会话 / 仓库 / 审核报告数据库（自动创建，已加入 `.gitignore`） |
 | `tests/` | 回归测试：`test_store.py`（持久层）、`test_reviewer.py`（地址解析 / diff / 代理规则）、`test_adapter.py`（指令层加载 / 降级 / 热更新 / 格式契约）、`test_agentscope_api.py`（运行时基线）、`test_web.ts`（渲染逻辑）、`test_qcard.ts`（卡片布局与历史守卫）、`test_stages.ts`（流水线状态）、`test_layout.ts`（布局约束）、`test_render.js`（旧版渲染逻辑）、`mock_llm.js`（mock 上游验全链路） |
 | `docs/` | `design-spec-v1.html` 全局样式主题规范 · `theme-demo.html` 主题实时预览（可切深色） |
@@ -471,6 +514,7 @@ VITE_COPILOTKIT_KEY=ckpb_你的key
 .venv\Scripts\python.exe tests/test_store.py          # 持久层：会话/检索/隔离/仓库/审核报告（85 断言）
 .venv\Scripts\python.exe tests/test_reviewer.py       # 仓库地址解析 / diff 统计 / 代理规则（32 断言）
 .venv\Scripts\python.exe tests/test_adapter.py        # 指令层：降级 / 拼接 / 开关 / 截断 / 热更新 / 格式契约 / 接线守卫（38 断言）
+.venv\Scripts\python.exe tests/test_skills.py         # 技能：frontmatter / 全局与专家归属 / agents 收窄 / 错误配置不生效 / 热更新（59 断言）
 node --experimental-strip-types tests/test_web.ts     # 渲染 / 题目卡片逻辑（47 断言）
 node --experimental-strip-types tests/test_qcard.ts   # 卡片布局 / 历史恢复守卫（27 断言）
 node --experimental-strip-types tests/test_stages.ts  # 智能体流水线状态归并（23 断言）

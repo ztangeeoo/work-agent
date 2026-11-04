@@ -13,6 +13,10 @@ backend/
 ├── adapters/                 可训练的外挂指令（Hermit 格式），按智能体分目录
 │   ├── interview/            ADAPTER.md（面试官 + 策划官）
 │   └── review/               ADAPTER.md（侦察官 + 审核官 + 裁决官 + 审核追问）
+├── skills/                   技能（Agent Skills 格式）：一个目录一个 SKILL.md
+│   ├── question-design/      场景化出题方法（面试出题官）
+│   ├── code-review-security/ 安全审查清单（代码审核官）
+│   └── cn-tech-writing/      中文技术表达规范（全局）
 ├── scripts/                  独立脚本，不被服务进程加载
 │   ├── agent_service.py      官方 Agent Service（agentscope.app.create_app，:8799）
 │   └── sandbox_probe.py      沙箱自检（Docker / 本地）
@@ -45,6 +49,7 @@ backend/
     │   └── __init__.py      门面：`from .. import store` 后按 `store.xxx()` 调用
     ├── services/             外部适配与应用服务
     │   ├── harness.py        adapter 加载（hermit 可缺省 / mtime 热更新 / 可旁路）
+    │   ├── skills.py         技能扫描与归属解析（全局 / 专家 / 角色，mtime 热更新）
     │   ├── review_client.py  代码托管客户端：解析地址、拉 PR / diff、回帖、走代理
     │   ├── poller.py         PR 轮询调度：同仓库串行、单轮限流、到期触发
     │   └── events.py         审核事件中心（订阅 / 补发最近一批）
@@ -66,7 +71,8 @@ backend/
             ├── chat.py       /v1/chat/completions、/v1/review
             ├── convos.py     /api/convos*、/api/search
             ├── repos.py      /api/repos*
-            └── reviews.py    /api/reviews*、/api/review/events
+            ├── reviews.py    /api/reviews*、/api/review/events
+            └── skills.py     /api/skills（技能目录 + 专家绑定关系，只读）
 ```
 
 ## 数据模型：会话 → 智能体 → 专家
@@ -128,6 +134,7 @@ routes/chat.py → agents/review.run_review
 | 加一个智能体 / 调整流水线顺序 | `agents/*.py` + `core/stages.py`（前端面板标签）+ `prompts/`（提示词） |
 | 调提示词 | `prompts/*.py`；若属于「可训练的外挂指令」，写 `adapters/<name>/ADAPTER.md` |
 | 加一个 Agent 工具 | `tools/` 里写函数 → `tools/registry.build_toolkit()` 注册 → `runtime.make_agent(with_tools=True)` |
+| 加一个技能 | 在 `skills/<name>/SKILL.md` 写正文 + 声明归属（`scope`），放到目录即生效，不用改代码 |
 | 加一个 HTTP 接口 | `api/routes/<域>.py` 里加 `@router.<method>`；`main.create_app()` 已统一挂载，无需改动 |
 | 换数据库 / 加表 | `store/db.py`（SCHEMA）+ 对应仓库模块；对外 JSON 契约保持 camelCase |
 | 换代码托管平台 | `services/review_client.py`（解析 / 拉取 / 回帖三处） |
@@ -144,8 +151,57 @@ routes/chat.py → agents/review.run_review
 | `HARNESS_ADAPTER` | `1` | 是否启用 adapter 指令层；`0` 完全旁路 |
 | `HARNESS_ADAPTER_DIR` | `backend/adapters` | adapter 根目录 |
 | `HARNESS_ADAPTER_MAX` | `6000` | 单份 adapter 的字符上限 |
+| `SKILLS_ENABLED` | `1` | 是否装载技能；`0` 时所有 Agent 都不装（恢复接入前行为） |
+| `SKILLS_DIR` | `backend/skills` | 技能根目录，一个子目录一个技能 |
 | `AGENT_SERVICE_PORT` / `AGENT_SERVICE_DB` / `AGENT_WORKSPACE_DIR` / `SANDBOX` | 见 `scripts/agent_service.py` | 官方 Agent Service 的配置 |
 | `PORT` / `AGENTSCOPE_URL` / `AGENTSCOPE` | `8787` / `http://127.0.0.1:8790` / 开 | Node 网关的端口、上游地址与总开关 |
+
+## 技能（Skill）与归属
+
+技能是 AgentScope 2.0 内建能力，格式即 Anthropic Agent Skills：一个目录一个
+`SKILL.md`，YAML frontmatter 写 `name` + `description`，正文是操作手册。
+Toolkit 初始化时把 name/description 拼进 system prompt，运行中由内建 `Skill`
+查看器按名字读取全文——**不占常驻上下文**，也不需要改 agent loop。
+
+`services/skills.py` 只多做一件事：决定**哪个角色装哪些技能**。frontmatter 里：
+
+```yaml
+---
+name: question-design               # 必填，kebab-case（AgentScope 按它查找技能）
+title: 场景化出题                    # 可选，界面展示名；不写就显示 name
+description: 做什么 + 什么时候用       # 必填，模型只靠这句话选技能
+scope: expert                      # global | expert（不写则不生效）
+experts: [interviewer]             # scope=expert 时必填：interviewer / reviewer
+agents: [planner, interviewer]     # 可选：再收窄到具体角色
+---
+```
+
+| 声明 | 装载给谁 |
+|---|---|
+| `scope: global` | 所有角色（7 个 stage） |
+| `scope: expert` + `experts` | 该专家下的全部角色；再用 `agents` 收窄 |
+| 不写 `scope` / 写错 / 未知专家 | **不装载**，`/api/skills` 里标为未绑定并给出原因 |
+
+为什么缺失归属就不生效：从市面上拿来的技能是外部内容，默认让它常驻每次调用的
+system prompt 等于静默注入指令。宁可显式声明，也不要隐式生效。
+
+调用链：
+
+```
+make_agent(stage=...)            # 各流水线角色传自己的 stage
+  → build_toolkit(stage=...)     # tools 与技能互不影响
+    → services.skills.for_stage  # 目录扫描 + 归属过滤（mtime 热更新）
+      → Toolkit(skills_or_loaders=[目录…])
+        → Agent 自动把技能清单拼进 system prompt
+```
+
+`GET /api/skills` 返回 `skills`（全部，含未生效的）与 `assignments`（按全局 /
+各专家分好组），前端「专家」页在卡片上展示每位专家绑了哪些技能。
+`GET /health` 与 `/api/db/stats` 里的 `skills` 字段是自检信息（数量、按角色分布）。
+
+技能的 scripts/ 与 references/ 属于第三级披露，需要文件读写与命令执行工具；
+本项目 Agent 没有这类工具，所以只用到前两级（元数据 + SKILL.md 正文）。
+
 
 ## 启动与自检
 
@@ -153,9 +209,11 @@ routes/chat.py → agents/review.run_review
 python backend/run.py                 # 智能体服务（等价 python -m backend.app.main）
 node backend/server.js                # 网关（需先 npm install）
 
-curl http://127.0.0.1:8790/health     # 服务与库状态
+curl http://127.0.0.1:8790/health     # 服务与库状态（含 skills 自检）
+curl http://127.0.0.1:8790/api/skills # 技能目录与专家绑定关系
 python tests/test_agentscope_api.py   # 运行时基线
 python tests/test_store.py            # 持久层
+python tests/test_skills.py           # 技能解析与归属
 ```
 
 仓库根的双击启动仍是 `start.bat`（会构建前端并拉起上面两个服务）。

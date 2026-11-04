@@ -48,7 +48,7 @@ async def run_review(payload: dict) -> dict:
 
     # ---------- 1. 侦察官 ----------
     t0 = time.time()
-    scout = make_agent("侦察官", scout_sys_prompt(pr), model, False)
+    scout = make_agent("侦察官", scout_sys_prompt(pr), model, False, stage="scout")
     scout_text = ""
     async for kind, val in drive_agent(
         scout,
@@ -63,7 +63,7 @@ async def run_review(payload: dict) -> dict:
 
     # ---------- 2. 审核官（结构化问题清单） ----------
     t1 = time.time()
-    reviewer = make_agent("审核官", reviewer_sys_prompt(pr), model, False)
+    reviewer = make_agent("审核官", reviewer_sys_prompt(pr), model, False, stage="reviewer")
     review_inputs = [
         UserMsg("侦察官", f"【侦察官的改动概览】\n{scout_text or '（无）'}"),
         UserMsg("user", f"请审核下面这个 PR 的 diff，输出问题清单。\n\n```diff\n{diff}\n```"),
@@ -85,7 +85,7 @@ async def run_review(payload: dict) -> dict:
 
     # ---------- 3. 裁决官 ----------
     t2 = time.time()
-    judge = make_agent("裁决官", judge_sys_prompt(pr), model, False)
+    judge = make_agent("裁决官", judge_sys_prompt(pr), model, False, stage="judge")
     issues_json = json.dumps(
         [{**i, "severity": normalize_severity(i.get("severity"))} for i in issues],
         ensure_ascii=False, indent=1,

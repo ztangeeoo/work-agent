@@ -76,7 +76,7 @@ async def stream_review_advisor(payload: dict, model, cid: str, created: int, mo
     status = StatusFlusher()
     status.set("🛡️ 审核官正在整理答复…\n\n")
     advisor = make_agent("代码审核官", reviewer_chat_sys_prompt(review_ctx, repo),
-                         model, bool(repo), repo=repo)
+                         model, bool(repo), repo=repo, stage="advisor")
     ask = last_user or "请总结这次审核的要点"
     produced = False
     # 历史里的最后一条就是用户这次的问题，再追加一份同样的 ask 会让模型
@@ -101,7 +101,7 @@ async def stream_review_advisor(payload: dict, model, cid: str, created: int, mo
 
 async def stream_score(history, model, cid: str, created: int, model_name: str, profile: dict, last_user: str):
     """评分官：结构化输出优先，失败回退到文本解析"""
-    agent = make_agent("评分官", evaluator_sys_prompt(profile), model, False)
+    agent = make_agent("评分官", evaluator_sys_prompt(profile), model, False, stage="grader")
     ask = UserMsg(
         "user",
         "请对下面这场面试对话中候选人的最后一次回答进行结构化评分。"
@@ -188,7 +188,7 @@ async def stream_interview(payload: dict, base_override: Optional[str] = None):
     if USE_PLANNER and not has_assistant:
         yield sse_stage("planner", "running")
         t_planner = time.time()
-        planner = make_agent("策划官", planner_sys_prompt(profile), model, False)
+        planner = make_agent("策划官", planner_sys_prompt(profile), model, False, stage="planner")
         plan_ask = UserMsg("user", f"请为下面这次面试规划考察大纲：\n{last_user}")
         status.set("🧭 策划官正在规划考察大纲…\n\n")
         async for kind, val in drive_agent(planner, [plan_ask]):
@@ -210,7 +210,8 @@ async def stream_interview(payload: dict, base_override: Optional[str] = None):
     yield sse_stage("grader", "skipped")
     yield sse_stage("interviewer", "running")
     t_interviewer = time.time()
-    interviewer = make_agent("面试官", interviewer_sys_prompt(profile), model, True)
+    interviewer = make_agent("面试官", interviewer_sys_prompt(profile), model, True,
+                             stage="interviewer")
     inputs = list(history)
     if plan_text:
         # 注意：AgentScope 的 inputs 不允许带 system 消息，大纲用 user 角色承载
