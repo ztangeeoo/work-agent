@@ -66,18 +66,26 @@ ok(/stickRef\.current = true/.test(PANEL), '发送消息时重新吸附到底部
 ok(!/useEffect\(\(\) => \{\s*const el = listRef\.current;\s*if \(el\) el\.scrollTop = el\.scrollHeight;\s*\}, \[messages, isLoading\]\)/.test(PANEL),
    '旧的「每次都强制滚底」逻辑已移除');
 
-/* ---------------- 新增：智能体切换位置 / 内联配置 / 左侧不变 ---------------- */
+/* ---------------- 专家选择：左侧入口；输入框上方不再有切换条 ---------------- */
 const APP = fs.readFileSync(path.join(ROOT, 'web/src/ChatApp.tsx'), 'utf8');
-const SWITCHER = fs.readFileSync(path.join(ROOT, 'web/src/components/AgentSwitcher.tsx'), 'utf8');
+const PICKER = fs.readFileSync(path.join(ROOT, 'web/src/components/ExpertPicker.tsx'), 'utf8');
 
-console.log('\n[5] 两个智能体放在输入框上方');
+console.log('\n[5] 专家选择在左侧入口');
 ok(/inputTop\?:\s*ReactNode/.test(PANEL), 'ChatPanel 提供 inputTop 插槽');
 ok(/\{inputTop\}[\s\S]{0,200}className="chat-input"/.test(PANEL),
    'inputTop 渲染在 chat-list 之后、chat-input 之前');
-ok(/inputTop=\{/.test(APP) && /<AgentSwitcher/.test(APP), 'ChatApp 通过 inputTop 传入 AgentSwitcher');
-ok(!/<ChatPanel[\s\S]*?\/>\s*<AgentSwitcher/.test(APP), '不再把智能体选择器放在聊天框下方');
-ok(/\.agent-bar\s*\{[^}]*border-top/.test(CSS), '切换条与聊天区之间有分隔线');
-ok(/\.agent-tab\.active/.test(CSS), '切换条有选中态样式');
+ok(!/<AgentSwitcher/.test(APP), 'ChatApp 不再渲染已移除的 AgentSwitcher');
+ok(/view === 'experts'/.test(APP) && /<ExpertPicker/.test(APP), '专家选择视图由左侧入口切换');
+ok(!/\.agent-bar\s*\{/.test(CSS), '旧切换条样式已移除');
+
+console.log('\n[5.1] 专家卡片展示已绑定的技能');
+ok(/skills=\{skills\}/.test(APP), 'ChatApp 把技能绑定关系传给专家页');
+ok(/expert-skills/.test(PICKER), '卡片上有技能区');
+ok(/assignments\.experts\.find/.test(PICKER), '按专家 id 取该专家绑定的技能');
+ok(/is-global/.test(PICKER), '全局技能与专属技能在标记上区分');
+ok(/\.expert-skill\.is-global\s*\{[^}]*border-style\s*:\s*dashed/.test(CSS),
+   '全局技能用虚线芯片（不靠颜色单独表意）');
+ok(/assignments\.unassigned\.length/.test(PICKER), '未生效的技能在页面上有提示');
 
 console.log('\n[6] 配置走弹框（不再内联在对话流里）');
 const SETUP = fs.readFileSync(path.join(ROOT, 'web/src/components/InterviewSetup.tsx'), 'utf8');
@@ -101,16 +109,16 @@ ok(/#cfgModal\s*\{[^}]*z-index/.test(CSS) && /id="cfgModal"/.test(
 ok(/const \[setupOpen, setSetupOpen\] = useState\(false\)/.test(APP), '面试配置弹框默认关闭（不占屏幕）');
 ok(/const \[repoOpen, setRepoOpen\] = useState\(false\)/.test(APP), '仓库配置弹框默认关闭');
 ok(!/if \(mode === 'interview'\) setSetupOpen\(true\)/.test(APP), '新建会话不再自动弹出配置');
-ok(/if \(m === 'review' && !repos\.length\)[\s\S]{0,120}setRepoOpen\(true\)/.test(APP),
-   '只有审核官还没有仓库时才自动弹框引导');
-ok(/onOpenConfig=\{[\s\S]{0,240}setSetupOpen\(true\)/.test(APP), '「⚙️ 面试配置」按钮打开弹框');
+ok(/if \(m === 'review'\)[\s\S]{0,400}?setRepoOpen\(true\)/.test(APP),
+   '选中审核官即打开仓库配置（没配过时是空表单引导）');
+ok(/openAgentConfig[\s\S]{0,300}?setSetupOpen\(true\)/.test(APP), '对话头部配置入口打开弹框');
 ok(/setSetupOpen\(false\);   \/\/ 生成后关掉弹框/.test(APP), '生成面试题后自动关闭弹框');
 
 console.log('\n[7] 切换智能体不影响左侧会话列表');
 ok(/const visibleConvos = convos;/.test(APP), '侧栏使用完整会话列表（不按智能体过滤）');
 ok(!/list:\s*convos\.list\.filter\(c => modeOf/.test(APP), '不再按模式过滤侧栏');
-ok(/const switchMode[\s\S]{0,900}?只切换|不新建、不切换、不过滤左侧会话/.test(APP),
-   'switchMode 注释明确不改会话');
+ok(/const pickExpert[\s\S]{0,700}?不动当前会话的绑定/.test(APP),
+   'pickExpert 只记录待用专家，不动当前会话绑定');
 const switchBody = (APP.match(/const switchMode = useCallback\(\(m: AgentMode\) => \{([\s\S]*?)\n  \}, \[/) || ['', ''])[1];
 ok(!/newConvo\(|activeId:/.test(switchBody), '切换智能体时不新建/不切换会话');
 
@@ -124,7 +132,8 @@ ok(/\{shown\.map\(/.test(PANEL) && !/\{messages\.map\(/.test(PANEL), '消息列�
 ok(/\{shown\.length === 0 &&/.test(PANEL), '空状态与打字指示改用 shown 判断');
 ok(/if \(active && \(active\.messages \|\| \[\]\)\.length\) queueSaveConvo\(active\)/.test(APP),
    '空会话不推服务端（避免攒一堆「新会话 · 0 条消息」）');
-ok(/toPush\.filter\(c => \(c\.messages \|\| \[\]\)\.length\)/.test(APP), '启动合并时也不上推空会话');
+ok(/\.filter\(c => \(c\.messages \|\| \[\]\)\.length \|\| \(c\.mode && c\.title && c\.title !== '新会话'\)\)/.test(APP),
+   '启动合并时不上推空壳会话，但已绑定专家的任务会话要推');
 ok(!/if \(mode === 'interview'\) setSetupOpen\(true\)/.test(APP), '新建会话不弹配置框（不打断对话）');
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败\n`);

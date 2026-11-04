@@ -6,4 +6,5 @@
   convos   /api/convos*、/api/search
   repos    /api/repos*
   reviews  /api/reviews*、/api/review/events
+  skills   /api/skills（技能目录 + 专家绑定关系，只读）
 """

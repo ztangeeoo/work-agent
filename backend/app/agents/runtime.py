@@ -16,7 +16,7 @@ from ..tools.registry import build_toolkit
 
 
 def make_agent(name: str, sys_prompt: str, model: OpenAIChatModel, with_tools: bool,
-               repo: dict | None = None) -> Agent:
+               repo: dict | None = None, stage: str = "") -> Agent:
     """构造一个全空状态的 Agent（无状态服务，每次请求新建）。
 
     注意 AgentScope 2.0 的语义：`reply_stream(inputs)` 会把 inputs **追加**进
@@ -25,12 +25,14 @@ def make_agent(name: str, sys_prompt: str, model: OpenAIChatModel, with_tools: b
     用户消息出现三次（既费 token 也干扰模型判断）。现在统一走 inputs。
 
     repo：审核官场景传当前仓库，工具集会被替换成只读仓库工具。
+    stage：流水线角色 id（planner / interviewer / grader / scout / reviewer / judge /
+    advisor），决定这个 Agent 装载哪些技能。不传则不装载任何技能。
     """
     return Agent(
         name=name,
         system_prompt=sys_prompt,
         model=model,
-        toolkit=build_toolkit(with_tools, repo=repo),
+        toolkit=build_toolkit(with_tools, repo=repo, stage=stage),
     )
 
 

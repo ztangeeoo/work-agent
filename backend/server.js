@@ -799,6 +799,11 @@ const server = http.createServer((req, res) => {
     })();
   }
 
+  /* 技能：专家的技能绑定关系（只读，来自 backend/skills/） */
+  if (req.method === 'GET' && url.pathname === '/api/skills') {
+    return void proxyApi(req, res, url.pathname + url.search);
+  }
+
   /* 代码审核：仓库 / PR / 审核报告（Python 提供，含异步轮询与 SSE 事件流回放） */
   if (url.pathname === '/api/repos' || url.pathname.startsWith('/api/repos/')) {
     return void proxyApi(req, res, url.pathname + url.search);

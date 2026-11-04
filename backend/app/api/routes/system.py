@@ -13,6 +13,7 @@ from ... import store
 from ...core.errors import fmt_exc
 from ...core.version import AS_VERSION
 from ...services import harness
+from ...services import skills as skill_svc
 from ...state import MODEL_CFG
 from ..deps import err
 
@@ -30,6 +31,7 @@ async def health():
         "agents": ["策划官", "面试官", "评分官", "侦察官", "审核官", "裁决官"],
         "modes": ["interview", "review"],
         "planner": USE_PLANNER,
+        "skills": skill_svc.status(),
     }
     try:
         if store.available():
@@ -66,6 +68,7 @@ async def api_db_stats():
     if not store.available():
         return {"dbAvailable": False, "reason": store.unavailable_reason()}
     try:
-        return {"dbAvailable": True, **store.stats(), "harness": harness.status()}
+        return {"dbAvailable": True, **store.stats(), "harness": harness.status(),
+                "skills": skill_svc.status()}
     except Exception as e:
         return err(fmt_exc(e), 500)

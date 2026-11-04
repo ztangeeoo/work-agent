@@ -7,6 +7,8 @@
   DB_PATH           SQLite 文件位置，默认 <项目根>/data/interview.db
   DATA_DIR          数据目录，默认 <项目根>/data
   HARNESS_ADAPTER_DIR  adapter 根目录，默认 backend/adapters
+  SKILLS_ENABLED    是否装载技能，0/false 关闭
+  SKILLS_DIR        技能根目录，默认 backend/skills
 """
 
 import os
@@ -18,6 +20,10 @@ PROJECT_ROOT = BACKEND_DIR.parent
 
 DATA_DIR = Path(os.environ.get("DATA_DIR") or (PROJECT_ROOT / "data"))
 ADAPTERS_DIR = Path(os.environ.get("HARNESS_ADAPTER_DIR") or (BACKEND_DIR / "adapters"))
+
+# 技能（Skill）根目录：每个子目录一个技能，内含 SKILL.md
+SKILLS_DIR = Path(os.environ.get("SKILLS_DIR") or (BACKEND_DIR / "skills"))
+SKILLS_ENABLED = os.environ.get("SKILLS_ENABLED", "1") not in ("0", "false", "False")
 
 PORT = int(os.environ.get("AGENT_PORT", "8790"))
 

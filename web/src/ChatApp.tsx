@@ -8,6 +8,7 @@ import {
   persistConvos, saveCfg, snapshotProfile, titleFromMessages,
 } from './lib/storage';
 import { checkHealth } from './lib/health';
+import { fetchSkills } from './lib/skills';
 import { applyTheme, loadTheme, nextTheme, saveTheme, type Theme } from './lib/theme';
 import { deleteRemoteConvo, fetchRemoteConvos, flushNow, queueSaveConvo } from './lib/remote';
 import { useAgentStages } from './lib/stages';
@@ -16,7 +17,7 @@ import {
   fetchPRs, fetchRepos, fetchReviews, pollRepo, postReviewToPR,
   reviewPR as requestReview, sortPRs, useReviewEvents,
 } from './lib/review';
-import type { AgentMode, ChatMessage, Convo, ModelCfg, PRItem, Profile, Repo, ReviewItem } from './types';
+import type { AgentMode, ChatMessage, Convo, ModelCfg, PRItem, Profile, Repo, ReviewItem, SkillsPayload } from './types';
 import ConvoSidebar from './components/ConvoSidebar';
 import ExpertPicker from './components/ExpertPicker';
 import ChatPanel from './components/ChatPanel';
@@ -70,6 +71,8 @@ export default function ChatApp() {
 
   /* ---------- 视图：对话 / 专家选择 ---------- */
   const [view, setView] = useState<'chat' | 'experts'>('chat');
+  /** 技能目录与「专家 → 技能」绑定关系（只读，来自 backend/skills/） */
+  const [skills, setSkills] = useState<SkillsPayload | null>(null);
   /** 从专家入口选中、等待填配置的专家；确认后新建任务会话并永久绑定 */
   const [pendingExpert, setPendingExpert] = useState<AgentMode | null>(null);
   /** 新会话建好后要发送的首轮指令（等 reset 落地再发） */
@@ -216,6 +219,13 @@ export default function ChatApp() {
     run();
     const t = window.setInterval(run, 15000);
     return () => { alive = false; window.clearInterval(t); };
+  }, []);
+
+  /* ---------- 技能绑定（专家卡片上展示「绑了哪些技能」） ---------- */
+  useEffect(() => {
+    let alive = true;
+    void fetchSkills().then(d => { if (alive) setSkills(d); });
+    return () => { alive = false; };
   }, []);
 
   /* ---------- 代码审核：仓库 / PR / 审核报告 ---------- */
@@ -717,6 +727,7 @@ export default function ChatApp() {
           <ExpertPicker
             agents={AGENTS}
             mode={mode}
+            skills={skills}
             onPick={pickExpert}
             onBack={() => setView('chat')}
           />
