@@ -178,19 +178,36 @@ agents: [planner, interviewer]     # 可选：再收窄到具体角色
 
 | 声明 | 装载给谁 |
 |---|---|
-| `scope: global` | 所有角色（7 个 stage） |
+| `scope: global` | 所有角色（库里现有的全部 stage） |
 | `scope: expert` + `experts` | 该专家下的全部角色；再用 `agents` 收窄 |
 | 不写 `scope` / 写错 / 未知专家 | **不装载**，`/api/skills` 里标为未绑定并给出原因 |
 
 为什么缺失归属就不生效：从市面上拿来的技能是外部内容，默认让它常驻每次调用的
 system prompt 等于静默注入指令。宁可显式声明，也不要隐式生效。
 
+### 「专家 → 角色」从哪来
+
+**唯一真相在数据库**：`store` 的 `expert` / `agent` 两张表（`agent.stage` 就是流水线角色）。
+`services/skills.py` 的 `_experts()` 先读 `store.list_experts()`；库没连上（未初始化 /
+单测环境）才回退 `core/stages.py` 的 `EXPERT_META` / `EXPERT_STAGES` 常量。
+
+这样做的原因：这份映射以前在代码里手抄一份，往库里加一个智能体（比如面试专家加个
+「复盘官」），`/api/experts` 会立刻显示它，技能却不会自动挂上去——不报错，只是悄悄不生效。
+现在改库即生效，代码里的常量退化成兜底。
+
+缓存签名是「SKILL.md 的 mtime + `catalog_version()`（两张表的条数与最后修改时间）」，
+所以改库也会触发重算，不用重启、不用手动清缓存。`/api/db/stats` 的 `skills.source`
+会显示这次归属用的是 `db` 还是 `fallback`，排障时先看这一项。
+
+注意 `store.connected()` 与 `store.available()` 的区别：前者只判断连接是否已建立、
+**不会建库**，读一次技能不该顺手拉起一个数据库文件；后者会 `init()`。
+
 调用链：
 
 ```
 make_agent(stage=...)            # 各流水线角色传自己的 stage
   → build_toolkit(stage=...)     # tools 与技能互不影响
-    → services.skills.for_stage  # 目录扫描 + 归属过滤（mtime 热更新）
+    → services.skills.for_stage  # 目录扫描 + 归属过滤（文件与库双签名热更新）
       → Toolkit(skills_or_loaders=[目录…])
         → Agent 自动把技能清单拼进 system prompt
 ```

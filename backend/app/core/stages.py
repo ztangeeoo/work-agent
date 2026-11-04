@@ -29,12 +29,17 @@ def stage_meta(stage: str) -> dict:
 # 「角色」是流水线里的具体智能体（上面 STAGE_META 的 key）。
 # 专家 id 沿用前端已有取值（不改历史会话数据），其中 interviewer 恰好与同名
 # 角色重名，所以代码里凡指专家一律写成 expert_id / EXPERT_*。
+#
+# 注意：**权威数据在数据库**（store 的 expert / agent 两张表）。
+# 下面这两个常量只是兜底——库没连上、或者单测里没建库时用它们，
+# 这样「加一个智能体」只需要改库（/api/experts 的数据源），不用同步改代码。
+# services/skills.py 的 _experts() 就是「先读库、读不到再用这里」。
 EXPERT_META = {
     "interviewer": {"label": "面试出题官", "icon": "面", "mode": "interview"},
     "reviewer": {"label": "代码审核官", "icon": "审", "mode": "review"},
 }
 
-# 专家 → 该专家下会跑到的角色。skill 绑定到专家时，这些角色都会装载它。
+# 专家 → 该专家下会跑到的角色。**仅在库不可用时兜底**，正常路径读 store。
 EXPERT_STAGES = {
     "interviewer": ("planner", "interviewer", "grader"),
     "reviewer": ("scout", "reviewer", "judge", "advisor"),
@@ -42,7 +47,7 @@ EXPERT_STAGES = {
 
 
 def stages_of_expert(expert_id: str) -> tuple[str, ...]:
-    """某个专家下会跑到的角色列表；未知专家返回空"""
+    """兜底版：某个专家下会跑到的角色列表（正常运行请走 services/skills.py）"""
     return EXPERT_STAGES.get(expert_id, ())
 
 

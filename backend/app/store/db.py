@@ -315,6 +315,15 @@ def available() -> bool:
         return False
 
 
+def connected() -> bool:
+    """连接是否已经建立，**不会触发建库**。
+
+    给「库已就绪就用它、否则回退默认值」的调用方用：技能归属这类派生数据
+    不应该为了读一次而主动拉起一个数据库文件。
+    """
+    return _conn is not None and _available
+
+
 def unavailable_reason() -> str:
     return _unavailable_reason
 

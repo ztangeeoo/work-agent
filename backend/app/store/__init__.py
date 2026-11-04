@@ -9,6 +9,7 @@
 """
 
 from .catalog import (
+    catalog_version,
     get_agent,
     get_expert,
     list_agents,
@@ -31,6 +32,7 @@ from .db import (
     MAX_MSGS,
     available,
     close,
+    connected,
     init,
     now,
     stats,
@@ -57,7 +59,8 @@ from .reviews import (
 
 __all__ = [
     "DB_PATH", "DEFAULT_USER", "MAX_CONVOS", "MAX_MSGS",
-    "available", "close", "init", "now", "stats", "unavailable_reason",
+    "available", "close", "connected", "init", "now", "stats", "unavailable_reason",
+    "catalog_version",
     "get_agent", "get_expert", "list_agents", "list_experts",
     "primary_agent_id", "primary_agent_id_by_mode",
     "delete_convo", "get_convo", "list_convos", "resolve_binding", "save_convo", "search_messages",

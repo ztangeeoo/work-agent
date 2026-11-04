@@ -141,20 +141,46 @@ try:
     ok(all(it["enabled"] is False for it in dups), "同名技能全部不生效")
     ok(all(any("名称重复" in s for s in it["issues"]) for it in dups), "提示名称重复")
 
-    print("\n[6] agents 收窄 + 热更新")
+    print("\n[6] 归属跟随库：库里加智能体，技能自动跟上")
     shutil.rmtree(Path(tmp) / "dup")
     shutil.rmtree(Path(tmp) / "dup2")
+    put("whole-expert", "---\nname: whole-expert\ndescription: 绑定整个专家\nscope: expert\nexperts: [interviewer]\n---\n")
+    put("global-x", "---\nname: global-x\ndescription: 全局\nscope: global\n---\n")
+
+    # 模拟库里给面试专家新增了一个角色 mentor（常量里没有）
+    orig_experts = sk._experts
+    sk._experts = lambda: [
+        {"id": "interviewer", "mode": "interview", "label": "面试出题官", "icon": "面",
+         "stages": ["planner", "interviewer", "grader", "mentor"]},
+        {"id": "reviewer", "mode": "review", "label": "代码审核官", "icon": "审",
+         "stages": ["scout", "reviewer", "judge", "advisor"]},
+    ]
+    sk.reset_cache()
+    ok(ids("mentor") == ["global-x", "whole-expert"],
+       "库里新增的 mentor 自动拿到专家技能与全局技能")
+    ok(ids("grader") == ["global-x", "whole-expert"], "原有角色不受影响")
+    ok("mentor" in [s for it in sk.scan() if it["id"] == "whole-expert" for s in it["stages"]],
+       "专家技能的 stages 按库展开")
+    ok("mentor" in [s for it in sk.scan() if it["id"] == "global-x" for s in it["stages"]],
+       "全局技能的 stages 也按库展开（不是写死 7 个）")
+    sk._experts = orig_experts
+    sk.reset_cache()
+    ok(ids("mentor") == ["global-x"],
+       "回到常量兜底后 mentor 不再属于任何专家，只剩全局技能")
+
+    print("\n[7] agents 收窄 + 热更新")
     put("narrow", "---\nname: narrow\ndescription: 只给评分官\nscope: expert\nexperts: [interviewer]\nagents: [grader]\n---\n")
-    ok(ids("grader") == ["narrow"], "agents 收窄后只有评分官装载")
-    ok(ids("interviewer") == [], "同专家的其他角色不装载")
+    ok(ids("grader") == ["global-x", "narrow", "whole-expert"], "agents 收窄后只有评分官装载")
+    ok(ids("interviewer") == ["global-x", "whole-expert"], "同专家的其他角色拿不到 narrow")
 
     md = Path(tmp) / "narrow" / "SKILL.md"
     md.write_text("---\nname: narrow\ndescription: 改了归属\nscope: global\n---\n", encoding="utf-8")
     time.sleep(0.01)
     os.utime(md, None)
-    ok(ids("interviewer") == ["narrow"], "改 SKILL.md 后热更新生效（无需重启）")
+    ok(ids("interviewer") == ["global-x", "narrow", "whole-expert"],
+       "改 SKILL.md 后热更新生效（无需重启）")
 
-    print("\n[7] 全局开关")
+    print("\n[8] 全局开关")
     config.SKILLS_ENABLED = False
     sk.reset_cache()
     ok(sk.scan() == [] and sk.for_stage("interviewer") == [], "SKILLS_ENABLED=0 → 全部不装载")
@@ -165,8 +191,9 @@ finally:
     config.SKILLS_ENABLED = True
     sk.reset_cache()
 
-print("\n[8] 内建技能的书写规范")
+print("\n[9] 内建技能的书写规范")
 use_dir(SKILLS)
+ok(sk.status()["source"] == "fallback", "没连库时归属回退常量（source=fallback）")
 for it in sk.scan():
     text = (Path(it["path"]) / "SKILL.md").read_text(encoding="utf-8")
     lines = len(text.splitlines())

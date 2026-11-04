@@ -27,7 +27,7 @@ import threading
 from pathlib import Path
 
 from .. import config
-from ..core.stages import STAGE_META, EXPERT_META, stages_of_expert
+from ..core.stages import STAGE_META, EXPERT_META, EXPERT_STAGES
 
 _NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -95,14 +95,91 @@ def _as_list(v) -> list[str]:
 
 
 # ---------------------------------------------------------------- 扫描与归属
+def _catalog_version() -> str:
+    """专家 / 智能体表的版本戳；库没连上时返回空串（此时也不会走库）"""
+    try:
+        from .. import store
+        if store.connected():
+            return store.catalog_version()
+    except Exception:
+        pass
+    return ""
+
+
+def _experts() -> list[dict]:
+    """「专家 → 角色」的唯一真相在数据库（expert / agent 两张表）。
+
+    以前这份映射在 core/stages.py 里手抄一份，加了智能体就要两处改，容易漂。
+    现在优先读库，读不到（没初始化 / 未启用 / 单测环境）才回退常量兜底。
+    返回 [{"id", "mode", "label", "icon", "stages": [...]}]，顺序即库里的 sort。
+    """
+    try:
+        from .. import store
+        # 用 connected() 而不是 available()：后者会顺手 init() 建库，
+        # 读一次技能不该拉起一个数据库文件。
+        if store.connected():
+            rows = store.list_experts(with_agents=True)
+            if rows:
+                return [
+                    {
+                        "id": r["id"],
+                        "mode": r["mode"],
+                        "label": r["name"],
+                        "icon": r.get("icon") or "",
+                        "stages": [a["stage"] for a in r.get("agents", [])],
+                    }
+                    for r in rows
+                ]
+    except Exception:
+        pass
+
+    return [
+        {
+            "id": eid,
+            "mode": meta["mode"],
+            "label": meta["label"],
+            "icon": meta["icon"],
+            "stages": list(EXPERT_STAGES.get(eid, ())),
+        }
+        for eid, meta in EXPERT_META.items()
+    ]
+
+
+def _experts_source() -> str:
+    """归属映射这次是从库读的还是回退到常量（自检用）"""
+    try:
+        from .. import store
+        if store.connected() and store.list_experts(with_agents=False):
+            return "db"
+    except Exception:
+        pass
+    return "fallback"
+
+
+def _all_stages(experts: list[dict]) -> list[str]:
+    """所有已知角色（按专家顺序去重）；库里一个都没有时回退 STAGE_META
+
+    全局技能的 stages 取自这里 —— 否则库里新增的角色永远吃不到全局技能。
+    """
+    out: list[str] = []
+    for e in experts:
+        for s in e["stages"]:
+            if s not in out:
+                out.append(s)
+    return out or list(STAGE_META.keys())
+
+
 def _signature(root: Path) -> tuple:
     try:
-        return tuple(sorted((str(p), p.stat().st_mtime) for p in root.rglob("SKILL.md")))
+        files = tuple(sorted((str(p), p.stat().st_mtime) for p in root.rglob("SKILL.md")))
     except OSError:
         return ()
+    # 库里的专家 / 智能体变了也要重算：只改库不改 SKILL.md 时，归属同样会变
+    return (files, _catalog_version())
 
 
-def _load_one(skill_dir: Path, md: Path) -> dict | None:
+def _load_one(skill_dir: Path, md: Path, experts: list[dict],
+              all_stages: list[str]) -> dict | None:
     try:
         text = md.read_text(encoding="utf-8")
     except OSError:
@@ -113,10 +190,12 @@ def _load_one(skill_dir: Path, md: Path) -> dict | None:
     name = str(fm.get("name") or folder).strip()
     desc = str(fm.get("description") or "").strip()
     scope_raw = str(fm.get("scope") or "").strip().lower()
-    experts = [e for e in _as_list(fm.get("experts")) if e in EXPERT_META]
-    unknown_experts = [e for e in _as_list(fm.get("experts")) if e not in EXPERT_META]
-    agents = [a for a in _as_list(fm.get("agents")) if a in STAGE_META]
-    unknown_agents = [a for a in _as_list(fm.get("agents")) if a not in STAGE_META]
+    known_experts = {e["id"] for e in experts}
+    known_stages = set(all_stages)
+    experts_sel = [e for e in _as_list(fm.get("experts")) if e in known_experts]
+    unknown_experts = [e for e in _as_list(fm.get("experts")) if e not in known_experts]
+    agents = [a for a in _as_list(fm.get("agents")) if a in known_stages]
+    unknown_agents = [a for a in _as_list(fm.get("agents")) if a not in known_stages]
 
     issues: list[str] = []
     if not name:
@@ -129,7 +208,7 @@ def _load_one(skill_dir: Path, md: Path) -> dict | None:
         issues.append("未声明归属：加 scope: global 或 scope: expert + experts")
     elif scope_raw not in ("global", "expert"):
         issues.append(f"scope 只能是 global / expert，收到 {scope_raw}")
-    elif scope_raw == "expert" and not experts:
+    elif scope_raw == "expert" and not experts_sel:
         issues.append("scope=expert 但 experts 为空或不是已知专家")
     if unknown_experts:
         issues.append("未知专家：" + "、".join(unknown_experts))
@@ -138,12 +217,12 @@ def _load_one(skill_dir: Path, md: Path) -> dict | None:
 
     scope = scope_raw if scope_raw in ("global", "expert") else ""
 
-    # 最终生效的角色列表
+    # 最终生效的角色列表（顺序跟 all_stages 走，保证展示稳定）
     if scope == "global":
-        stages = list(STAGE_META.keys())
-    elif scope == "expert" and experts:
-        allowed = {s for e in experts for s in stages_of_expert(e)}
-        stages = [s for s in STAGE_META if s in allowed]
+        stages = list(all_stages)
+    elif scope == "expert" and experts_sel:
+        allowed = {s for e in experts if e["id"] in experts_sel for s in e["stages"]}
+        stages = [s for s in all_stages if s in allowed]
         if agents:
             stages = [s for s in stages if s in agents]
     else:
@@ -156,7 +235,7 @@ def _load_one(skill_dir: Path, md: Path) -> dict | None:
         "title": str(fm.get("title") or "").strip(),
         "description": desc,
         "scope": scope or "unassigned",
-        "experts": experts,
+        "experts": experts_sel,
         "agents": agents,
         "stages": stages,
         "enabled": not issues and bool(stages),
@@ -167,7 +246,7 @@ def _load_one(skill_dir: Path, md: Path) -> dict | None:
 
 
 def scan() -> list[dict]:
-    """扫描技能目录（按 SKILL.md 的 mtime 热更新，改完即生效，不用重启）"""
+    """扫描技能目录（SKILL.md 或库里的专家/智能体一变就重算，不用重启）"""
     root = Path(config.SKILLS_DIR)
     if not config.SKILLS_ENABLED or not root.is_dir():
         return []
@@ -177,9 +256,12 @@ def scan() -> list[dict]:
         if _cache["sig"] is not None and _cache["sig"] == sig:
             return list(_cache["items"])
 
+    experts = _experts()
+    all_stages = _all_stages(experts)
+
     items: list[dict] = []
     for md in sorted(root.rglob("SKILL.md")):
-        item = _load_one(md.parent, md)
+        item = _load_one(md.parent, md, experts, all_stages)
         if item:
             items.append(item)
 
@@ -255,15 +337,15 @@ def assignments() -> dict:
         }
 
     experts = []
-    for eid, meta in EXPERT_META.items():
-        bound = [it for it in live if it["scope"] == "expert" and eid in it["experts"]]
+    for e in _experts():
+        bound = [it for it in live if it["scope"] == "expert" and e["id"] in it["experts"]]
         experts.append({
-            "id": eid,
+            "id": e["id"],
             # 前端专家对象按 mode 匹配（库里 expert.id 与 mode 一一对应，两个键都能对上）
-            "mode": meta["mode"],
-            "label": meta["label"],
-            "icon": meta["icon"],
-            "stages": list(stages_of_expert(eid)),
+            "mode": e["mode"],
+            "label": e["label"],
+            "icon": e["icon"],
+            "stages": list(e["stages"]),
             "skills": [brief(it) for it in bound],
         })
 
@@ -281,13 +363,16 @@ def assignments() -> dict:
 def status() -> dict:
     """自检信息，挂到 /api/db/stats 与 /health"""
     items = scan()
+    experts = _experts()
     return {
         "enabled": bool(config.SKILLS_ENABLED),
         "dir": str(config.SKILLS_DIR),
+        # 归属来自库还是常量，排障时一眼能看出用的是哪套
+        "source": _experts_source(),
         "count": len(items),
         "active": len([it for it in items if it["enabled"]]),
         "byStage": {
             s: len([it for it in items if it["enabled"] and s in it["stages"]])
-            for s in STAGE_META
+            for s in _all_stages(experts)
         },
     }

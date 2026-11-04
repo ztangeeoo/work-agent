@@ -150,3 +150,22 @@ def primary_agent_id_by_mode(mode: str) -> str | None:
             (str(mode or ""),),
         ).fetchone()
     return r["id"] if r else None
+
+
+def catalog_version() -> str:
+    """专家 / 智能体表的版本戳（条数 + 最后修改时间）。
+
+    给「派生自这两张表、又需要缓存」的地方用：版本没变就不用重算。
+    改一条 agent 的 name 不会影响归属，但会改 updated_at —— 宁可多算一次，
+    也不要出现「库里改了、页面还是旧的」。
+    """
+    db = init()
+    with lock:
+        r = db.execute(
+            """SELECT
+                 (SELECT COUNT(*) FROM expert) AS ec,
+                 (SELECT COALESCE(MAX(updated_at), 0) FROM expert) AS et,
+                 (SELECT COUNT(*) FROM agent) AS ac,
+                 (SELECT COALESCE(MAX(updated_at), 0) FROM agent) AS at"""
+        ).fetchone()
+    return f"{r['ec']}.{r['et']}.{r['ac']}.{r['at']}"
