@@ -11,7 +11,7 @@ from typing import Optional
 
 MODEL_CFG: dict = {
     "base": "", "key": "", "model": "", "profile": None,
-    "agentMode": "interview", "review": None, "runId": "",
+    "agentMode": "interview", "review": None, "runId": "", "repoId": "",
 }
 
 _poller = None

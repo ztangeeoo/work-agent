@@ -54,6 +54,7 @@ async def api_model_config(request: Request):
     MODEL_CFG["profile"] = p.get("profile") if isinstance(p.get("profile"), dict) else None
     MODEL_CFG["agentMode"] = "review" if p.get("agentMode") == "review" else "interview"
     MODEL_CFG["review"] = p.get("review") if isinstance(p.get("review"), dict) else None
+    MODEL_CFG["repoId"] = str(p.get("repoId") or "").strip()
     rid = p.get("runId")
     if isinstance(rid, str) and rid:
         MODEL_CFG["runId"] = rid

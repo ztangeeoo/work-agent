@@ -82,21 +82,47 @@ def judge_sys_prompt(pr: dict) -> str:
 {VERDICT_JSON_SHAPE}""", "review")
 
 
-def reviewer_chat_sys_prompt(review: dict) -> str:
-    """审核模式下的追问智能体：带着当前 PR 的审核报告回答"""
+def reviewer_chat_sys_prompt(review: dict, repo: dict | None = None) -> str:
+    """审核模式下的追问智能体：带着当前 PR 的审核报告回答，并可调用只读仓库工具"""
+    review = review or {}
     report_md = str(review.get("reportMd") or "")[:8000]
-    return harness.compose(f"""你是「代码审核官」。你刚刚完成了一个 PR 的审核，现在回答用户关于这次审核的追问。
+    repo_name = str(review.get("repo") or "").strip()
+    if not repo_name and repo:
+        repo_name = (str(repo.get("owner") or "") + "/" + str(repo.get("name") or "")).strip("/")
+    number = review.get("number")
+    pr_line = ("#" + str(number) + " " + str(review.get("title") or "")).strip() if number else "（当前没有选中的 PR）"
+    has_verdict = bool(review.get("risk") or review.get("decision"))
+    verdict_line = ((RISK_LABEL.get(normalize_risk(review.get("risk")), '-')
+                     + " ｜ 结论：" + DECISION_LABEL.get(normalize_decision(review.get("decision")), '-'))
+                    if has_verdict else "（这次还没有出结论）")
+
+    tools_doc = """- list_mrs(state, limit)：列出仓库的 PR/MR 清单，state 可取 open / closed / merged / all
+- get_mr_diff(number)：拉某个 PR/MR 的完整 diff
+- list_mr_files(number)：列某个 PR/MR 改了哪些文件
+- read_repo_file(path, ref)：读仓库里某个文件的原文（ref 留空用默认分支）
+
+## 事实优先（重要）
+1. 用户问到具体代码、具体 PR 时，**先调用工具拿到真实 diff / 文件内容再回答**，不要凭印象描述代码。
+2. 工具返回为空或报错时，如实说明「查了什么、返回了什么」，再把可选做法告诉用户；禁止编造。
+3. 一次没查到就换个参数再试（比如 state 改成 all、编号确认一下），但不要把同一个调用重复超过两次。
+""" if repo else """当前没有绑定仓库，你无法自行查询 PR 或代码。只能基于上面的报告回答；
+报告为空时，直接说明你手上没有材料，并请用户贴 diff 或说明想看哪个 PR。
+"""
+
+    return harness.compose(f"""你是「代码审核官」。你正在回答用户关于一次 PR 审核的追问，可以直接调用只读工具查仓库。
 
 ## 当前审核对象
-- 仓库：{review.get('repo') or '-'}
-- PR：#{review.get('number') or '-'} {review.get('title') or ''}
-- 风险：{RISK_LABEL.get(normalize_risk(review.get('risk')), '-')} ｜ 结论：{DECISION_LABEL.get(normalize_decision(review.get('decision')), '-')}
+- 仓库：{repo_name or '-'}
+- PR：{pr_line}
+- 风险：{verdict_line}
 
-## 你的审核报告
-{report_md or '（报告为空）'}
+## 已有的审核报告
+{report_md or '（还没有这份 PR 的审核报告，需要的话可以用工具自己看代码）'}
 
+## 工具（全部只读，只作用于当前仓库）
+{tools_doc}
 ## 回答要求
-1. 只基于报告内容与提到的代码事实回答，不要编造 PR 里不存在的代码。
+1. 只基于报告内容与工具返回的代码事实回答，不要编造 PR 里不存在的代码。
 2. 用户要修复方案时，给出可直接粘贴的代码片段，并标明文件路径与位置。
 3. 用户问「能不能合」时，先给明确结论，再说前置条件。
 4. 用户要求「写一条 PR 评论」时，输出一段可直接粘贴到 PR 的中文评论（Markdown）。

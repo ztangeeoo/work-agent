@@ -39,6 +39,7 @@ const modelCfg = {
   base: '', key: '', model: '', profile: null, runId: '',
   agentMode: 'interview',  // interview | review
   review: null,            // 审核模式下当前 PR 的上下文（追问用）
+  repoId: '',              // 审核模式下当前仓库：审核官据此绑定只读工具
 };
 
 /* ---------- 智能体阶段中心 ----------
@@ -724,6 +725,7 @@ const server = http.createServer((req, res) => {
         modelCfg.profile = p.profile && typeof p.profile === 'object' ? p.profile : null;
         modelCfg.agentMode = p.agentMode === 'review' ? 'review' : 'interview';
         modelCfg.review = p.review && typeof p.review === 'object' ? p.review : null;
+        modelCfg.repoId = typeof p.repoId === 'string' ? p.repoId : '';
         if (typeof p.runId === 'string' && p.runId) {
           modelCfg.runId = p.runId;
           stageBucket(p.runId, true); // 新一轮，保证桶存在

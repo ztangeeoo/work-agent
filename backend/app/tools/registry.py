@@ -9,6 +9,7 @@ from agentscope.permission import PermissionBehavior, PermissionDecision
 from agentscope.tool import FunctionTool, Toolkit
 
 from .question_bank import query_question_bank
+from .repo import repo_tools
 
 
 def bank_tool() -> FunctionTool:
@@ -22,8 +23,15 @@ def bank_tool() -> FunctionTool:
     )
 
 
-def build_toolkit(with_tools: bool = True) -> Toolkit:
-    """按需装配工具箱；不开工具时给空 Toolkit（Agent 依旧可正常对话）"""
+def build_toolkit(with_tools: bool = True, repo: dict | None = None) -> Toolkit:
+    """按需装配工具箱。
+
+    - with_tools=False：空工具箱，Agent 依旧可正常对话；
+    - 传了 repo：审核官场景，装配只读仓库工具（列 MR / 拉 diff / 看文件）；
+    - 没传 repo：面试场景，装配内置题库工具。
+    """
     if not with_tools:
         return Toolkit()
+    if repo:
+        return Toolkit(tools=repo_tools(repo))
     return Toolkit(tools=[bank_tool()])

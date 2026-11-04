@@ -405,10 +405,12 @@ export default function ChatApp() {
         body: JSON.stringify({
           base: cfg.base, key: cfg.key, model: cfg.model, profile, runId: rid,
           agentMode: mode, review: reviewCtx,
+          /* 当前仓库：审核官靠它绑定只读工具（列 MR / 拉 diff / 读文件） */
+          repoId: repoId || '',
         }),
       });
     } catch (_) {}
-  }, [cfg, mode, profile, selectedReview]);
+  }, [cfg, mode, profile, selectedReview, repoId]);
 
   const send = useCallback(async (text: string) => {
     const t = (text || '').trim();

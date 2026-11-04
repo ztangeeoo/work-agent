@@ -15,19 +15,22 @@ from agentscope.types import ReplyFinishedReason
 from ..tools.registry import build_toolkit
 
 
-def make_agent(name: str, sys_prompt: str, model: OpenAIChatModel, with_tools: bool) -> Agent:
+def make_agent(name: str, sys_prompt: str, model: OpenAIChatModel, with_tools: bool,
+               repo: dict | None = None) -> Agent:
     """构造一个全空状态的 Agent（无状态服务，每次请求新建）。
 
     注意 AgentScope 2.0 的语义：`reply_stream(inputs)` 会把 inputs **追加**进
     `state.context`，所以历史对话只应该通过 inputs 传一次。之前这里既预置
     `state.context=history` 又传 `inputs=history`，导致每轮上下文翻倍、最后一条
     用户消息出现三次（既费 token 也干扰模型判断）。现在统一走 inputs。
+
+    repo：审核官场景传当前仓库，工具集会被替换成只读仓库工具。
     """
     return Agent(
         name=name,
         system_prompt=sys_prompt,
         model=model,
-        toolkit=build_toolkit(with_tools),
+        toolkit=build_toolkit(with_tools, repo=repo),
     )
 
 

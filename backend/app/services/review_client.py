@@ -326,15 +326,31 @@ def _github_headers(token: str) -> dict:
     return h
 
 
-async def list_open_prs(repo: dict, limit: int = 20, max_age_days: int = 45) -> list:
-    """列出开放的 PR / MR（按更新时间倒序）"""
+# 统一状态词 -> 各平台实际参数（GitLab 叫 opened，Gitee/GitHub 叫 open）
+_STATE_MAP = {
+    "gitlab": {"open": "opened", "closed": "closed", "merged": "merged", "all": "all"},
+    "gitee": {"open": "open", "closed": "closed", "merged": "merged", "all": "all"},
+    "github": {"open": "open", "closed": "closed", "merged": "closed", "all": "all"},
+}
+
+
+async def list_prs(repo: dict, state: str = "open", limit: int = 20,
+                   max_age_days: int = 0) -> list:
+    """列出 PR / MR（按更新时间倒序）。
+
+    state: open / closed / merged / all —— 审核官追问时经常需要看已合并的 MR，
+    所以这里比 list_open_prs 多一个状态维度。max_age_days=0 表示不限时间。
+    """
     repo = await ensure_provider(repo)
     token = repo.get("token") or ""
+    provider = repo.get("provider")
+    st = _STATE_MAP.get(provider, _STATE_MAP["github"]).get(str(state or "open"), "open")
     out = []
 
-    if repo.get("provider") == "gitlab":
+    if provider == "gitlab":
         url = (_repo_api_base(repo) + "/projects/" + _gitlab_project_id(repo)
-               + "/merge_requests?state=opened&order_by=updated_at&sort=desc&per_page=" + str(limit))
+               + "/merge_requests?state=" + st
+               + "&order_by=updated_at&sort=desc&per_page=" + str(limit))
         arr = await api_json(url, token=token, provider="gitlab") or []
         for mr in arr:
             out.append({
@@ -349,9 +365,9 @@ async def list_open_prs(repo: dict, limit: int = 20, max_age_days: int = 45) -> 
                 "draft": bool(mr.get("draft") or mr.get("work_in_progress")),
                 "updatedAt": _parse_ts(mr.get("updated_at")),
             })
-    elif repo.get("provider") == "gitee":
+    elif provider == "gitee":
         url = (_repo_api_base(repo) + "/repos/" + repo["owner"] + "/" + repo["name"]
-               + "/pulls?state=open&sort=updated&direction=desc&per_page=" + str(limit))
+               + "/pulls?state=" + st + "&sort=updated&direction=desc&per_page=" + str(limit))
         arr = await api_json(url, token=token, provider="gitee") or []
         if isinstance(arr, dict):   # 出错时可能是 {"message": ...}
             arr = []
@@ -370,7 +386,7 @@ async def list_open_prs(repo: dict, limit: int = 20, max_age_days: int = 45) -> 
             })
     else:
         url = (_repo_api_base(repo) + "/repos/" + repo["owner"] + "/" + repo["name"]
-               + "/pulls?state=open&sort=updated&direction=desc&per_page=" + str(limit))
+               + "/pulls?state=" + st + "&sort=updated&direction=desc&per_page=" + str(limit))
         arr = await api_json(url, token=token, headers={"Accept": "application/vnd.github+json"}) or []
         for pr in arr:
             out.append({
@@ -386,8 +402,15 @@ async def list_open_prs(repo: dict, limit: int = 20, max_age_days: int = 45) -> 
                 "updatedAt": _parse_ts(pr.get("updated_at")),
             })
 
-    cutoff = _now_ms() - max_age_days * 24 * 3600 * 1000
-    return [p for p in out if p["number"] and (p["updatedAt"] or 0) >= cutoff]
+    if max_age_days:
+        cutoff = _now_ms() - max_age_days * 24 * 3600 * 1000
+        out = [p for p in out if (p["updatedAt"] or 0) >= cutoff]
+    return [p for p in out if p["number"]]
+
+
+async def list_open_prs(repo: dict, limit: int = 20, max_age_days: int = 45) -> list:
+    """列出开放的 PR / MR（轮询器用）"""
+    return await list_prs(repo, "open", limit=limit, max_age_days=max_age_days)
 
 
 def _parse_ts(s) -> int:
@@ -466,6 +489,129 @@ async def fetch_pr_diff(repo: dict, number) -> str:
         raise RuntimeError(f"拉取 PR diff 失败（HTTP {res.status_code}）："
                            + (_api_message(res.text) or res.text[:160]))
     return truncate_diff(res.text, None)
+
+
+async def fetch_pr_files(repo: dict, number) -> list:
+    """列出某个 PR 的变更文件（路径 + 状态 + 该文件的 patch）"""
+    repo = await ensure_provider(repo)
+    token = repo.get("token") or ""
+    provider = repo.get("provider")
+    base = _repo_api_base(repo)
+
+    if provider == "gitlab":
+        url = (base + "/projects/" + _gitlab_project_id(repo)
+               + "/merge_requests/" + str(number) + "/changes")
+        j = await api_json(url, token=token, provider="gitlab") or {}
+        out = []
+        for c in (j.get("changes") or []):
+            status = "modified"
+            if c.get("new_file"):
+                status = "added"
+            elif c.get("deleted_file"):
+                status = "deleted"
+            elif c.get("renamed_file"):
+                status = "renamed"
+            out.append({
+                "path": c.get("new_path") or c.get("old_path") or "",
+                "oldPath": c.get("old_path") or "",
+                "status": status,
+                "diff": c.get("diff") or "",
+            })
+        return out
+
+    if provider == "gitee":
+        url = (base + "/repos/" + repo["owner"] + "/" + repo["name"]
+               + "/pulls/" + str(number) + "/files")
+        j = await api_json(url, token=token, provider="gitee")
+        files = j if isinstance(j, list) else []
+        return [{
+            "path": f.get("filename") or "",
+            "oldPath": f.get("previous_filename") or "",
+            "status": f.get("status") or "modified",
+            "diff": f.get("patch") or "",
+        } for f in files]
+
+    url = (base + "/repos/" + repo["owner"] + "/" + repo["name"]
+           + "/pulls/" + str(number) + "/files")
+    j = await api_json(url, token=token, headers={"Accept": "application/vnd.github+json"}) or []
+    files = j if isinstance(j, list) else []
+    return [{
+        "path": f.get("filename") or "",
+        "oldPath": f.get("previous_filename") or "",
+        "status": f.get("status") or "modified",
+        "diff": f.get("patch") or "",
+    } for f in files]
+
+
+_BRANCH_CACHE: dict[str, str] = {}
+
+
+async def default_branch(repo: dict) -> str:
+    """取仓库默认分支。
+
+    GitLab 的 /repository/files/:path/raw 不带 ref 会直接 400，所以读文件前
+    必须先知道默认分支；这里按仓库缓存一次，避免每读一个文件都查一遍。
+    """
+    key = (str(repo.get("host") or "") + "/" + str(repo.get("owner") or "")
+           + "/" + str(repo.get("name") or ""))
+    if key in _BRANCH_CACHE:
+        return _BRANCH_CACHE[key]
+    provider = repo.get("provider")
+    token = repo.get("token") or ""
+    base = _repo_api_base(repo)
+    branch = ""
+    try:
+        if provider == "gitlab":
+            j = await api_json(base + "/projects/" + _gitlab_project_id(repo),
+                               token=token, provider="gitlab") or {}
+        else:
+            j = await api_json(base + "/repos/" + repo["owner"] + "/" + repo["name"],
+                               token=token, provider=provider) or {}
+        if isinstance(j, dict):
+            branch = str(j.get("default_branch") or "")
+    except Exception:
+        branch = ""
+    branch = branch or "main"
+    _BRANCH_CACHE[key] = branch
+    return branch
+
+
+async def fetch_file_text(repo: dict, path: str, ref: str = "") -> str:
+    """读取仓库里某个文件的原始内容（ref 留空则用默认分支）"""
+    repo = await ensure_provider(repo)
+    token = repo.get("token") or ""
+    provider = repo.get("provider")
+    base = _repo_api_base(repo)
+    p = str(path or "").strip().lstrip("/")
+    if not p:
+        raise ValueError("缺少文件路径")
+    ref = str(ref or "").strip() or await default_branch(repo)
+
+    if provider == "gitlab":
+        url = (base + "/projects/" + _gitlab_project_id(repo)
+               + "/repository/files/" + quote(p, safe="") + "/raw")
+        if ref:
+            url += "?ref=" + quote(str(ref), safe="")
+        headers = {**auth_header("gitlab", token), "Accept": "text/plain"}
+    elif provider == "gitee":
+        url = (base + "/repos/" + repo["owner"] + "/" + repo["name"]
+               + "/raw/" + quote(p, safe="/"))
+        if ref:
+            url += "?ref=" + quote(str(ref), safe="")
+        headers = {**auth_header("gitee", token), "Accept": "text/plain"}
+    else:
+        url = (base + "/repos/" + repo["owner"] + "/" + repo["name"]
+               + "/contents/" + quote(p, safe="/"))
+        if ref:
+            url += "?ref=" + quote(str(ref), safe="")
+        headers = {**_github_headers(token), "Accept": "application/vnd.github.raw"}
+
+    res = await request(url, headers=headers, timeout=45.0)
+    if res.status_code < 200 or res.status_code >= 300:
+        ct = res.headers.get("content-type") or ""
+        raise RuntimeError("读取文件失败（HTTP " + str(res.status_code) + "）："
+                           + (_api_message(res.text, ct) or "路径不存在、分支写错或没有权限"))
+    return res.text or ""
 
 
 def diff_stats(diff: str) -> dict:

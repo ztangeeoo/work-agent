@@ -31,19 +31,52 @@ from .router import INTENT_SCORE, route_intent
 from .runtime import StatusFlusher, drive_agent, make_agent
 
 
+def resolve_review_repo(payload: dict, review: dict) -> dict | None:
+    """定位这次追问该用哪个仓库（带 token）。
+
+    优先级：payload.repo_id（前端当前选中的仓库）→ 报告里的 owner/name →
+    只有一个仓库时兜底。找不到就返回 None，审核官会退化成「只能读报告」模式。
+    """
+    from .. import store
+
+    rid = str(payload.get("repo_id") or "").strip()
+    if rid:
+        try:
+            repo = store.get_repo_by_id(rid, with_token=True)
+            if repo:
+                return repo
+        except Exception:
+            pass
+
+    full = str((review or {}).get("repo") or "").strip().strip("/")
+    try:
+        repos = store.list_all_repos()
+    except Exception:
+        return None
+    if full and "/" in full:
+        for r in repos:
+            if (str(r.get("owner") or "") + "/" + str(r.get("name") or "")) == full:
+                return r
+    if len(repos) == 1:
+        return repos[0]
+    return None
+
+
 async def stream_review_advisor(payload: dict, model, cid: str, created: int, model_name: str):
-    """审核模式下的追问：带着当前 PR 的审核报告回答（单智能体，无流水线）"""
+    """审核模式下的追问：带着当前 PR 的审核报告回答，并可调用只读仓库工具"""
     from ..prompts.review import reviewer_chat_sys_prompt
 
     history = payload.get("_history") or []
     last_user = payload.get("_last_user") or ""
     review_ctx = payload.get("review") or {}
+    repo = resolve_review_repo(payload, review_ctx)
 
     yield sse_stage("advisor", "running")
     t_adv = time.time()
     status = StatusFlusher()
     status.set("🛡️ 审核官正在整理答复…\n\n")
-    advisor = make_agent("代码审核官", reviewer_chat_sys_prompt(review_ctx), model, False)
+    advisor = make_agent("代码审核官", reviewer_chat_sys_prompt(review_ctx, repo),
+                         model, bool(repo), repo=repo)
     ask = last_user or "请总结这次审核的要点"
     produced = False
     # 历史里的最后一条就是用户这次的问题，再追加一份同样的 ask 会让模型

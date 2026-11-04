@@ -41,6 +41,8 @@ function createAgentScopeAdapter({ agentBase, getCfg, onStage }) {
             /* review 模式：跳过面试三智能体，走「代码审核官」追问 */
             agent_mode: cfg.agentMode === 'review' ? 'review' : 'interview',
             review: cfg.agentMode === 'review' ? (cfg.review || null) : null,
+            /* 当前仓库 id：Python 侧据此绑定只读仓库工具（列 MR / 拉 diff / 读文件） */
+            repo_id: cfg.agentMode === 'review' ? (cfg.repoId || '') : '',
             temperature: 0.7,
             stream: true,
           }),
