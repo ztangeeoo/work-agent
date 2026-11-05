@@ -15,9 +15,15 @@ import asyncio
 import time
 
 from .. import store
+from ..utils.render import render_comment_body
 from . import review_client as rv
 
 TICK_SEC = 20  # 后台巡检间隔：谁到期谁跑
+
+# 整轮审核（侦察官 → 审核官 → 裁决官）的硬上限。
+# 单次模型调用已有 180s 超时，但三环节串起来 + 重试仍可能把一次审核拖到十几分钟；
+# 没有这个上限时，前端会永远停在「审核中」（事件的终态永远等不到）。
+REVIEW_TIMEOUT_SEC = 600
 
 
 def _now_ms() -> int:
@@ -33,6 +39,34 @@ class ReviewPoller:
         self._log = log
         self._inflight: dict[str, asyncio.Task] = {}
         self._loop_task: asyncio.Task | None = None
+        # 运行时状态（只存在进程内存，不进库）：repo_id -> {polling, phase, reviewingPr, startedAt}
+        # 页面靠它显示「这一刻到底有没有在轮询」，避免只能看到上一次轮询的时间
+        self._runtime: dict[str, dict] = {}
+
+    # ---------------------------------------------------------------- 运行时状态
+
+    def _rt(self, repo_id: str) -> dict:
+        return self._runtime.setdefault(str(repo_id), {
+            "polling": False, "phase": "", "reviewingPr": None, "startedAt": 0,
+        })
+
+    def mark(self, repo_id: str, **kw):
+        self._rt(repo_id).update(kw)
+
+    def runtime_status(self, repo_id: str | None = None):
+        """单个仓库或全部仓库的轮询运行时状态"""
+        if repo_id is None:
+            return {k: dict(v) for k, v in self._runtime.items()}
+        return dict(self._rt(str(repo_id)))
+
+    @property
+    def scheduler_running(self) -> bool:
+        """后台调度循环是否活着（进程起来了但循环挂了 = 不会自动轮询）"""
+        return bool(self._loop_task and not self._loop_task.done())
+
+    @property
+    def tick_sec(self) -> int:
+        return TICK_SEC
 
     # ---------------------------------------------------------------- 工具
 
@@ -58,13 +92,8 @@ class ReviewPoller:
 
     @staticmethod
     def _build_comment_body(review: dict) -> str:
-        return "\n".join([
-            review.get("reportMd") or "",
-            "",
-            "---",
-            "🤖 由 AI 代码审核官自动生成（侦察官 → 审核官 → 裁决官）。",
-            "请结合业务上下文判断，机器意见仅供参考。",
-        ])
+        """回帖正文：@ 开发人 + 结论横幅 + 报告（开头含「本次提交做了什么」）"""
+        return render_comment_body(review)
 
     # ---------------------------------------------------------------- 审核单个 PR
 
@@ -139,6 +168,7 @@ class ReviewPoller:
             return {"skipped": "仓库已停用"}
 
         self.emit({"type": "poll-start", "repoId": repo["id"]})
+        self.mark(repo["id"], polling=True, phase="listing", reviewingPr=None, startedAt=_now_ms())
         try:
             prs = await rv.list_open_prs(repo, limit=20)
             for pr in prs:
@@ -167,11 +197,19 @@ class ReviewPoller:
             pending = [p for p in prs if not p.get("draft") and not store.find_review(repo["id"], p["number"], p.get("headSha") or "")]
             for pr in pending[:rv.MAX_REVIEWS_PER_POLL]:
                 try:
-                    await self.review_one(repo, pr, cfg)
+                    self.mark(repo["id"], phase="reviewing", reviewingPr=pr["number"])
+                    await asyncio.wait_for(
+                        self.review_one(repo, pr, cfg), timeout=REVIEW_TIMEOUT_SEC)
                     reviewed += 1
+                except asyncio.TimeoutError:
+                    msg = "审核超时：超过 %d 分钟没有结果，模型接口可能没响应" % (REVIEW_TIMEOUT_SEC // 60)
+                    errors.append(f"#{pr['number']} {msg}")
+                    self.emit({"type": "review-error", "repoId": repo["id"], "prNumber": pr["number"], "error": msg})
                 except Exception as e:
                     errors.append(f"#{pr['number']} {e}")
                     self.emit({"type": "review-error", "repoId": repo["id"], "prNumber": pr["number"], "error": str(e)})
+                finally:
+                    self.mark(repo["id"], phase="listing", reviewingPr=None)
             if len(pending) > reviewed:
                 self.log_line(f"还有 {len(pending) - reviewed} 个 PR 待下轮审核")
 
@@ -192,9 +230,15 @@ class ReviewPoller:
         finally:
             if self._inflight.get(key) is task:
                 self._inflight.pop(key, None)
+            self.mark(key, polling=False, phase="", reviewingPr=None, startedAt=0)
 
     async def review_pr(self, repo_id: str, pr_number) -> dict:
-        """立即审核某个已知 PR（不等待下一轮）"""
+        """立即审核某个已知 PR（不等待下一轮）
+
+        注意：这里必须发 review-error。前端收到 review-start 后就把界面切成「审核中」，
+        只有 review-done / review-error 才会切回来；手动审核以前直接把异常抛给 HTTP 路由，
+        一旦请求被浏览器中断（刷新、切页、超时），界面就永远卡在「审核中」。
+        """
         repo = store.get_repo_by_id(str(repo_id), with_token=True)
         if not repo:
             raise RuntimeError("仓库不存在")
@@ -202,7 +246,19 @@ class ReviewPoller:
         if not pr:
             raise RuntimeError("PR 不存在，请先轮询一次")
         cfg = self._require_cfg()
-        return await self.review_one(repo, pr, cfg)
+        self.mark(repo["id"], polling=True, phase="reviewing", reviewingPr=pr["number"], startedAt=_now_ms())
+        try:
+            return await asyncio.wait_for(
+                self.review_one(repo, pr, cfg), timeout=REVIEW_TIMEOUT_SEC)
+        except asyncio.TimeoutError:
+            msg = "审核超时：超过 %d 分钟没有结果，模型接口可能没响应（可先在齿轮里点「测试连接」）" % (REVIEW_TIMEOUT_SEC // 60)
+            self.emit({"type": "review-error", "repoId": repo["id"], "prNumber": pr["number"], "error": msg})
+            raise RuntimeError(msg)
+        except Exception as e:
+            self.emit({"type": "review-error", "repoId": repo["id"], "prNumber": pr["number"], "error": str(e)})
+            raise
+        finally:
+            self.mark(repo["id"], polling=False, phase="", reviewingPr=None, startedAt=0)
 
     # ---------------------------------------------------------------- 后台调度
 

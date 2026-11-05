@@ -23,8 +23,11 @@ SEVERITY_META = {
 DECISION_LABEL = {
     "approve": "可以合入",
     "comment": "可合入，建议先改",
-    "request_changes": "打回修改",
+    "request_changes": "不建议合并",
 }
+
+# 出现这些严重程度就一票否决：不允许「可合入」这种口径往下走
+BLOCKING_SEVERITIES = ("blocker", "major")
 
 RISK_LABEL = {"high": "高", "medium": "中", "low": "低"}
 
@@ -60,3 +63,35 @@ def normalize_severity(v: Any) -> str:
     if s in ("low", "建议", "minor"):
         return "minor"
     return "nit"
+
+
+def severity_counts(issues) -> dict:
+    """按严重程度计数（容忍 issues 里缺字段/脏值）"""
+    counts = {k: 0 for k in SEVERITY_META}
+    for it in (issues or []):
+        if isinstance(it, dict):
+            counts[normalize_severity(it.get("severity"))] += 1
+    return counts
+
+
+def blocking_count(issues) -> int:
+    counts = severity_counts(issues)
+    return sum(counts[k] for k in BLOCKING_SEVERITIES)
+
+
+def enforce_decision(risk: Any, decision: Any, issues) -> tuple[str, str]:
+    """用问题清单兜底裁决结论。
+
+    为什么不让模型单独说了算：模型经常一边列出 2 条 major，一边给
+    「可合入，建议先改」，回帖到 PR 上就成了「可以合」。这里按硬规则改：
+    只要出现 1 条 blocker 或 major，就返回 request_changes（不建议合并）。
+    """
+    counts = severity_counts(issues)
+    r = normalize_risk(risk)
+    d = normalize_decision(decision)
+    if counts["blocker"]:
+        return "high", "request_changes"
+    if counts["major"]:
+        # 重要问题多时一并判高风险；1-2 条至少给 medium
+        return ("high" if counts["major"] >= 3 else "medium"), "request_changes"
+    return r, d

@@ -4,21 +4,21 @@ import { AGENTS } from './data/tracks';
 import { buildGeneratePrompt } from './lib/prompt';
 import { esc } from './lib/markdown';
 import {
-  LS_CFG, LS_CONVOS, fmtTime, genId, loadCfg, loadConvos,
-  persistConvos, saveCfg, snapshotProfile, titleFromMessages,
+  LS_CONVOS, blankProfile, fmtTime, genId, loadConvos,
+  persistConvos, snapshotProfile, titleFromMessages,
 } from './lib/storage';
 import { checkHealth } from './lib/health';
 import { fetchSkills } from './lib/skills';
 import { applyTheme, loadTheme, nextTheme, saveTheme, type Theme } from './lib/theme';
-import { deleteRemoteConvo, fetchExperts, fetchRemoteConvos, flushNow, queueSaveConvo } from './lib/remote';
+import { clearRemoteMessages, deleteRemoteConvo, fetchExperts, fetchRemoteConvos, flushNow, queueSaveConvo } from './lib/remote';
 import { useAgentStages } from './lib/stages';
 import { newProfile } from './lib/storage';
 import {
-  fetchPRs, fetchRepos, fetchReviews, pollRepo, postReviewToPR,
-  reviewPR as requestReview, sortPRs, useReviewEvents,
+  fetchPRs, fetchPollSnapshot, fetchRepos, fetchReviews, pollRepo, postReviewToPR,
+  reviewPR as requestReview, setRepoPolling, sortPRs, useReviewEvents,
 } from './lib/review';
 import type {
-  AgentMode, ChatMessage, Convo, ExpertDef, ModelCfg, PRItem, Profile, Repo, ReviewItem,
+  AgentMode, ChatMessage, Convo, ExpertDef, ModelCfg, PRItem, PollScheduler, Profile, Repo, ReviewItem,
   SkillsPayload,
 } from './types';
 import ConvoSidebar from './components/ConvoSidebar';
@@ -26,6 +26,7 @@ import ExpertPicker from './components/ExpertPicker';
 import ChatPanel from './components/ChatPanel';
 import AgentTrace from './components/AgentTrace';
 import ConfigModal from './components/ConfigModal';
+import ConfirmModal from './components/ConfirmModal';
 import InterviewSetup from './components/InterviewSetup';
 import RepoSetup from './components/RepoSetup';
 import ReviewStatus from './components/ReviewStatus';
@@ -37,11 +38,11 @@ import ReviewWorkbench from './components/ReviewWorkbench';
  * 服务端把这三层都落在 SQLite 里；前端只用 agentId 表达绑定，mode 由所属专家派生。
  */
 export default function ChatApp() {
-  /* ---------- 模型配置 ---------- */
-  const [cfg, setCfg] = useState<ModelCfg>(() => {
-    const c = loadCfg();
-    return { base: c.base || '', key: c.key || '', model: c.model || '' };
-  });
+  /* ---------- 模型配置（全局） ----------
+   * base / key / model 是全局唯一一份，存在服务端（setting 表 + Node 内存）。
+   * 页面本身不保存、也不回传配置：只有「模型配置」弹框保存时才写一次，
+   * 否则某个旧标签页打开就会把全局配置改坏（401 的来源）。 */
+  const [cfg, setCfg] = useState<ModelCfg>({ base: '', key: '', model: '' });
   const [cfgOpen, setCfgOpen] = useState(false);
 
   /* ---------- 主题（浅色 / 深色）---------- */
@@ -53,10 +54,33 @@ export default function ChatApp() {
   }, [theme]);
   const toggleTheme = useCallback(() => setTheme(t => nextTheme(t)), []);
 
+  /* ---------- 全局模型配置：启动时从服务端读一次 ----------
+   * 只读不写：页面只是「显示器」，配置的唯一写入口是齿轮弹框的保存。
+   * 换浏览器 / 清了缓存都能拿回服务端那份，不需要在本地另存一份。 */
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/model-config');
+        const j = await res.json().catch(() => ({}));
+        const c = j?.cfg || {};
+        if (!alive || !c.base || !c.model) return;
+        setCfg({ base: String(c.base), key: String(c.key || ''), model: String(c.model) });
+      } catch (_) { /* 本地服务未启动：用户手动配一次即可 */ }
+    })();
+    return () => { alive = false; };
+  }, []);
+
   /* ---------- 面试配置 ---------- */
   const [profile, setProfile] = useState<Profile>(newProfile);
   /* 面试配置走弹框：点输入框上方的「⚙️ 面试配置」打开，生成后自动关闭 */
   const [setupOpen, setSetupOpen] = useState(false);
+  /**
+   * 新建任务时用的空白草稿（从专家中心进入）。
+   * 与 profile（当前会话已生效的画像）分开存：填到一半取消不会污染当前会话，
+   * 确认后才写回 profile 并带进新任务。
+   */
+  const [setupDraft, setSetupDraft] = useState<Profile | null>(null);
   const [genErr, setGenErr] = useState('');
 
   /* ---------- 专家与智能体（以服务端 SQLite 为准，内置常量兜底） ---------- */
@@ -82,6 +106,11 @@ export default function ChatApp() {
   const [repoOpen, setRepoOpen] = useState(false);
   const [repoEditing, setRepoEditing] = useState<Repo | null>(null);
   const [repoErr, setRepoErr] = useState('');
+  /** 后台轮询调度的存活状态（进程起来 ≠ 调度循环在跑） */
+  const [scheduler, setScheduler] = useState<PollScheduler>({ running: false, tickSec: 0 });
+  const [pollToggleBusy, setPollToggleBusy] = useState(false);
+  /** 「清空对话」的二次确认弹框：清空不可撤销，多一步总比误删强 */
+  const [clearAsk, setClearAsk] = useState(false);
 
   /* ---------- 视图：对话 / 专家选择 ---------- */
   const [view, setView] = useState<'chat' | 'experts'>('chat');
@@ -164,6 +193,13 @@ export default function ChatApp() {
      这里记住「新建之前就存在的消息 id」，在出现真正的新消息之前一律不落到新会话。 */
   const staleMsgIdsRef = useRef<Set<string>>(new Set());
   const freshConvoRef = useRef(false);
+  /**
+   * 已点「清空对话」作废掉的消息 id。
+   * CopilotKit 的 messages 来自 agent 内部状态，某些时序下（agent 重连、thread 恢复）
+   * 会把刚清掉的历史回填回来，导致「点了清空、屏幕没变」。
+   * 这里在清空时记下当时的 id，渲染与落盘都过滤掉它们 —— 不依赖 agent 是否配合。
+   */
+  const clearedMsgIdsRef = useRef<Set<string>>(new Set());
 
   /* 初始恢复：直接恢复当前会话（左边列表保持不变，不按智能体拆会话） */
   const restoredRef = useRef(false);
@@ -302,12 +338,35 @@ export default function ChatApp() {
   /* ---------- 代码审核：仓库 / PR / 审核报告 ---------- */
   const loadRepoList = useCallback(async () => {
     try {
-      const list = await fetchRepos();
+      const snap = await fetchPollSnapshot();
+      setScheduler(snap.scheduler);
+      const list = snap.repos;
       setRepos(list);
       setRepoId(prev => (prev && list.some(r => r.id === prev) ? prev : (list[0]?.id || '')));
     } catch (e: any) {
       setRepoErr(e.message || String(e));
     }
+  }, []);
+
+  /** 只刷新「轮询状态」：左侧列表的徽标与头部的倒计时都靠它保活 */
+  const syncPoll = useCallback(async () => {
+    try {
+      const snap = await fetchPollSnapshot();
+      setScheduler(prev => (
+        prev.running === snap.scheduler.running && prev.tickSec === snap.scheduler.tickSec ? prev : snap.scheduler
+      ));
+      /* 只有轮询状态真的变了才替换数组：4s 一次的空刷新不该让整个对话树重渲染 */
+      setRepos(prev => {
+        const same = prev.length === snap.repos.length && snap.repos.every((r, i) => {
+          const p = prev[i];
+          return !!p && p.id === r.id && p.enabled === r.enabled && p.polling === r.polling
+            && p.phase === r.phase && p.reviewingPr === r.reviewingPr
+            && p.lastPollAt === r.lastPollAt && p.lastError === r.lastError
+            && p.openPrs === r.openPrs && p.nextPollAt === r.nextPollAt && p.intervalSec === r.intervalSec;
+        });
+        return same ? prev : snap.repos;
+      });
+    } catch (_) { /* 服务不可用时保持上一次状态，不要清空，否则徽标会闪 */ }
   }, []);
 
   const loadPRData = useCallback(async (id: string) => {
@@ -344,8 +403,28 @@ export default function ChatApp() {
     loadPRData(repoId);
   }, [mode, repoId, loadPRData]);
 
+  /* 轮询状态保活：只要还有审核会话（或正停在审核界面），就每 4s 拉一次快照。
+   * 后端的调度是每 20s 巡检一次到期仓库，4s 的轮询足以让「轮询中 / 下一轮」跟得上，
+   * 也不会给本地服务增加负担。 */
+  const reviewConvoCount = useMemo(
+    () => convos.list.filter(c => (c.mode ?? ((c.messages || []).length ? 'interview' : null)) === 'review').length,
+    [convos.list],
+  );
+
+  useEffect(() => {
+    if (mode !== 'review' && reviewConvoCount === 0) return;
+    let alive = true;
+    const tick = () => { if (alive) void syncPoll(); };
+    tick();
+    const id = window.setInterval(tick, 4000);
+    return () => { alive = false; window.clearInterval(id); };
+  }, [mode, reviewConvoCount, syncPoll]);
+
   /* 轮询 / 审核进度：后端推送事件，前端即时更新 */
-  useReviewEvents(mode === 'review', (ev) => {
+  useReviewEvents(true, (ev) => {
+    /* 先刷新状态快照：事件是「某一刻开始/结束」，下一轮倒计时与指示灯都要跟着变 */
+    if (ev.type !== 'review-posted') void syncPoll();
+    /* 别的仓库的事件只用来更新左侧列表徽标，不打断当前界面的推进 */
     if (repoId && ev.repoId && ev.repoId !== repoId) return;
     if (ev.type === 'poll-start') setPolling(true);
     else if (ev.type === 'poll-done') { setPolling(false); loadPRData(repoId); }
@@ -386,14 +465,26 @@ export default function ChatApp() {
     if (!repoId) return;
     setRunningPr(n);
     setSelectedPr(n);
+    /* 后端整轮审核上限 600s（REVIEW_TIMEOUT_SEC），这里多留 30s 兜底：
+     * 中间层把连接吞掉时，按钮也不能永远停在「审核中」。 */
+    const ac = new AbortController();
+    const timer = window.setTimeout(() => ac.abort(), 630000);
     try {
-      const r = await requestReview(repoId, n);
+      const r = await requestReview(repoId, n, ac.signal);
       setReviews(prev => [r, ...prev.filter(x => x.id !== r.id)]);
       await loadPRData(repoId);
       toast('✅ PR #' + n + ' 审核完成');
     } catch (e: any) {
-      toast('❌ 审核失败：' + (e.message || e));
+      if (e?.name === 'AbortError') {
+        toast('⏱ 审核超时，已停止等待（先在齿轮里点「测试连接」确认模型能用）');
+      } else {
+        toast('❌ 审核失败：' + (e.message || e));
+      }
+      /* review-start 把全局指示也点亮了；失败时这里兜底关掉，
+       * 不依赖 review-error 事件是否送达（断线重连、切换仓库都可能漏） */
+      setPolling(false);
     } finally {
+      window.clearTimeout(timer);
       setRunningPr(null);
     }
   }, [repoId, loadPRData, toast]);
@@ -422,7 +513,8 @@ export default function ChatApp() {
     asChatMessages(list).filter(m => m.content.trim().length > 0);
 
   const saveCurrent = useCallback(() => {
-    let snapshot = toSavable(messages);
+    let snapshot = toSavable(messages)
+      .filter(m => !clearedMsgIdsRef.current.has(String(m.id)));   // 已清空的不再写回
     /* 新会话刚建好时，过滤掉「上一场残留下来的」旧消息 */
     if (freshConvoRef.current) {
       const stale = staleMsgIdsRef.current;
@@ -472,7 +564,10 @@ export default function ChatApp() {
     [reviews, selectedPr],
   );
 
-  const syncModelConfig = useCallback(async (rid: string) => {
+  /* 每一轮只同步「这一轮对话的上下文」，不碰全局模型配置：
+   * 画像、当前 PR、仓库 id、runId 都是一次性的，会话不该把自己的东西
+   * 写进全局配置（否则切个会话 / 开个旧标签页就会串味，甚至改坏 key）。 */
+  const syncRunContext = useCallback(async (rid: string) => {
     const reviewCtx = mode === 'review' && selectedReview
       ? {
           repo: (selectedReview.owner ? selectedReview.owner + '/' : '') + selectedReview.name,
@@ -484,17 +579,17 @@ export default function ChatApp() {
         }
       : null;
     try {
-      await fetch('/api/model-config', {
+      await fetch('/api/run-context', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          base: cfg.base, key: cfg.key, model: cfg.model, profile, runId: rid,
+          profile, runId: rid,
           agentMode: mode || 'interview', review: reviewCtx,
           /* 当前仓库：审核官靠它绑定只读工具（列 MR / 拉 diff / 读文件） */
           repoId: repoId || '',
         }),
       });
     } catch (_) {}
-  }, [cfg, mode, profile, selectedReview, repoId]);
+  }, [mode, profile, selectedReview, repoId]);
 
   const send = useCallback(async (text: string) => {
     const t = (text || '').trim();
@@ -513,7 +608,7 @@ export default function ChatApp() {
     // 每轮生成一个 runId：后端各智能体的起止阶段事件按它归类，前端订阅后渲染流水线
     const rid = 'run_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
     setRunId(rid);
-    await syncModelConfig(rid);
+    await syncRunContext(rid);
     try {
       await sendMessage({ id: genId(), role: 'user', content: t });
     } catch (err: any) {
@@ -524,10 +619,10 @@ export default function ChatApp() {
       };
       setMessages(((prev: any[]) => [...prev, errMsg]) as any);
     }
-  }, [cfg, isLoading, mode, sendMessage, setMessages, syncModelConfig, toast]);
+  }, [cfg, isLoading, mode, sendMessage, setMessages, syncRunContext, toast]);
 
   /* ---------- 会话操作 ---------- */
-  const newConvo = useCallback((silent = false, opts: { mode?: AgentMode; agentId?: string; agentName?: string; title?: string; repoId?: string; persist?: boolean } = {}) => {
+  const newConvo = useCallback((silent = false, opts: { mode?: AgentMode; agentId?: string; agentName?: string; title?: string; repoId?: string; profile?: Profile; persist?: boolean } = {}) => {
     if (isLoading) return;
     saveCurrent();
     /* 默认不继承当前会话的专家：新建出来的会话是「未关联专家」的空白会话 */
@@ -542,7 +637,7 @@ export default function ChatApp() {
     const boundRepoId = opts.repoId ?? repoId;
     const conv: Convo = {
       id, title: opts.title || '新会话', createdAt: Date.now(), updatedAt: Date.now(),
-      messages: [], profile: snapshotProfile(profile),
+      messages: [], profile: snapshotProfile(opts.profile ?? profile),
       agentId: nextAgentId ?? undefined,
       agentName: opts.agentName,
       mode: nextMode ?? undefined,
@@ -565,7 +660,7 @@ export default function ChatApp() {
    * 新建一个任务会话（专家确认后调用），会话建好后即与「专家 + 其主智能体」永久绑定。
    * 当前会话还没有内容时直接复用它（改名 + 绑定），否则另开一个，绝不改动已有会话的绑定。
    */
-  const startTask = useCallback((m: AgentMode, title: string, firstPrompt?: string, opts: { repoId?: string } = {}) => {
+  const startTask = useCallback((m: AgentMode, title: string, firstPrompt?: string, opts: { repoId?: string; profile?: Profile } = {}) => {
     if (isLoading) { toast('当前任务进行中，请稍候'); return; }
     setView('chat');
     pendingPromptRef.current = firstPrompt || '';
@@ -584,6 +679,8 @@ export default function ChatApp() {
           c.id === prev.activeId
             ? { ...c, title, mode: m, agentId: boundAgentId, agentName: boundAgent?.name,
                 updatedAt: Date.now(),
+                /* 新建任务时表单刚填好的画像要跟着会话落下去（state 里的 profile 还没刷新） */
+                profile: opts.profile ? snapshotProfile(opts.profile) : c.profile,
                 repoId: m === 'review' ? boundRepoId : undefined }
             : c);
         const nd = { activeId: prev.activeId, list };
@@ -596,7 +693,7 @@ export default function ChatApp() {
     }
     newConvo(true, {
       mode: m, agentId: boundAgentId, agentName: boundAgent?.name,
-      title, repoId: boundRepoId, persist: true,
+      title, repoId: boundRepoId, profile: opts.profile, persist: true,
     });
   }, [isLoading, messages, newConvo, primaryAgentOf, repoId, toast]);
 
@@ -608,11 +705,20 @@ export default function ChatApp() {
     void send(p);
   }, [messages, isLoading, send, mode]);
 
+  /** 切换会话：换会话的同时把消息、专家绑定、仓库一起切过去 */
   const switchConvo = useCallback((id: string) => {
-    if (isLoading || id === convoId) return;
+    if (id === convoId) return;
+    /**
+     * 正在生成时也允许切换，但必须先停掉当前这一轮。
+     * 原因：agent 是单例，正在跑的流会把后续 token 继续追加到 agent.messages 上，
+     * 而这些消息已经被我们换成了新会话的 —— 不中断就会把上一场的输出灌进新会话。
+     * 代价是上一轮结果丢了，所以在 toast 里说清楚。
+     */
+    const wasRunning = isLoading;
+    if (wasRunning) stopGeneration();
     saveCurrent();
     flushNow(); // 切走前把上一场立即落库
-    /* 与新建会话同理：切换后 CopilotKit 可能把上一场的消息又回流一次，
+    /* 同理：切换后 CopilotKit 可能把上一场的消息又回流一次，
        记下这些 id，在出现本场真正的新消息前不落盘，避免消息串场 */
     staleMsgIdsRef.current = new Set(asChatMessages(messages).map(m => String(m.id)));
     freshConvoRef.current = true;
@@ -625,7 +731,10 @@ export default function ChatApp() {
     });
     reset();
     setRunId('');
-    setMessages((conv.messages || []).slice(-40).map(m => ({ id: m.id, role: m.role, content: m.content })));
+    /* 用与落盘格式一致的消息渲染：不能只塞 conv.messages（可能是空数组），
+       否则 reset() 之后界面会空一拍，等回流到达才补上 */
+    const restored = (conv.messages || []).slice(-40).map(m => ({ id: m.id, role: m.role, content: m.content }));
+    setMessages(restored);
     if (conv.profile) setProfile({ ...newProfile(), ...conv.profile });
     /* 会话没关联专家（新建后未选专家）→ 回到「未关联专家」状态 */
     const bound = boundModeOf(conv);
@@ -634,26 +743,41 @@ export default function ChatApp() {
     /* 审核会话跟着它绑定的仓库走；面试会话不动仓库（仓库只在审核界面出现） */
     if (bound === 'review' && conv.repoId) setRepoId(conv.repoId);
     setView('chat');
-    toast('已切换会话：' + (conv.title || '新会话'));
-  }, [boundAgentIdOf, boundModeOf, convoId, convos.list, isLoading, reset, saveCurrent, setMessages, toast]);
+    toast((wasRunning ? '已停止上一轮生成，' : '') + '已切换到：' + (conv.title || '新会话'));
+  }, [boundAgentIdOf, boundModeOf, convoId, convos.list, isLoading, reset, saveCurrent, setMessages, stopGeneration, toast]);
 
-  /** 显式清空当前对话：先把会话历史置空（saveCurrent 的守卫才会放行），再清消息 */
+  /** 显式清空当前对话
+   *
+   * 三条腿一起走，任何一条都不能省：
+   *  1. 界面：reset() + setMessages([])，并把这批消息 id 记进 clearedMsgIdsRef ——
+   *     agent 若把旧历史回填，渲染层会过滤掉，屏幕不会再「复活」；
+   *  2. 本地：会话 messages 置空并 persistConvos；
+   *  3. 服务端：DELETE /api/convos/{id}/messages（幂等），不走「覆盖保存 + 1.2s 去抖」
+   *     —— 那条路上只要 agent 回填一次，空写就会被非空覆盖，正是「点了没生效」的原因。
+   */
   const clearCurrent = useCallback(() => {
-    freshConvoRef.current = false;   // 清空是显式操作，允许落盘
+    if (isLoading) stopGeneration();          // 正在流式输出时先停，否则会继续写回
+    freshConvoRef.current = false;            // 清空是显式操作，允许落盘
+    asChatMessages(messages).forEach(m => clearedMsgIdsRef.current.add(String(m.id)));
     reset();
     setMessages([]);
     setRunId('');
+    let cleared: Convo | null = null;
     setConvos(prev => {
       const list = prev.list.map(c =>
         c.id === prev.activeId ? { ...c, messages: [], updatedAt: Date.now() } : c);
       const nd = { activeId: prev.activeId, list };
       persistConvos(nd);
-      const active = list.find(c => c.id === nd.activeId);
-      if (active) queueSaveConvo(active);
+      cleared = list.find(c => c.id === nd.activeId) || null;
       return nd;
     });
+    void (async () => {
+      const removed = await clearRemoteMessages(convoId);
+      /* 接口不可用（服务没起来 / 旧版本）→ 退回覆盖式保存，至少别让刷新后复活 */
+      if (removed === null && cleared) queueSaveConvo(cleared);
+    })();
     toast('已清空当前对话');
-  }, [reset, setMessages, toast]);
+  }, [convoId, isLoading, messages, reset, setMessages, stopGeneration, toast]);
 
   const deleteConvo = useCallback((id: string) => {
     const d = loadConvos();
@@ -690,7 +814,7 @@ export default function ChatApp() {
     setPendingExpert(m);
     setView('chat');
     if (m === 'review') {
-      /* 当前可能还停在面试模式，仓库列表没加载过：先取一次，保证弹框能回填已有仓库 */
+      /* 当前可能还停在面试模式，仓库列表没加载过：先取一次（弹框里的「已有仓库」快捷选择要用） */
       let list = repos;
       if (!list.length) {
         try {
@@ -698,18 +822,21 @@ export default function ChatApp() {
           setRepos(list);
         } catch (_) { list = []; }
       }
-      const cur = list.find(r => r.id === repoId) || list[0] || null;
-      if (cur) setRepoId(cur.id);
-      setRepoEditing(cur);
+      /* 新建任务：配置从空白开始，不回填上次/当前的仓库，让用户自己填 */
+      setRepoEditing(null);
       setRepoOpen(true);
     } else {
+      /* 新建任务：画像也从空白开始，不能继承当前会话或上一次的画像 */
+      setSetupDraft(blankProfile());
       setSetupOpen(true);
     }
-  }, [isLoading, repos, repoId, toast]);
+  }, [isLoading, repos, toast]);
 
   /* 对话头部：打开当前专家的配置弹框（不新建任务） */
   const openAgentConfig = useCallback(() => {
     setPendingExpert(null);
+    /* 编辑已绑定任务的配置：这里才回填当前值 */
+    setSetupDraft(null);
     if (mode === 'review') {
       setRepoEditing(repos.find(r => r.id === repoId) || null);
       setRepoOpen(true);
@@ -725,16 +852,25 @@ export default function ChatApp() {
       setCfgOpen(true);
       return;
     }
+    /* 从专家中心进来的是空白表单：必填项没填完不能生成 */
+    const p = setupDraft ?? profile;
+    if (!p.track) { setGenErr('请先选择技术方向'); return; }
+    if (!p.level) { setGenErr('请选择候选人级别'); return; }
+    if (!p.exp) { setGenErr('请选择工作经验'); return; }
+    if (!(p.count > 0)) { setGenErr('请填写题目数量（1-50 道）'); return; }
     setGenErr('');
     setSetupOpen(false);   // 生成后关掉弹框，把屏幕还给对话
+    setSetupDraft(null);
     const m: AgentMode | null = pendingExpert || mode;
     setPendingExpert(null);
     if (!m) {              // 没有关联专家的会话不能直接生成任务
       setView('experts');
       return;
     }
-    startTask(m, `面试任务 · ${profile.track} ${profile.level}`, buildGeneratePrompt(profile));
-  }, [cfg.base, cfg.model, pendingExpert, mode, profile, startTask]);
+    /* 新任务沿用这份画像：当前会话（或新建的任务会话）都以它为准 */
+    setProfile(p);
+    startTask(m, `面试任务 · ${p.track} ${p.level}`, buildGeneratePrompt(p), { profile: p });
+  }, [cfg.base, cfg.model, pendingExpert, mode, profile, setupDraft, startTask]);
 
   /* ---------- 派生数据 ---------- */
   /** 当前会话绑定的专家（null = 还没关联） */
@@ -749,8 +885,30 @@ export default function ChatApp() {
     return null;
   }, [agentId, experts]);
   const currentRepo = useMemo(() => repos.find(r => r.id === repoId) || null, [repos, repoId]);
+  /** 正在轮询的仓库数（顶部状态条用） */
+  const pollingRepoCount = useMemo(() => repos.filter(r => r.polling).length, [repos]);
+
+  /** 暂停 / 恢复当前仓库的自动轮询 */
+  const handleTogglePolling = useCallback(async () => {
+    if (!currentRepo || pollToggleBusy) return;
+    setPollToggleBusy(true);
+    try {
+      const repo = await setRepoPolling(currentRepo.id, !currentRepo.enabled);
+      setRepos(prev => prev.map(r => (r.id === repo.id ? { ...r, ...repo } : r)));
+      toast(repo.enabled ? '✅ 已恢复自动轮询' : '已暂停自动轮询');
+    } catch (e: any) {
+      toast('❌ ' + (e.message || e));
+    } finally {
+      setPollToggleBusy(false);
+    }
+  }, [currentRepo, pollToggleBusy, toast]);
   /* 左侧会话列表保持完整：不按智能体过滤，切换时也不新建会话 */
   const visibleConvos = convos;
+
+  /* 真正显示在屏幕上的消息（已清空的 id 会被过滤掉）。
+     确认弹框里的「将删除 N 条」也用它，跟用户看到的条数对齐。 */
+  const shownMessages = asChatMessages(messages)
+    .filter(m => !clearedMsgIdsRef.current.has(String(m.id)));
 
   const indText = profile.industry === '不限' ? '行业不限' : profile.industry;
   const chatTitle = mode == null
@@ -768,10 +926,22 @@ export default function ChatApp() {
         ? `已加载简历：${profile.resumeName} · ${indText}`
         : `${profile.sub === '随机' ? '细分随机' : '细分：' + profile.sub} · ${indText} · 未上传简历`);
 
+  /* 配置的唯一写入口：保存即写服务端全局配置（Node 内存 + Python setting 表），
+   * 本地不再留副本，避免「浏览器旧配置覆盖服务端」这种事故。 */
   const onSaveCfg = (c: ModelCfg) => {
     setCfg(c);
-    saveCfg(c);
-    toast('✅ 配置已保存');
+    void (async () => {
+      try {
+        const res = await fetch('/api/model-config', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ base: c.base, key: c.key, model: c.model }),
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        toast('✅ 配置已保存（全局生效）');
+      } catch (err: any) {
+        toast('❌ 配置未能同步到服务端：' + (err?.message || err));
+      }
+    })();
   };
 
   return (
@@ -783,6 +953,13 @@ export default function ChatApp() {
         </div>
         <div className="sub">面试出题官 + 代码审核官 · 多智能体协作</div>
         <div className="spacer"></div>
+        {/* 全局轮询指示灯：切到别的会话也知道后台还在跑审核 */}
+        {pollingRepoCount > 0 && (
+          <span className="top-poll" title={`${pollingRepoCount} 个仓库正在轮询 / 审核`}>
+            <i className="poll-dot" aria-hidden="true" />
+            {pollingRepoCount} 个仓库轮询中
+          </span>
+        )}
         <span id="connText">{health.proxyOk ? (health.agentOk ? '本地服务就绪' : '智能体服务未连接') : '未检测到本地服务'}</span>
         <span className={'conn-dot ' + (health.proxyOk ? (health.agentOk ? 'ok' : 'err') : '')}></span>
         <button
@@ -868,6 +1045,9 @@ export default function ChatApp() {
                   repoId={repoId}
                   onPick={setRepoId}
                   polling={polling}
+                  scheduler={scheduler}
+                  onTogglePolling={handleTogglePolling}
+                  toggleBusy={pollToggleBusy}
                   prCount={prs.length}
                   lastError={repoErr || currentRepo?.lastError || ''}
                 />
@@ -894,17 +1074,25 @@ export default function ChatApp() {
                 {mode === 'review' ? '仓库配置' : '面试配置'}
               </button>
             )}
-            <button className="btn btn-ghost btn-sm" onClick={clearCurrent}>清空对话</button>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => setClearAsk(true)}
+              disabled={!shownMessages.length && !isLoading}
+              title={shownMessages.length || isLoading ? '清空当前会话的消息' : '当前没有可清空的消息'}
+            >
+              清空对话
+            </button>
           </div>
 
           <AgentTrace trace={trace} active={isLoading} />
 
           <ChatPanel
-            messages={asChatMessages(messages)}
+            messages={shownMessages}
             isLoading={isLoading}
             onSend={send}
             onStop={stopGeneration}
             disabled={mode == null}
+            threadKey={convoId}
             avatar={activeAgent?.icon || activeExpert?.icon || '专'}
             header={mode === 'review' ? (
               <ReviewWorkbench
@@ -942,12 +1130,31 @@ export default function ChatApp() {
         )}
       </main>
 
+      {/* 清空确认：说明里写清「删什么、留什么、能不能撤回」，避免只想清屏的人误删记录 */}
+      <ConfirmModal
+        open={clearAsk}
+        danger
+        title="清空当前对话？"
+        confirmText="确认清空"
+        cancelText="取消"
+        onCancel={() => setClearAsk(false)}
+        onConfirm={() => { setClearAsk(false); clearCurrent(); }}
+      >
+        <p>
+          将删除当前会话的 <b>{shownMessages.length}</b> 条消息：界面、本地缓存、服务端记录一起清空，
+          且<b>无法撤销</b>。
+        </p>
+        {isLoading && <p className="sub">当前正在生成回复，清空会先停止生成。</p>}
+        <p className="sub">会话本身会保留，专家绑定与任务配置不受影响；想彻底删掉这条会话，请用左侧的删除。</p>
+      </ConfirmModal>
+
       {/* 三个弹框：面试配置 / 仓库配置 / 模型配置（模型配置叠在最上层） */}
       <InterviewSetup
         open={setupOpen}
-        onClose={() => { setSetupOpen(false); setPendingExpert(null); }}
-        profile={profile}
-        onProfileChange={setProfile}
+        onClose={() => { setSetupOpen(false); setSetupDraft(null); setPendingExpert(null); setGenErr(''); }}
+        /* 新建任务用空白草稿；编辑已绑定任务时才是当前会话的画像 */
+        profile={setupDraft ?? profile}
+        onProfileChange={(p) => (setupDraft ? setSetupDraft(p) : setProfile(p))}
         onConfirm={onAgentConfirm}
         genErr={genErr}
         cfg={cfg}
@@ -959,6 +1166,17 @@ export default function ChatApp() {
         open={repoOpen}
         onClose={() => { setRepoOpen(false); setPendingExpert(null); }}
         repo={repoEditing}
+        repos={repos}
+        /* 新建任务时可跳过填写，直接挑一个已有仓库开始 */
+        onUseRepo={(r) => {
+          setRepoOpen(false);
+          setRepoId(r.id);
+          if (pendingExpert === 'review') {
+            setPendingExpert(null);
+            startTask('review', `代码审核 · ${r.owner}/${r.name}`, undefined, { repoId: r.id });
+            window.setTimeout(() => { void pollRepo(r.id).catch(() => {}); }, 0);
+          }
+        }}
         onSaved={(repo, isNew) => {
           setRepos(prev => (isNew ? [...prev, repo] : prev.map(r => (r.id === repo.id ? repo : r))));
           setRepoId(repo.id);
@@ -977,7 +1195,11 @@ export default function ChatApp() {
         toast={toast}
       />
 
-      <ConfigModal open={cfgOpen} onClose={() => setCfgOpen(false)} cfg={cfg} onSave={onSaveCfg} toast={toast} />
+      {/* 只在打开时挂载：全局配置是异步从服务端读回来的，常驻挂载会让弹框
+          停在挂载那一刻的旧值（初始为空），看起来像「配置丢了」 */}
+      {cfgOpen && (
+        <ConfigModal open onClose={() => setCfgOpen(false)} cfg={cfg} onSave={onSaveCfg} toast={toast} />
+      )}
 
       <div id="toast" className={toastMsg ? 'show' : ''}>{toastMsg}</div>
     </>

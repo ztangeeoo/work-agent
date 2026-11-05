@@ -18,13 +18,49 @@ from ..deps import db_blocked, err, swallow, user_key
 router = APIRouter(tags=["repos"])
 
 
+def _scheduler():
+    """轮询调度器状态：没启动 / 循环挂了 都要让前端看得见"""
+    try:
+        p = get_poller()
+    except Exception:
+        return {"running": False, "tickSec": 0}
+    return {"running": bool(getattr(p, "scheduler_running", False)),
+            "tickSec": int(getattr(p, "tick_sec", 0) or 0)}
+
+
+def _runtime_of(repo_id: str) -> dict:
+    try:
+        return get_poller().runtime_status(repo_id) or {}
+    except Exception:
+        return {}
+
+
+def _decorate(repo: dict) -> dict:
+    """给仓库补上「轮询进行中」这类只存在于进程内存的实时状态
+
+    - polling / phase / reviewingPr：此刻是否正在拉 PR 或审核某个 PR
+    - nextPollAt：按 intervalSec 推算的下一轮时间（0 = 没启用或还没轮询过）
+    """
+    rt = _runtime_of(repo["id"])
+    interval = int(repo.get("intervalSec") or 120)
+    last = int(repo.get("lastPollAt") or 0)
+    out = dict(repo)
+    out["polling"] = bool(rt.get("polling"))
+    out["phase"] = rt.get("phase") or ""
+    out["reviewingPr"] = rt.get("reviewingPr")
+    out["startedAt"] = int(rt.get("startedAt") or 0)
+    out["nextPollAt"] = (last + interval * 1000) if (repo.get("enabled") and last) else 0
+    return out
+
+
 @router.get("/api/repos")
 async def api_repos_list(request: Request):
     blocked = db_blocked()
     if blocked:
         return blocked
     try:
-        return {"ok": True, "list": store.list_repos(user_key(request))}
+        list_ = [_decorate(r) for r in store.list_repos(user_key(request))]
+        return {"ok": True, "list": list_, "scheduler": _scheduler()}
     except Exception as e:
         return err("仓库操作失败：" + str(e), 500)
 
@@ -91,6 +127,29 @@ async def api_repos_test(request: Request, rid: str):
     except Exception as e:
         store.touch_repo(rid, error=str(e))
         return err(str(e), 502)
+
+
+@router.post("/api/repos/{rid}/toggle")
+async def api_repos_toggle(request: Request, rid: str):
+    """暂停 / 恢复自动轮询 —— 头部那个「轮询中」开关调它"""
+    blocked = db_blocked()
+    if blocked:
+        return blocked
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if "enabled" in body:
+        enabled = bool(body.get("enabled"))
+    else:
+        cur = store.get_repo(rid, user_key(request))
+        if not cur:
+            return err("仓库不存在：" + rid, 404)
+        enabled = not cur.get("enabled")
+    repo = store.set_repo_enabled(rid, enabled, user_key(request))
+    if not repo:
+        return err("仓库不存在：" + rid, 404)
+    return {"ok": True, "repo": _decorate(repo), "scheduler": _scheduler()}
 
 
 @router.post("/api/repos/{rid}/poll")

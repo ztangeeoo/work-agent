@@ -4,10 +4,11 @@
 数据落在 <项目根>/data/interview.db：
   - 备份=复制文件，迁移=拷走；DB_PATH 环境变量可覆盖
   - WAL 模式：读写并发友好，崩溃后可恢复
-  - 九张表：expert / agent（专家、智能体，会话 → 智能体 → 专家 两级关联）
+  - 十张表：expert / agent（专家、智能体，会话 → 智能体 → 专家 两级关联）
             convo / msg / msg_fts（会话、消息、全文索引）
             profile_memory（候选人画像，预留）
             repo / pr / review（代码审核：仓库配置、PR 记录、审核报告）
+            setting（进程级配置键值，目前存模型配置，重启后自动恢复）
 """
 
 import json
@@ -165,13 +166,24 @@ CREATE TABLE IF NOT EXISTS review (
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_review_uniq ON review(repo_id, pr_number, head_sha);
+CREATE INDEX IF NOT EXISTS idx_review_uniq ON review(repo_id, pr_number, head_sha);
 CREATE INDEX IF NOT EXISTS idx_review_repo ON review(repo_id, created_at DESC);
+
+/* ---------- 进程级设置：键值对 ----------
+   只放「重启后还要在」的少量配置。value 统一存 JSON 字符串，
+   目前只有 model_cfg（模型 base / key / model）——轮询器靠它审核，
+   不能只活在内存里，否则每次重启都会退化成「只轮询不审核」。 */
+CREATE TABLE IF NOT EXISTS setting (
+  key        TEXT PRIMARY KEY,
+  value      TEXT,
+  updated_at INTEGER NOT NULL
+);
 """
 
 # ------------------------------------------------------------------ 内置专家 / 智能体
-# 这里是「出厂配置」：只在新库里灌一次（INSERT OR IGNORE），之后以库里为准，
-# 改文案 / 加专家直接改库即可，重启不会覆盖。
+# 下面是**兜底出厂配置**：正常路径由 `_sync_catalog()` 从插件清单
+# （backend/plugins/*/plugin.yaml）同步出 expert / agent 两张表。
+# 这里只在插件目录整个读不到时用（老部署 / PLUGINS_ENABLED=0 / 单测没装插件）。
 SEED_EXPERTS = [
     # (id, mode, name, icon, role, desc, tags, cta, sort)
     ("interviewer", "interview", "面试出题官", "面", "AI 技术面试官",
@@ -222,7 +234,7 @@ def _ensure_convo_columns(conn: sqlite3.Connection) -> None:
 
 
 def _seed_catalog(conn: sqlite3.Connection) -> None:
-    """灌入内置专家与智能体（幂等：已有同 id 记录不覆盖，便于库里直接改文案）。"""
+    """插件清单读不到时的兜底：灌入内置专家与智能体（幂等，不覆盖已有记录）。"""
     ts = now()
     for (eid, mode, name, icon, role, desc, tags, cta, sort) in SEED_EXPERTS:
         conn.execute(
@@ -239,6 +251,110 @@ def _seed_catalog(conn: sqlite3.Connection) -> None:
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
             (aid, eid, stage, name, icon, role, primary, sort, ts, ts),
         )
+
+
+def _plugin_catalog() -> dict | None:
+    """从插件清单收集 expert / agent 两份记录；一个插件都读不到时返回 None"""
+    try:
+        from ..agents import registry
+        plugins = registry.all_plugins()
+    except Exception:
+        return None
+    experts = [p.expert_record() for p in plugins]
+    agents = [a for p in plugins for a in p.agent_records()]
+    if not experts:
+        return None
+    return {"experts": experts, "agents": agents}
+
+
+def _sync_catalog(conn: sqlite3.Connection) -> None:
+    """把 expert / agent 同步成**插件清单的投影**（幂等，每次启动跑一次）
+
+    覆盖规则分两类，不是一刀切：
+
+      - **结构字段**（mode / expert_id / stage / is_primary / sort / enabled）
+        每次启动以插件为准。加一个角色只加 plugin.yaml，库里自动出现。
+      - **文案字段**（name / icon / role / desc / tags / cta）只在首次建档时写入，
+        之后**以库为准**。延续项目原本的工作流：改文案直接改库，重启不覆盖；
+        想让 yaml 的文案生效，把库里那行删掉即可。
+
+    插件里已经不存在的专家 / 角色 → `enabled = 0` 软停用，不删行：历史会话的
+    convo.agent_id 还指得到，`/api/experts` 不再列出，避免「前端能点、后端没有
+    这个 mode」的 500。
+
+    整个同步包在 SAVEPOINT 里：yaml 写错（比如两个 primary）时回滚到兜底出厂
+    配置并记日志，不能让一个清单错误把整个服务拖成不可用。
+    """
+    from ..core.log import log
+
+    catalog = _plugin_catalog()
+    if not catalog:
+        log("插件清单读不到，专家表沿用库里的数据（兜底灌入内置配置）")
+        _seed_catalog(conn)
+        return
+
+    ts = now()
+    expert_ids = [e["id"] for e in catalog["experts"]]
+    agent_ids = [a["id"] for a in catalog["agents"]]
+
+    conn.execute("SAVEPOINT sync_catalog")
+    try:
+        # 主智能体是部分唯一索引（WHERE is_primary = 1），先全部清零再按清单设，
+        # 否则「换个主智能体」会在 UPDATE 中途撞唯一约束。
+        conn.executemany(
+            "UPDATE agent SET is_primary = 0 WHERE expert_id = ?",
+            [(eid,) for eid in expert_ids],
+        )
+
+        for e in catalog["experts"]:
+            conn.execute(
+                """INSERT INTO expert
+                     (id, mode, name, icon, role, desc, tags_json, cta, sort,
+                      enabled, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                     mode       = excluded.mode,
+                     sort       = excluded.sort,
+                     enabled    = 1,
+                     updated_at = excluded.updated_at""",
+                (e["id"], e["mode"], e["name"], e["icon"], e["role"], e["desc"],
+                 json.dumps(e["tags"], ensure_ascii=False), e["cta"], e["sort"], ts, ts),
+            )
+
+        for a in catalog["agents"]:
+            conn.execute(
+                """INSERT INTO agent
+                     (id, expert_id, stage, name, icon, role, is_primary, sort,
+                      enabled, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                     expert_id  = excluded.expert_id,
+                     stage      = excluded.stage,
+                     is_primary = excluded.is_primary,
+                     sort       = excluded.sort,
+                     enabled    = 1,
+                     updated_at = excluded.updated_at""",
+                (a["id"], a["expert_id"], a["stage"], a["name"], a["icon"], a["role"],
+                 1 if a["primary"] else 0, a["sort"], ts, ts),
+            )
+
+        # 插件里已经没有的 → 软停用（保留行，历史会话仍能解析出名字）
+        conn.execute(
+            "UPDATE expert SET enabled = 0, updated_at = ? WHERE id NOT IN ("
+            + ",".join("?" * len(expert_ids)) + ")",
+            (ts, *expert_ids),
+        )
+        conn.execute(
+            "UPDATE agent SET enabled = 0, updated_at = ? WHERE id NOT IN ("
+            + ",".join("?" * len(agent_ids)) + ")",
+            (ts, *agent_ids),
+        )
+        conn.execute("RELEASE SAVEPOINT sync_catalog")
+    except Exception as e:
+        conn.execute("ROLLBACK TO SAVEPOINT sync_catalog")
+        conn.execute("RELEASE SAVEPOINT sync_catalog")
+        log(f"专家表同步失败（{type(e).__name__}: {e}），回落到内置出厂配置")
+        _seed_catalog(conn)
 
 
 def _backfill_agent_links(conn: sqlite3.Connection) -> None:
@@ -295,7 +411,7 @@ def init() -> sqlite3.Connection:
             conn.executescript(SCHEMA)
             _ensure_convo_columns(conn)
             _ensure_msg_index(conn)
-            _seed_catalog(conn)
+            _sync_catalog(conn)
             _backfill_agent_links(conn)
             conn.commit()
             _conn = conn

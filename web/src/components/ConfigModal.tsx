@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ModelCfg } from '../types';
 
 interface Props {
@@ -9,6 +9,11 @@ interface Props {
   toast: (msg: string) => void;
 }
 
+/* 服务端真正在用的配置（不是表单里正在编辑的内容）。
+ * 用来回答「我明明改了 key，为什么报错还是旧 key」——表单里的值和服务端存的值
+ * 可能不是同一份（没点保存 / 保存请求没到后端），把尾号摆出来一眼就能对上。 */
+interface Effective { model: string; tail: string }
+
 export default function ConfigModal({ open, onClose, cfg, onSave, toast }: Props) {
   const [base, setBase] = useState(cfg.base);
   const [key, setKey] = useState(cfg.key);
@@ -16,6 +21,23 @@ export default function ConfigModal({ open, onClose, cfg, onSave, toast }: Props
   const [models, setModels] = useState<string[]>([]);
   const [conn, setConn] = useState('');
   const [busy, setBusy] = useState(false);
+  const [effective, setEffective] = useState<Effective | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    fetch('/api/model-config')
+      .then((r) => r.json())
+      .then((j) => {
+        if (!alive) return;
+        const c = (j && j.cfg) || null;
+        if (!c) return;
+        const k = String(c.key || '');
+        setEffective({ model: String(c.model || ''), tail: k ? k.slice(-4) : '(空)' });
+      })
+      .catch(() => { /* 服务没起来：不显示这行即可 */ });
+    return () => { alive = false; };
+  }, [open]);
 
   if (!open) return null;
 
@@ -93,6 +115,12 @@ export default function ConfigModal({ open, onClose, cfg, onSave, toast }: Props
             {models.map(m => <option key={m} value={m} />)}
           </datalist>
           <div className="hint">DeepSeek: <code>deepseek-chat</code> · 通义: <code>qwen-plus</code> · Kimi: <code>moonshot-v1-8k</code> · Ollama: <code>llama3.1</code></div>
+          {effective && (
+            <div className="hint">
+              服务端当前生效：<code>{effective.model || '(未设置)'}</code> · key 尾号 <code>{effective.tail}</code>
+              <br />与实际报错里的尾号对不上，说明这份改动还没保存成功（或页面连的不是这个服务）。
+            </div>
+          )}
           <div className="conn-row">
             <span className={'conn-dot ' + (conn.startsWith('已连接') ? 'ok' : conn === '连接失败' ? 'err' : '')}></span>
             <span>{conn || '未连接模型'}</span>

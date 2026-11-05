@@ -1,7 +1,7 @@
 /* 代码审核前端接口层：仓库配置 / PR 列表 / 审核报告 / 事件订阅 */
 
-import { useEffect, useRef } from 'react';
-import type { PRItem, Repo, ReviewEvent, ReviewItem } from '../types';
+import { useEffect, useRef, useState } from 'react';
+import type { PRItem, PollScheduler, Repo, ReviewEvent, ReviewItem } from '../types';
 
 async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch(path, {
@@ -22,6 +22,32 @@ async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
 export async function fetchRepos(): Promise<Repo[]> {
   const j = await api<{ list?: Repo[] }>('/api/repos');
   return j.list || [];
+}
+
+export interface PollSnapshot {
+  repos: Repo[];
+  scheduler: PollScheduler;
+}
+
+/**
+ * 取仓库列表 + 实时轮询状态。
+ * 与 fetchRepos 的区别：额外带上「此刻是否正在轮询」「下一轮什么时候」，
+ * 供对话头部的轮询指示条与左侧会话列表的徽标使用。
+ */
+export async function fetchPollSnapshot(): Promise<PollSnapshot> {
+  const j = await api<{ list?: Repo[]; scheduler?: PollScheduler }>('/api/repos');
+  return {
+    repos: j.list || [],
+    scheduler: j.scheduler || { running: false, tickSec: 0 },
+  };
+}
+
+/** 暂停 / 恢复某个仓库的自动轮询 */
+export async function setRepoPolling(id: string, enabled: boolean): Promise<Repo> {
+  const j = await api<{ repo: Repo }>('/api/repos/' + encodeURIComponent(id) + '/toggle', {
+    method: 'POST', body: JSON.stringify({ enabled }),
+  });
+  return j.repo;
 }
 
 export interface RepoInput {
@@ -58,10 +84,10 @@ export async function fetchPRs(repoId: string): Promise<PRItem[]> {
   return j.list || [];
 }
 
-export async function reviewPR(repoId: string, number: number): Promise<ReviewItem> {
+export async function reviewPR(repoId: string, number: number, signal?: AbortSignal): Promise<ReviewItem> {
   const j = await api<{ review: ReviewItem }>(
     '/api/repos/' + encodeURIComponent(repoId) + '/prs/' + number + '/review',
-    { method: 'POST' },
+    { method: 'POST', signal },
   );
   return j.review;
 }
@@ -113,7 +139,7 @@ export const RISK_META: Record<string, { label: string; cls: string; icon: strin
 };
 
 export const DECISION_META: Record<string, { label: string; cls: string }> = {
-  request_changes: { label: '打回修改', cls: 'd-block' },
+  request_changes: { label: '不建议合并', cls: 'd-block' },
   comment: { label: '建议修改', cls: 'd-comment' },
   approve: { label: '可以合入', cls: 'd-approve' },
 };

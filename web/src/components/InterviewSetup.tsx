@@ -76,6 +76,8 @@ export default function InterviewSetup({
 
   const subs = TRACK_SUBS[profile.track] || [];
   const subItems = ['随机', ...subs];
+  /* 新建任务是空白表单：技术方向没选之前不展示细分方向，避免出现「只有随机可点」的空区块 */
+  const isBlank = !profile.track;
 
   return (
     <div className="modal-mask show" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -86,11 +88,20 @@ export default function InterviewSetup({
         </div>
 
         <div className="modal-body">
+          {isBlank && (
+            <div className="hint" style={{ marginBottom: 10 }}>
+              新建任务：这份配置还是空的，请依次选择技术方向、级别、工作经验，并填写题目数量。
+            </div>
+          )}
           <label className="field">技术方向</label>
           <ChipGroup items={TRACKS} value={profile.track}
             onPick={(v) => set({ track: v, sub: '随机' })} />
-          <label className="field">细分方向（可不选，默认随机）</label>
-          <ChipGroup items={subItems} value={profile.sub} onPick={(v) => set({ sub: v })} />
+          {!isBlank && (
+            <>
+              <label className="field">细分方向（可不选，默认随机）</label>
+              <ChipGroup items={subItems} value={profile.sub} onPick={(v) => set({ sub: v })} />
+            </>
+          )}
           <div className="row2">
             <div>
               <label className="field">级别</label>
@@ -107,8 +118,13 @@ export default function InterviewSetup({
             <div>
               <label className="field">题目数量</label>
               <div className="qcount">
-                <input type="text" value={profile.count}
-                  onChange={(e) => { const v = parseInt(e.target.value); if (v > 0 && v <= 50) set({ count: v }); }} />
+                {/* count 为 0 = 用户还没填：显示占位符而不是「0」 */}
+                <input type="text" value={profile.count > 0 ? String(profile.count) : ''} placeholder="如 5"
+                  onChange={(e) => {
+                    const raw = e.target.value.replace(/[^\d]/g, '');
+                    const v = parseInt(raw, 10);
+                    set({ count: Number.isFinite(v) && v > 0 && v <= 50 ? v : 0 });
+                  }} />
                 <span className="hint">道</span>
               </div>
             </div>

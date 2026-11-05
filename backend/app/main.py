@@ -40,7 +40,16 @@ from .utils.parsing import try_parse_score  # noqa: E402,F401
 from .utils.render import render_score_card  # noqa: E402,F401
 from .core import stages as _stages  # noqa: E402,F401
 
-STAGE_META = _stages.STAGE_META
+
+def __getattr__(name):
+    """兼容出口：`A.STAGE_META` 以前是手写常量，现在从插件清单现算
+
+    用模块级 __getattr__ 而不是 `STAGE_META = _stages.STAGE_META`：后者会把
+    导入那一刻的结果固化下来，插件加角色后要重启才生效。
+    """
+    if name == "STAGE_META":
+        return _stages.stages()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 @asynccontextmanager
@@ -50,6 +59,20 @@ async def lifespan(_app):
         store.init()
         s = store.stats()
         log(f"持久层就绪 · {s['convos']} 场会话 / {s['messages']} 条消息 · {s['path']}")
+        # 模型配置落过库，启动即回填：否则轮询器会以空配置跑，把「未配置模型」
+        # 写进每个仓库，左侧审核会话全挂「未配模型」角标（直到浏览器发过消息才修好）
+        cfg = state.load_model_cfg()
+        if cfg.get("base") and cfg.get("model"):
+            log(f"模型配置已恢复 · {cfg.get('model')}")
+            # 上次进程跑出来的「未配置模型」已经不成立了，别让它挂到下一轮轮询
+            try:
+                n = store.clear_repo_errors("未配置模型")
+                if n:
+                    log(f"已清理 {n} 个仓库的历史「未配置模型」错误")
+            except Exception:
+                pass
+        else:
+            log("模型配置为空：轮询只拉 PR，不自动审核（页面右上角齿轮里配置）")
         repo_list = store.list_repos()
         active = len([r for r in repo_list if r.get("enabled")])
         log(f"代码审核：{len(repo_list)} 个仓库（启用 {active} 个）· 轮询调度启动")

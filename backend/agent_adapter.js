@@ -4,8 +4,10 @@
  *       OpenAI 兼容请求（/v1/chat/completions），SSE 流转发回 CopilotKit。
  *       「策划官 / 面试官 / 评分官」三智能体流水线因此完整保留。
  *
- * 模型配置（base/key/model/profile）由前端在每次发消息前 POST 到
- * /api/model-config，存于 server.js 内存，本适配器通过 getCfg() 读取。
+ * 模型配置（base/key/model）是全局的：由页面「模型配置」弹框保存到服务端
+ * （落 setting 表），本适配器通过 getCfg() 读取，任何会话都不会带上自己的配置。
+ * 每轮对话的上下文（profile / 当前 PR / repoId / runId）由前端在发送前
+ * POST /api/run-context 更新，与全局配置分开放，互不覆盖。
  */
 
 function createAgentScopeAdapter({ agentBase, getCfg, onStage }) {

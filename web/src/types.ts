@@ -102,6 +102,23 @@ export interface Repo {
   hasToken: boolean;
   openPrs?: number;
   reviewCount?: number;
+  /* ---- 实时轮询状态（后端 poller 的进程内状态，只在 /api/repos 下发） ---- */
+  /** 此刻正在拉 PR / 审核 */
+  polling?: boolean;
+  /** listing = 拉 PR 列表；reviewing = 正在审某个 PR */
+  phase?: string;
+  /** 正在审核的 PR 号（phase=reviewing 时有值） */
+  reviewingPr?: number | null;
+  /** 本轮轮询开始时间（ms） */
+  startedAt?: number;
+  /** 按间隔推算的下一轮时间（0 = 未启用或还没轮询过） */
+  nextPollAt?: number;
+}
+
+/** 轮询调度器状态：进程活着 ≠ 调度循环活着 */
+export interface PollScheduler {
+  running: boolean;
+  tickSec: number;
 }
 
 export interface PRItem {

@@ -105,6 +105,32 @@ html, body { height: 100%; }
   .modal-foot .spacer { flex: 1; }
   .modal-foot .btn-primary { flex: 1; min-width: 140px; }
   #cfgModal { z-index: var(--md-z-modal-top); }   /* 模型配置弹框可叠在面试/仓库配置弹框之上 */
+
+  /* ===== 二次确认弹框 ===== */
+  .modal-narrow { width: 400px; }
+  .confirm-text {
+    margin-top: 12px; font-size: 13px; line-height: 1.7; color: var(--text);
+    word-break: break-word;
+  }
+  .confirm-text p + p { margin-top: 8px; }
+  .confirm-text .sub { color: var(--sub); font-size: 12px; }
+  .confirm-text ul { margin: 6px 0 0 18px; }
+  .confirm-text li { margin: 3px 0; color: var(--sub); }
+  .confirm-text code {
+    font-family: var(--md-font-mono); font-size: 12px; padding: 1px 5px;
+    border-radius: var(--md-radius-sm); background: var(--md-code-inline-bg); color: var(--md-text-2);
+  }
+  .confirm-text b { color: var(--md-danger-text); font-weight: var(--md-fw-medium); }
+  /* 通用按钮：填充轨用 brand-solid，文字用 on-brand，深浅色都够对比 */
+  .btn-brand { background: var(--md-brand-solid); color: var(--md-on-brand); }
+  .btn-brand:hover { background: var(--md-brand-solid-hover); }
+  /* 危险按钮：底色走 subtle、文字走 danger-text —— 深色模式下反色也不会糊 */
+  .btn-danger {
+    background: var(--md-danger-subtle); color: var(--md-danger-text);
+    border: 1px solid var(--md-danger-border);
+  }
+  .btn-danger:hover { border-color: var(--md-danger-text); filter: brightness(0.97); }
+
   .convo-list { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
   .convo-item {
     display: flex; align-items: center; gap: 10px; padding: 10px 12px;
@@ -113,7 +139,11 @@ html, body { height: 100%; }
   .convo-item:hover { border-color: var(--md-brand); background: var(--md-brand-subtle); }
   .convo-item.active { border-color: var(--md-brand); background: var(--md-brand-subtle); }
   .convo-main { flex: 1; min-width: 0; }
-  .convo-title { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .convo-title {
+    display: flex; align-items: center; font-size: 13px; font-weight: 500;
+    overflow: hidden; white-space: nowrap;
+  }
+  .convo-title-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .convo-meta { font-size: 11px; color: var(--sub); margin-top: 2px; }
   .convo-del {
     border: none; background: none; color: var(--sub); cursor: pointer; font-size: 12px;
@@ -155,6 +185,14 @@ html, body { height: 100%; }
   .chip:hover { border-color: var(--md-brand); }
   .chip.active { background: var(--md-brand-solid); border-color: var(--md-brand-solid); color: var(--md-on-brand); }
 
+  /* 仓库配置弹框：新建时可直接改用已保存的仓库 */
+  .repo-pick {
+    border: 1px dashed var(--border); border-radius: var(--md-radius-lg); padding: 10px 12px;
+    background: var(--md-surface-1); margin-bottom: 6px;
+  }
+  .repo-pick-label { font-size: 11px; color: var(--sub); }
+  .repo-pick-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
   /* 简历上传 */
   .upload-box {
     border: 1.5px dashed var(--border); border-radius: var(--radius); padding: 16px;
@@ -179,6 +217,7 @@ html, body { height: 100%; }
   .btn-primary:disabled { background: var(--md-surface-3); color: var(--md-text-4); cursor: not-allowed; }
   .btn-ghost { background: var(--md-surface-1); border: 1px solid var(--border); color: var(--text); }
   .btn-ghost:hover { border-color: var(--md-brand); color: var(--md-brand-text); }
+  .btn-ghost:disabled { opacity: .45; cursor: not-allowed; border-color: var(--border); color: var(--sub); }
   .btn-sm { padding: 6px 12px; font-size: 12px; }
 
   .qcount { display: flex; align-items: center; gap: 10px; }
@@ -731,6 +770,68 @@ html, body { height: 100%; }
   .rb-status.is-err { color: var(--md-warning-text); }
   .rb-count { background: var(--md-brand-subtle); color: var(--md-brand-text); border-radius: var(--md-radius-pill); padding: 1px 8px; white-space: nowrap; }
   .rb-warn { color: var(--md-warning-text); white-space: nowrap; }
+
+  /* 轮询指示：一盏灯 + 一句话 + 倒计时。
+     live  = 灯泡在呼吸，此刻真的在轮询 / 审核
+     idle  = 灯常亮，开着但空闲，在等下一轮
+     warn  = 调度没跑或上一轮出错
+     off   = 自动轮询已暂停 */
+  .poll-dot {
+    width: 7px; height: 7px; border-radius: 50%; display: inline-block;
+    background: var(--sub); flex-shrink: 0;
+  }
+  .poll-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 4px 3px 8px; border: 1px solid var(--border);
+    border-radius: var(--md-radius-pill); background: var(--md-surface-1);
+    font-size: 11px; color: var(--sub); white-space: nowrap; flex-shrink: 0;
+    min-width: 0; overflow: hidden;
+  }
+  /* 头部空间不足时先压缩倒计时，别把「立即轮询」挤出去 */
+  .review-status > .poll-pill { flex-shrink: 1; }
+  .poll-label { color: var(--text); font-weight: var(--md-fw-medium); }
+  .poll-detail { color: var(--sub); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
+  .poll-pill.is-live { border-color: var(--md-success-border); background: var(--md-success-subtle); }
+  .poll-pill.is-live .poll-label { color: var(--md-success-text); }
+  .poll-pill.is-live .poll-dot { background: var(--md-success-text); animation: poll-pulse 1.3s ease-in-out infinite; }
+  .poll-pill.is-idle .poll-dot { background: var(--md-success-text); }
+  .poll-pill.is-warn { border-color: var(--md-warning-border); background: var(--md-warning-subtle); }
+  .poll-pill.is-warn .poll-label { color: var(--md-warning-text); }
+  .poll-pill.is-warn .poll-dot { background: var(--md-warning-text); }
+  .poll-toggle {
+    border: none; background: none; cursor: pointer; font-size: 11px; color: var(--sub);
+    padding: 1px 6px; margin-left: 2px; border-left: 1px solid var(--border);
+  }
+  .poll-toggle:hover { color: var(--md-brand-text); }
+  .poll-toggle:disabled { opacity: .5; cursor: default; }
+
+  @keyframes poll-pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--md-success-border); }
+    50% { opacity: .45; box-shadow: 0 0 0 3px transparent; }
+  }
+
+  /* 顶部全局指示：切到别的会话也知道后台还在跑 */
+  .top-poll {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 10px; border-radius: var(--md-radius-pill);
+    background: var(--md-success-subtle); border: 1px solid var(--md-success-border);
+    color: var(--md-success-text); font-size: 11px; white-space: nowrap;
+  }
+  .top-poll .poll-dot { background: var(--md-success-text); animation: poll-pulse 1.3s ease-in-out infinite; }
+
+  /* 左侧会话列表的轮询徽标 */
+  .convo-poll {
+    display: inline-flex; align-items: center; gap: 4px;
+    margin-left: auto; padding-left: 6px;
+    font-size: 10px; color: var(--sub); white-space: nowrap; flex-shrink: 0;
+  }
+  .convo-poll.is-live { color: var(--md-success-text); }
+  .convo-poll.is-live .poll-dot { background: var(--md-success-text); animation: poll-pulse 1.3s ease-in-out infinite; }
+  .convo-poll.is-idle .poll-dot { background: var(--md-success-text); }
+  .convo-poll.is-warn { color: var(--md-warning-text); }
+  .convo-poll.is-warn .poll-dot { background: var(--md-warning-text); }
+  .convo-poll.is-off { color: var(--sub); opacity: .75; }
+  .convo-poll .poll-dot { width: 6px; height: 6px; }
 
   /* 工作台 */
   .rw { display: flex; flex-direction: column; gap: 10px; margin-bottom: 4px; }

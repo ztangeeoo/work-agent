@@ -115,10 +115,16 @@ rem    (node.exe / python.exe / pythonw.exe). Anything else is
 rem    reported and left untouched.
 rem ============================================================
 :free_port
-set "PORT=%~1"
+rem  IMPORTANT: never name this variable PORT. This subroutine runs in the
+rem  caller's scope, so "set PORT=8790" would leak into the environment and
+rem  the later "start node backend\server.js" would inherit it -- the page
+rem  service would then bind 8790 (IPv6) instead of 8787, colliding with the
+rem  agent service on 0.0.0.0:8790 and serving the page on localhost:8790.
+setlocal
+set "_FPORT=%~1"
 set "FOUND="
 set "LASTPID="
-for /f "tokens=5" %%P in ('netstat -ano ^| findstr /R /C:":%PORT% " ^| findstr /I "LISTENING"') do (
+for /f "tokens=5" %%P in ('netstat -ano ^| findstr /R /C:":%_FPORT% " ^| findstr /I "LISTENING"') do (
   rem  0.0.0.0 and [::] rows share the same PID and are adjacent
   if not "%%P"=="!LASTPID!" (
     set "LASTPID=%%P"
@@ -135,16 +141,17 @@ for /f "tokens=5" %%P in ('netstat -ano ^| findstr /R /C:":%PORT% " ^| findstr /
       if errorlevel 1 (
         echo        [WARN] Failed to stop !PNAME! ^(PID %%P^). Try running as administrator.
       ) else (
-        echo        Stopped !PNAME! ^(PID %%P^), port %PORT% released
+        echo        Stopped !PNAME! ^(PID %%P^), port %_FPORT% released
       )
     ) else (
-      echo        [SKIP] Port %PORT% is held by !PNAME! ^(PID %%P^), not part of this project.
+      echo        [SKIP] Port %_FPORT% is held by !PNAME! ^(PID %%P^), not part of this project.
       echo        Start may fail -- close it manually first.
     )
   )
 )
-if not defined FOUND echo        Port %PORT% is free
+if not defined FOUND echo        Port %_FPORT% is free
 "%SystemRoot%\System32\ping.exe" -n 2 127.0.0.1 >nul
+endlocal
 exit /b 0
 
 :no_python

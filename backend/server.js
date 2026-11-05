@@ -34,13 +34,40 @@ const ROOT = path.resolve(__dirname, '..');
 const AGENTSCOPE_URL = (process.env.AGENTSCOPE_URL || 'http://127.0.0.1:8790').replace(/\/+$/, '');
 const USE_AGENTSCOPE = process.env.AGENTSCOPE !== '0'; // 默认走智能体
 
-/* ---------- 前端最新配置（内存，由 /api/model-config 更新） ---------- */
-const modelCfg = {
-  base: '', key: '', model: '', profile: null, runId: '',
+/* ---------- 全局模型配置（全局唯一一份，不属于任何会话） ----------
+ * base/key/model 只在「模型配置」弹框保存时写入（POST /api/model-config），
+ * 启动时从 Python 侧的 setting 表读回，所以 Node 重启也不会丢。
+ * 前端不持有、也不回传这三个值——避免某个旧标签页把全局配置改坏。
+ */
+const modelCfg = { base: '', key: '', model: '' };
+
+/* ---------- 本轮上下文（跟着对话走，不是配置） ----------
+ * profile / 当前 PR / repoId / runId / agentMode 每轮都不一样，属于「这一次对话」
+ * 而不是「这个系统怎么连模型」。所以单独放这里，只影响紧接着的那次对话请求，
+ * 绝不写进 modelCfg —— 会话（或浏览器）不应该去动全局 LLM 配置。
+ * 由前端在每次发送前 POST /api/run-context 更新。
+ */
+const runCtx = {
+  profile: null,
+  runId: '',
   agentMode: 'interview',  // interview | review
   review: null,            // 审核模式下当前 PR 的上下文（追问用）
   repoId: '',              // 审核模式下当前仓库：审核官据此绑定只读工具
 };
+
+/** 从 Python 侧读回全局模型配置（Node 与 Python 各缓存一份，以 setting 表为准） */
+async function hydrateModelCfg() {
+  try {
+    const r = await fetchAgentJson('/api/model-config');
+    const c = (r && r.cfg) || {};
+    if (c.base && c.model) {
+      modelCfg.base = String(c.base || '');
+      modelCfg.key = String(c.key || '');
+      modelCfg.model = String(c.model || '');
+      console.log('  ➜  模型配置已读取：' + modelCfg.model);
+    }
+  } catch (_) { /* Python 还没起来：等页面 GET 时再补 */ }
+}
 
 /* ---------- 智能体阶段中心 ----------
  * 后端每个智能体环节的起止都会以 `agent_stage` 事件透出，
@@ -61,7 +88,7 @@ function stageBucket(runId, create) {
 }
 
 function pushStage(stage, cfg) {
-  const runId = (cfg && cfg.runId) || modelCfg.runId;
+  const runId = (cfg && cfg.runId) || runCtx.runId;
   const b = stageBucket(runId, true);
   if (!b) return;
   b.updatedAt = Date.now();
@@ -153,7 +180,9 @@ let copilotHandler = null;
     ]);
     const adapter = createAgentScopeAdapter({
       agentBase: AGENTSCOPE_URL,
-      getCfg: () => modelCfg,
+      /* 全局配置 + 本轮上下文合并：base/key/model 永远来自 modelCfg，
+         会话相关的 profile/review/repoId 来自 runCtx，两者互不覆盖 */
+      getCfg: () => Object.assign({}, runCtx, modelCfg),
       onStage: pushStage,
     });
     const runtime = new CopilotRuntime();
@@ -455,8 +484,12 @@ async function handleChat(req, res) {
     return json(res, 400, { error: { message: '请求体解析失败：' + e.message } });
   }
 
-  const { base, key, model, messages, temperature, stream, max_tokens } = payload;
-  if (!model) return json(res, 400, { error: { message: '缺少模型名称' } });
+  /* 模型三要素是全局配置：请求体里没带就用服务端那份（前端不必持有 key） */
+  const { messages, temperature, stream, max_tokens } = payload;
+  const base = payload.base || modelCfg.base;
+  const key = payload.key !== undefined ? payload.key : modelCfg.key;
+  const model = payload.model || modelCfg.model;
+  if (!model) return json(res, 400, { error: { message: '缺少模型名称（服务端也还没有保存模型配置，请点右上角齿轮配置）' } });
   if (!Array.isArray(messages) || !messages.length) {
     return json(res, 400, { error: { message: '缺少 messages' } });
   }
@@ -718,46 +751,83 @@ const server = http.createServer((req, res) => {
     return void proxyApi(req, res, url.pathname + url.search);
   }
 
-  /* 模型配置：本地内存留一份（供 CopilotKit 适配器即时读取），同时同步给 Python 轮询器 */
+  /* 全局模型配置：唯一写入口（只接受 base/key/model）
+   * 会话上下文（profile / review / repoId / runId）不走这里 —— 见 /api/run-context。
+   * 写内存的同时同步给 Python：自动轮询要读同一份配置。 */
   if (req.method === 'POST' && url.pathname === '/api/model-config') {
     return (async () => {
       let raw = '';
+      let body = null;
       try {
         raw = await readBody(req, 1 * 1024 * 1024);
         const p = JSON.parse(raw);
         modelCfg.base = String(p.base || '').trim();
         modelCfg.key = String(p.key || '').trim();
         modelCfg.model = String(p.model || '').trim();
-        modelCfg.profile = p.profile && typeof p.profile === 'object' ? p.profile : null;
-        modelCfg.agentMode = p.agentMode === 'review' ? 'review' : 'interview';
-        modelCfg.review = p.review && typeof p.review === 'object' ? p.review : null;
-        modelCfg.repoId = typeof p.repoId === 'string' ? p.repoId : '';
-        if (typeof p.runId === 'string' && p.runId) {
-          modelCfg.runId = p.runId;
-          stageBucket(p.runId, true); // 新一轮，保证桶存在
-        }
+        /* 转发给 Python 的只保留三项：它是全局配置，不该混入会话上下文 */
+        body = JSON.stringify({ base: modelCfg.base, key: modelCfg.key, model: modelCfg.model });
       } catch (e) {
         return json(res, 400, { error: { message: '请求体解析失败：' + e.message } });
       }
-      /* 同步给 Python（审核轮询要用同一份配置）；失败不影响前端，只影响自动审核 */
+      let pyOk = false;
       try {
         const u = new URL(AGENTSCOPE_URL + '/api/model-config');
         const lib = u.protocol === 'https:' ? https : http;
-        await new Promise((resolve) => {
+        pyOk = await new Promise((resolve) => {
           const up = lib.request({
             hostname: u.hostname,
             port: u.port || (u.protocol === 'https:' ? 443 : 80),
             path: u.pathname,
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(raw) },
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
             timeout: 3000,
-          }, (r) => { r.resume(); r.on('end', resolve); });
-          up.on('timeout', () => { up.destroy(); resolve(); });
-          up.on('error', resolve);
-          up.end(raw);
+          }, (r) => { r.resume(); r.on('end', () => resolve(r.statusCode >= 200 && r.statusCode < 300)); });
+          up.on('timeout', () => { up.destroy(); resolve(false); });
+          up.on('error', () => resolve(false));
+          up.end(body);
         });
-      } catch (_) { /* 忽略：Python 未就绪时前端仍可正常使用 */ }
-      json(res, 200, { ok: true });
+      } catch (_) { /* Python 未就绪：内存里已有配置，页面仍可用，自动审核等它起来 */ }
+      json(res, 200, { ok: true, synced: pyOk });
+    })();
+  }
+
+  /* 读全局模型配置：页面启动时用它回填表单（换浏览器也不用重填） */
+  if (req.method === 'GET' && url.pathname === '/api/model-config') {
+    return (async () => {
+      try {
+        const r = await fetchAgentJson('/api/model-config');
+        const c = (r && r.cfg) || {};
+        if (c.base && c.model) {
+          modelCfg.base = String(c.base || '');
+          modelCfg.key = String(c.key || '');
+          modelCfg.model = String(c.model || '');
+        }
+        return json(res, 200, { ok: true, cfg: { base: modelCfg.base, key: modelCfg.key, model: modelCfg.model } });
+      } catch (e) {
+        /* Python 没起来：退回 Node 内存里那份（至少页面还能显示上次配置） */
+        return json(res, 200, { ok: true, cfg: { base: modelCfg.base, key: modelCfg.key, model: modelCfg.model } });
+      }
+    })();
+  }
+
+  /* 本轮对话上下文：每次发送前覆盖，只影响紧接着的那一次请求。
+   * 刻意不落库、不进 modelCfg —— 它属于「这一轮对话」，不是系统配置。 */
+  if (req.method === 'POST' && url.pathname === '/api/run-context') {
+    return (async () => {
+      try {
+        const p = JSON.parse(await readBody(req, 1 * 1024 * 1024));
+        runCtx.profile = p.profile && typeof p.profile === 'object' ? p.profile : null;
+        runCtx.agentMode = p.agentMode === 'review' ? 'review' : 'interview';
+        runCtx.review = p.review && typeof p.review === 'object' ? p.review : null;
+        runCtx.repoId = typeof p.repoId === 'string' ? p.repoId : '';
+        if (typeof p.runId === 'string' && p.runId) {
+          runCtx.runId = p.runId;
+          stageBucket(p.runId, true); // 新一轮，保证阶段事件桶存在
+        }
+        return json(res, 200, { ok: true });
+      } catch (e) {
+        return json(res, 400, { error: { message: '请求体解析失败：' + e.message } });
+      }
     })();
   }
 
@@ -846,13 +916,30 @@ server.listen(PORT, async () => {
   console.log('');
   console.log('  🎯 IT 面试出题官已启动');
   console.log('  ➜  本机访问:   http://localhost:' + PORT);
+  /* 端口撞车保护：页面服务必须和智能体服务分开。
+   * 一旦两者同端口（例如外部继承了 PORT=8790），Windows 会按地址族分裂：
+   * localhost(IPv6) 打到 Node、127.0.0.1(IPv4) 打到 Python，
+   * 于是「页面保存了配置」和「接口读到的配置」可能落在不同进程，极难排查。 */
+  if (USE_AGENTSCOPE) {
+    try {
+      const ap = new URL(AGENTSCOPE_URL).port || '80';
+      if (String(ap) === String(PORT)) {
+        console.log('  ➜  ⚠️ 端口冲突: 页面服务与智能体服务都用了 ' + PORT + '，请改用 8787');
+        console.log('      （常见原因：批处理里残留 PORT 变量，或手动 set PORT=' + PORT + '）');
+      }
+    } catch (_) { /* AGENTSCOPE_URL 不合法时忽略 */ }
+  }
   if (USE_AGENTSCOPE) {
     const agent = await checkAgentHealth();
     if (agent.ok) {
       console.log('  ➜  智能体:     AgentScope 已连接（' + (agent.detail || AGENTSCOPE_URL) + '）');
+      /* 全局模型配置以 Python 侧 setting 表为准，启动即读回（猜它可能晚于本进程启动，重试一次） */
+      await hydrateModelCfg();
+      setTimeout(hydrateModelCfg, 4000);
     } else {
       console.log('  ➜  智能体:     ⚠️ 未连接（' + AGENTSCOPE_URL + '），出题会失败');
       console.log('                请先启动智能体服务：.venv\\Scripts\\python.exe backend\\run.py');
+      setTimeout(hydrateModelCfg, 4000);
     }
   } else {
     console.log('  ➜  智能体:     已关闭（AGENTSCOPE=0，直接转发模型 API）');

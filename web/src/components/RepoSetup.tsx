@@ -6,8 +6,11 @@ interface Props {
   /** 弹框是否打开 */
   open: boolean;
   onClose: () => void;
-  /** 当前要编辑的仓库；null = 新增 */
+  /** 当前要编辑的仓库；null = 新增（从专家中心新建任务时永远是 null，表单从空白开始） */
   repo: Repo | null;
+  /** 已保存的仓库：新建时可一键改用已有仓库，省得重新填一遍 */
+  repos?: Repo[];
+  onUseRepo?: (repo: Repo) => void;
   onSaved: (repo: Repo, isNew: boolean) => void;
   onDeleted: (id: string) => void;
   toast: (msg: string) => void;
@@ -27,7 +30,7 @@ const INTERVALS = [
  * 审核模式没有可用仓库时自动弹出；平时点「⚙️ 仓库配置 / ⚙️ 仓库设置」打开。
  * 保存成功后自动关闭。
  */
-export default function RepoSetup({ open, onClose, repo, onSaved, onDeleted, toast }: Props) {
+export default function RepoSetup({ open, onClose, repo, repos = [], onUseRepo, onSaved, onDeleted, toast }: Props) {
   const [url, setUrl] = useState('');
   const [provider, setProvider] = useState('auto');
   const [token, setToken] = useState('');
@@ -130,6 +133,19 @@ export default function RepoSetup({ open, onClose, repo, onSaved, onDeleted, toa
         </div>
 
         <div className="modal-body">
+          {/* 新建任务时表单是空的；如果之前存过仓库，允许直接挑一个，不必重填 */}
+          {!repo && repos.length > 0 && (
+            <div className="repo-pick">
+              <div className="repo-pick-label">已有仓库可直接选用，无需重填；也可以新建一个：</div>
+              <div className="repo-pick-list">
+                {repos.map(r => (
+                  <span key={r.id} className="chip" title={r.url} onClick={() => onUseRepo?.(r)}>
+                    {r.owner}/{r.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           <label className="field">代码地址</label>
           <input
             type="text"

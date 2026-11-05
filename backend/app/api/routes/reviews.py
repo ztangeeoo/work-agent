@@ -13,6 +13,7 @@ from fastapi.responses import StreamingResponse
 
 from ... import store
 from ...services import events, review_client as rv
+from ...utils.render import render_comment_body
 from ..deps import db_blocked, err, user_key
 
 router = APIRouter(tags=["reviews"])
@@ -48,13 +49,7 @@ async def api_review_post(request: Request, rid: str):
         return err("仓库已被删除", 404)
     if not repo.get("token"):
         return err("该仓库没有配置 Token，无法回帖", 400)
-    body = "\n".join([
-        review.get("reportMd") or "",
-        "",
-        "---",
-        "🤖 由 AI 代码审核官自动生成（侦察官 → 审核官 → 裁决官）。",
-        "请结合业务上下文判断，机器意见仅供参考。",
-    ])
+    body = render_comment_body(review)
     try:
         r = await rv.post_pr_comment(repo, review["prNumber"], body)
         return {"ok": True, "url": r.get("url"), "review": store.mark_review_posted(rid, posted=True)}

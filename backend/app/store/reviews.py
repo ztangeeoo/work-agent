@@ -155,6 +155,20 @@ def set_repo_provider(rid: str, provider: str) -> bool:
         return cur.rowcount > 0
 
 
+def set_repo_enabled(rid: str, enabled: bool, user: str = DEFAULT_USER) -> dict | None:
+    """暂停 / 恢复自动轮询（只改开关，不碰地址与 Token）"""
+    db = init()
+    with lock:
+        cur = db.execute(
+            "UPDATE repo SET enabled = ?, updated_at = ? WHERE id = ? AND user_key = ?",
+            (1 if enabled else 0, now(), str(rid), user),
+        )
+        db.commit()
+        if not cur.rowcount:
+            return None
+    return get_repo(rid, user, with_token=False)
+
+
 def touch_repo(rid: str, at: int | None = None, error: str = ""):
     """记录一次轮询结果（时间戳 / 错误信息）"""
     db = init()
@@ -164,6 +178,26 @@ def touch_repo(rid: str, at: int | None = None, error: str = ""):
             (now() if at is None else int(at), str(error or ""), str(rid)),
         )
         db.commit()
+
+
+def clear_repo_errors(marker: str) -> int:
+    """清掉 last_error 里含 marker 的仓库错误（返回清了几条）
+
+    典型用法：模型配置刚补好，「未配置模型」这条历史错误立刻就不成立了。
+    不主动清的话，得等每个仓库轮到下一轮轮询（间隔可能几分钟）才会消失，
+    期间左侧会话列表一直挂着「未配模型」角标，看起来像没配成功。
+    """
+    marker = str(marker or "")
+    if not marker:
+        return 0
+    db = init()
+    with lock:
+        cur = db.execute(
+            "UPDATE repo SET last_error = '' WHERE last_error LIKE ?",
+            ("%" + marker + "%",),
+        )
+        db.commit()
+        return cur.rowcount
 
 
 def upsert_pr(repo_id: str, pr: dict) -> dict | None:

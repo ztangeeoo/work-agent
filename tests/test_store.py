@@ -137,6 +137,15 @@ def main():
     ok(store.list_all_repos()[0].get("token") == "", "list_all_repos 含 token 字段（供轮询用）")
     ok(len(store.list_repos()) == 1 and store.list_repos()[0]["openPrs"] == 0, "仓库带 openPrs 统计")
 
+    # 暂停 / 恢复自动轮询（头部「轮询中」开关）
+    off = store.set_repo_enabled(rid, False)
+    ok(off is not None and off["enabled"] is False, "暂停轮询：enabled=false")
+    ok(store.list_repos()[0]["enabled"] is False, "暂停后列表可见")
+    on = store.set_repo_enabled(rid, True)
+    ok(on is not None and on["enabled"] is True, "恢复轮询：enabled=true")
+    ok(store.set_repo_enabled("repo_not_exist", True) is None, "不存在的仓库返回 None")
+    ok(store.set_repo_enabled(rid, True, "other") is None, "只能改自己的仓库")
+
     # 校验
     for bad in ({"url": "", "owner": "a", "name": "b"}, {"url": "u", "owner": "", "name": "b"}):
         try:
@@ -233,6 +242,30 @@ def main():
     ok(store.list_reviews() == [], "级联删除审核报告")
     ok(store.list_prs(rid) == [], "级联删除 PR 记录")
     ok(store.get_repo(rid) is None, "仓库已不存在")
+
+    # ---------------------------------------------------------------- 设置（模型配置）
+    section("设置落库（模型配置）")
+    ok(store.get_model_cfg() == {}, "没配过时返回空 dict")
+    saved = store.save_model_cfg({
+        "base": " https://api.deepseek.com/v1 ", "key": "sk-test", "model": "deepseek-chat",
+        "profile": {"track": "后端"}, "runId": "run_x",
+    })
+    ok(saved == {"base": "https://api.deepseek.com/v1", "key": "sk-test", "model": "deepseek-chat"},
+       "只落 base/key/model，且去掉首尾空格")
+    ok(store.get_model_cfg()["model"] == "deepseek-chat", "回读模型名一致")
+    ok(store.get_setting(store.MODEL_CFG_KEY) is not None, "setting 表能按键取值")
+    ok(store.set_setting("probe", {"n": 1}) is None and store.get_setting("probe") == {"n": 1},
+       "任意键值可读回")
+    ok(store.delete_setting("probe") is True and store.get_setting("probe") is None, "键值可删除")
+
+    # 「未配置模型」这类历史错误要能被一次清掉
+    rid2 = store.save_repo({"url": "https://gitlab.com/g/p2", "owner": "g", "name": "p2",
+                            "intervalSec": 120}, "local")["id"]
+    store.touch_repo(rid2, error="未配置模型：请先在页面右上角齿轮里完成「模型配置」")
+    ok(store.get_repo(rid2)["lastError"].startswith("未配置模型"), "轮询错误已写入仓库")
+    ok(store.clear_repo_errors("未配置模型") >= 1, "clear_repo_errors 命中仓库")
+    ok(store.get_repo(rid2)["lastError"] == "", "仓库错误已清空")
+    store.delete_repo(rid2)
 
     # ---------------------------------------------------------------- 参数校验
     section("参数校验")

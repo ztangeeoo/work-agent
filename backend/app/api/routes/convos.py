@@ -66,6 +66,26 @@ async def api_convo_save(request: Request, cid: str):
         return err("数据库操作失败：" + str(e), 500)
 
 
+@router.delete("/api/convos/{cid}/messages")
+async def api_convo_clear(request: Request, cid: str):
+    """清空一场会话的消息（保留会话本身）。
+
+    为什么不用「POST 空 messages」：前端保存有 1.2s 去抖，agent 只要把旧消息回填一次，
+    空写就会被非空覆盖，用户看到的就是「点了清空没反应」。这里给一个幂等的显式入口。
+    """
+    blocked = db_blocked()
+    if blocked:
+        return blocked
+    try:
+        removed = store.clear_messages(cid, user_key(request))
+        conv = store.get_convo(cid, user_key(request))
+        if not conv:
+            return err("会话不存在：" + cid, 404)
+        return {"ok": True, "removed": removed, "convo": conv}
+    except Exception as e:
+        return err("数据库操作失败：" + str(e), 500)
+
+
 @router.delete("/api/convos/{cid}")
 async def api_convo_delete(request: Request, cid: str):
     blocked = db_blocked()

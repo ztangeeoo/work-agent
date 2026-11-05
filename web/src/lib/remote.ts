@@ -97,6 +97,22 @@ export async function deleteRemoteConvo(id: string): Promise<void> {
   } catch (_) {}
 }
 
+/**
+ * 清空某场会话的消息（服务端显式删除）。
+ * 不走「覆盖式保存」：那条路上有 1.2s 去抖，agent 一旦把旧消息回填，
+ * 空写就会被非空覆盖，表现出来就是「点了清空没生效」。
+ */
+export async function clearRemoteMessages(id: string): Promise<number | null> {
+  pending.delete(id);
+  try {
+    const d = await req<{ removed?: number }>(
+      `/api/convos/${encodeURIComponent(id)}/messages`, { method: 'DELETE' });
+    return typeof d?.removed === 'number' ? d.removed : 0;
+  } catch (_) {
+    return null;
+  }
+}
+
 /* ---------- 跨会话检索 ---------- */
 export interface SearchHit {
   id: string;

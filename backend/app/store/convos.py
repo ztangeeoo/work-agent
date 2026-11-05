@@ -180,6 +180,30 @@ def save_convo(data: dict, user: str = DEFAULT_USER) -> dict:
     return {"id": cid, "count": len(msgs)}
 
 
+def clear_messages(cid: str, user: str = DEFAULT_USER) -> int:
+    """清空一场会话的消息，保留会话本身（标题 / 绑定 / 画像都不动）。
+
+    单独做一个接口，是因为「覆盖式保存一个空 messages」在前端有去抖和时序竞争：
+    只要 agent 把旧消息回填一次，空写就会被非空覆盖，清空看起来像没生效。
+    """
+    db = init()
+    with lock:
+        own = db.execute(
+            "SELECT 1 FROM convo WHERE id = ? AND user_key = ?", (str(cid), user)
+        ).fetchone()
+        if not own:
+            return 0
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            cur = db.execute("DELETE FROM msg WHERE convo_id = ?", (str(cid),))
+            db.execute("UPDATE convo SET updated_at = ? WHERE id = ?", (now(), str(cid)))
+            db.execute("COMMIT")
+        except Exception:
+            db.execute("ROLLBACK")
+            raise
+    return int(cur.rowcount or 0)
+
+
 def delete_convo(cid: str, user: str = DEFAULT_USER) -> bool:
     db = init()
     with lock:

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Convo, Repo } from '../types';
 import { fmtTime } from '../lib/storage';
+import { pollShort } from '../lib/poll';
 import { searchMessages, type SearchHit } from '../lib/remote';
 
 interface Props {
@@ -132,8 +133,14 @@ export default function ConvoSidebar({
               (c.messages || []).length + ' 条消息',
               agentCfg,
             ].filter(Boolean).join(' · ');
+            /* 审核会话的轮询状态：灯在呼吸 = 此刻在跑；常亮 = 开着等下一轮；灰 = 已暂停 */
+            const poll = isReview ? pollShort(repo) : null;
             return (
-              <div key={c.id} className={'convo-item' + (c.id === activeId ? ' active' : '')} onClick={() => onSwitch(c.id)}>
+              <div
+                key={c.id}
+                className={'convo-item' + (c.id === activeId ? ' active' : '')}
+                onClick={() => onSwitch(c.id)}
+              >
                 <div className="convo-main">
                   <div className="convo-title">
                     <span className={
@@ -142,7 +149,16 @@ export default function ConvoSidebar({
                     }>
                       {bound == null ? '空' : isReview ? '审' : '面'}
                     </span>
-                    {c.title || '新会话'}
+                    <span className="convo-title-text">{c.title || '新会话'}</span>
+                    {poll && (
+                      <span
+                        className={'convo-poll is-' + poll.dot}
+                        title={poll.dot === 'live' ? '此刻正在轮询 / 审核' : poll.dot === 'off' ? '自动轮询已暂停' : '按间隔自动轮询'}
+                      >
+                        <i className="poll-dot" aria-hidden="true" />
+                        {poll.label}
+                      </span>
+                    )}
                   </div>
                   <div className="convo-meta">{meta}</div>
                 </div>
