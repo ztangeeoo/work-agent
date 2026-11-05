@@ -1,57 +1,96 @@
 # -*- coding: utf-8 -*-
-"""流水线阶段元信息
+"""流水线角色与专家清单（**插件清单的投影**）
 
-前端「智能体流水线」面板按 stage 渲染标签与图标，SSE 里的
-`{agent_stage: {stage, label, icon, status, ms, detail}}` 取自这里。
-新增一个智能体时只需要在这里加一行。
+唯一真相在 `backend/plugins/<id>/plugin.yaml`：
+
+    stages:     角色 id / 标签 / 图标 / 顺序（前端流水线面板按它渲染）
+    expert_id:  对外专家 id（interviewer / reviewer，与目录名不同）
+    name/icon:  专家展示名与头像字
+
+本模块只做视图，给非插件代码（前端接口、技能归属）用。刻意不再手抄常量：
+以前加一个角色要在插件清单和这里各写一遍，两边一定会漂；而「加一条业务线」
+的成本正是插件化要消掉的东西。
+
+老代码里 `from ..core.stages import STAGE_META` 仍可用，见文件末尾的
+模块级 `__getattr__`（每次访问重新生成，改完 yaml 不用重启）。
 """
 
-STAGE_META = {
-    # 面试出题官
-    "planner": {"label": "策划官", "icon": "🧭"},
-    "interviewer": {"label": "面试官", "icon": "🎯"},
-    "grader": {"label": "评分官", "icon": "🧑‍⚖️"},
-    # 代码审核官
-    "scout": {"label": "侦察官", "icon": "🔍"},
-    "reviewer": {"label": "审核官", "icon": "🛡️"},
-    "judge": {"label": "裁决官", "icon": "⚖️"},
-    "advisor": {"label": "审核答疑", "icon": "💬"},
-}
+from typing import Optional
+
+
+def _plugin_stage(stage: str) -> Optional[dict]:
+    try:
+        from ..agents import registry
+        return registry.stage_meta(stage)
+    except Exception:
+        return None
 
 
 def stage_meta(stage: str) -> dict:
-    """取阶段元信息，未知阶段给个兜底，避免前端空白"""
-    return STAGE_META.get(stage, {"label": stage, "icon": "🤖"})
+    """取阶段元信息；插件里没有的角色给个兜底，避免前端空白"""
+    meta = _plugin_stage(stage)
+    if meta:
+        return {"label": meta.get("label") or stage, "icon": meta.get("icon") or "🤖"}
+    return {"label": stage, "icon": "🤖"}
 
 
-# ---------------------------------------------------------------- 专家与角色
-# 「专家」是用户能选的两位入口（对应 web/src/data/tracks.ts 的 AGENTS）；
-# 「角色」是流水线里的具体智能体（上面 STAGE_META 的 key）。
-# 专家 id 沿用前端已有取值（不改历史会话数据），其中 interviewer 恰好与同名
-# 角色重名，所以代码里凡指专家一律写成 expert_id / EXPERT_*。
-#
-# 注意：**权威数据在数据库**（store 的 expert / agent 两张表）。
-# 下面这两个常量只是兜底——库没连上、或者单测里没建库时用它们，
-# 这样「加一个智能体」只需要改库（/api/experts 的数据源），不用同步改代码。
-# services/skills.py 的 _experts() 就是「先读库、读不到再用这里」。
-EXPERT_META = {
-    "interviewer": {"label": "面试出题官", "icon": "面", "mode": "interview"},
-    "reviewer": {"label": "代码审核官", "icon": "审", "mode": "review"},
-}
+def stages() -> dict[str, dict]:
+    """全部角色：角色 id → {label, icon, ...}"""
+    try:
+        from ..agents import registry
+        return registry.all_stages()
+    except Exception:
+        return {}
 
-# 专家 → 该专家下会跑到的角色。**仅在库不可用时兜底**，正常路径读 store。
-EXPERT_STAGES = {
-    "interviewer": ("planner", "interviewer", "grader"),
-    "reviewer": ("scout", "reviewer", "judge", "advisor"),
-}
+
+def experts() -> list[dict]:
+    """专家清单：[{id, mode, label, icon, stages}]，顺序按插件 id
+
+    插件目录坏了只会少一行，不会抛——技能归属与前端清单都不该因为
+    一个 yaml 写错而整页失败。
+    """
+    try:
+        from ..agents import registry
+        return [
+            {
+                "id": p.expert_id,
+                "mode": p.mode,
+                "label": p.name,
+                "icon": p.icon,
+                "stages": [s["id"] for s in p.stages],
+            }
+            for p in registry.all_plugins()
+        ]
+    except Exception:
+        return []
 
 
 def stages_of_expert(expert_id: str) -> tuple[str, ...]:
-    """兜底版：某个专家下会跑到的角色列表（正常运行请走 services/skills.py）"""
-    return EXPERT_STAGES.get(expert_id, ())
+    """某个专家下会跑到的角色（按插件里声明的顺序）"""
+    for e in experts():
+        if e["id"] == expert_id:
+            return tuple(e["stages"])
+    return ()
 
 
 def experts_of_stage(stage: str) -> list[str]:
     """某个角色属于哪些专家（一个角色只属于一个专家；用于展示）"""
-    return [e for e, stages in EXPERT_STAGES.items() if stage in stages]
+    return [e["id"] for e in experts() if stage in e["stages"]]
 
+
+def __getattr__(name: str):
+    """兼容出口：让老的常量式取法仍然工作（PEP 562 模块级属性）
+
+    `STAGE_META` / `EXPERT_META` / `EXPERT_STAGES` 曾经是手写常量，现在改为
+    每次访问时从插件清单现算。新代码请直接用上面的函数。
+    """
+    if name == "STAGE_META":
+        return stages()
+    if name == "EXPERT_META":
+        return {
+            e["id"]: {"label": e["label"], "icon": e["icon"], "mode": e["mode"]}
+            for e in experts()
+        }
+    if name == "EXPERT_STAGES":
+        return {e["id"]: tuple(e["stages"]) for e in experts()}
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

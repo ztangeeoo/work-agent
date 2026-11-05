@@ -2,7 +2,7 @@
 """
 代码审核 · 代码托管平台适配层（Python / httpx 异步）
 
-负责三件事（其余交给 app/agents/review.py 的三智能体审核流水线）：
+负责三件事（其余交给 backend/plugins/review/ 的三智能体审核流水线）：
   1. 解析用户填的「代码地址」→ provider / owner / name
   2. 拉取开放 PR（GitHub Pull Request / GitLab Merge Request / Gitee Pull Request）与 diff
   3. 把审核意见回帖到 PR（可选，默认关闭）

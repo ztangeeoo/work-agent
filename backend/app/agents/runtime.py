@@ -12,6 +12,8 @@ from agentscope.message import Msg
 from agentscope.model import OpenAIChatModel
 from agentscope.types import ReplyFinishedReason
 
+from ..core.log import log
+from ..llm.factory import has_v1_suffix
 from ..tools.registry import build_toolkit
 
 
@@ -74,6 +76,35 @@ async def drive_agent(
         if final_msg is not None:
             card = final_msg.structured_output
         yield ("structured", card if isinstance(card, dict) else None)
+
+
+async def stream_with_retry(payload: dict, spawn=None):
+    """带 /v1 自动补全重试：第一次失败且未产出内容时，补 /v1 再试一次
+
+    `spawn(payload, base_override)` 返回一个异步迭代器；不传则走**默认插件**
+    （config.DEFAULT_MODE，默认是面试出题官）。这里不 import 任何具体业务线——
+    默认是哪条由配置决定，换默认不用改基础设施。
+    """
+    from .. import config
+    from . import registry
+
+    spawn = spawn or (lambda p, override: registry.default().chat(p, override))
+    base_raw = (payload.get("base") or "").strip()
+    produced = False
+    try:
+        async for chunk in spawn(payload, None):
+            produced = True
+            yield chunk
+        return
+    except Exception as e:
+        if produced:
+            raise
+        need_retry = "404" in str(e) and base_raw and not has_v1_suffix(base_raw)
+        if not need_retry:
+            raise
+        log(f"404 重试：{base_raw} → {base_raw.rstrip('/')}/v1")
+        async for chunk in spawn(payload, base_raw.rstrip("/") + "/v1"):
+            yield chunk
 
 
 class StatusFlusher:

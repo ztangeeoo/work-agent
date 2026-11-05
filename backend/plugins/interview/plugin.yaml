@@ -1,0 +1,64 @@
+# 面试出题官 · 能力包
+#
+# 一个插件 = 一条业务线。stages 是这条流水线上的编排位置，不是可独立插拔的单元：
+# 评分官的输入只来自面试官产出的对话，策划官产出的大纲只被面试官消费。
+id: interview
+mode: interview
+name: 面试出题官
+icon: 面
+version: "0.1.0"
+
+# 对外专家 id。前端 tracks.ts 与库里 expert 表从早期版本起就按 interviewer /
+# reviewer 记录，和插件目录名不是一回事，所以显式声明而不是靠目录名推断。
+expert_id: interviewer
+
+# 专家卡片文案（同步进 expert 表）。库里已有该行时**文案以库为准**，
+# 这里只在首次建档时作为默认值——改文案改库，改结构（专家/角色增删）改这里。
+role: AI 技术面试官
+desc: 按技术方向 / 级别 / 经验 / 行业背景 / 简历智能出题，支持追问与结构化评分复盘。
+tags: [智能出题, 简历深挖, 评分复盘]
+cta: 开始出题
+sort: 1
+
+entry:
+  # chat 流式，对应 /v1/chat/completions（不传 agent_mode 时也是它）
+  chat: pipeline:chat
+
+stages:
+  - id: planner
+    label: 策划官
+    icon: 🧭
+    avatar: 谋
+    role: 首次出题前规划考察大纲
+    order: 10
+    tools: []            # 只产出大纲，不需要工具
+  - id: interviewer
+    label: 面试官
+    icon: 🎯
+    avatar: 面
+    role: 出题 / 追问 / 讲解（主智能体）
+    order: 20
+    primary: true
+    tools: [question_bank]
+  - id: grader
+    label: 评分官
+    icon: 🧑‍⚖️
+    avatar: 评
+    role: 对候选人回答做结构化评分与复盘
+    order: 30
+    tools: []            # 结构化输出，不需要工具
+
+# 插件自己的业务配置，经 ctx.options 传进实现。
+# use_planner: 首次出题前是否先跑策划官生成考察大纲。
+#   环境变量 USE_PLANNER=0 仍可整体关闭（运维级总开关，优先级更高）。
+options:
+  use_planner: true
+  # 意图路由：「评一下我这回答」这类话术走评分官，其余走出题/追问。
+  # 判错了用户还能继续追问，所以规则刻意保持极简。
+  score_keywords: [评分, 评估, 打个分, 评价一下, 点评一下, 复盘, 我答得, 看看我的回答, 帮我看看答]
+
+# 该能力包整体依赖的外部件（自检 / 展示用）。
+# **真正决定某个角色装什么工具的是上面的 stages[].tools**，这里是包级汇总。
+requires:
+  tools: [question_bank]
+  skills: [question-design]

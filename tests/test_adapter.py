@@ -19,7 +19,8 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ADAPTERS = os.path.join(ROOT, "backend", "adapters")
+# 偏好层已并入插件目录：plugins/<name>/preferences/{ADAPTER.md,adapter.yaml}
+PLUGINS = os.path.join(ROOT, "backend", "plugins")
 
 pass_n = 0
 fail_n = 0
@@ -93,9 +94,9 @@ with open(md, "w", encoding="utf-8") as f:
 os.utime(md, (time.time() + 1, time.time() + 1))
 ok(ha.adapter_text("big") == "第二版", "mtime 变化后读到第二版")
 
-print("\n[6] 清单合法性：adapters/*/adapter.yaml 符合 hermit 约定")
+print("\n[6] 清单合法性：plugins/*/preferences/adapter.yaml 符合 hermit 约定")
 for name in ("interview", "review"):
-    p = os.path.join(ADAPTERS, name, "adapter.yaml")
+    p = os.path.join(PLUGINS, name, "preferences", "adapter.yaml")
     ok(os.path.isfile(p), f"{name}/adapter.yaml 存在")
     if not os.path.isfile(p):
         continue
@@ -103,14 +104,18 @@ for name in ("interview", "review"):
     ok(f"id: {name}" in raw, f"{name} 的 template.id 与目录名一致")
     ok("version:" in raw, f"{name} 声明了 template.version")
     ok("learnable:" in raw and "ADAPTER.md" in raw, f"{name} 把 ADAPTER.md 标为可学习")
-    ok(os.path.isfile(os.path.join(ADAPTERS, name, "ADAPTER.md")), f"{name}/ADAPTER.md 存在")
+    ok(os.path.isfile(os.path.join(PLUGINS, name, "preferences", "ADAPTER.md")),
+       f"{name}/preferences/ADAPTER.md 存在")
 
 print("\n[7] status()：给 /api/db/stats 的自检信息")
 ha = fresh()
 st = ha.status()
-ok(set(st) == {"enabled", "backend", "dir", "adapters"}, "字段齐全")
+ok(set(st) == {"enabled", "backend", "dir", "adapters", "sources"}, "字段齐全")
 ok(st["adapters"].get("interview", 0) > 0, "报告 interview 的字符数")
 ok(st["adapters"].get("review", 0) > 0, "报告 review 的字符数")
+ok(st["sources"].get("interview", "").endswith(os.path.join("interview", "preferences")),
+   "interview 的偏好读自插件内的 preferences/")
+ok(st["dir"].endswith("plugins"), "默认根是插件目录（不再有第二个 adapters 根）")
 ok(st["backend"] in ("hermit", "file", "none"), "backend 取值合法")
 
 shutil.rmtree(tmp, ignore_errors=True)
@@ -126,10 +131,11 @@ WANT = {
     "judge_sys_prompt": "review",
     "reviewer_chat_sys_prompt": "review",
 }
-# 提示词按业务拆在两个模块里，两个都要扫
+# 提示词按业务分处两方，两边都已在插件里（app/prompts 只剩兼容壳，函数定义不在这里）。
+# 守卫跟着实现走，不做路径兼容——路径对不上的那天，正是有人把提示词搬走却忘了接线的时候。
 PROMPT_FILES = [
-    os.path.join(ROOT, "backend", "app", "prompts", "interview.py"),
-    os.path.join(ROOT, "backend", "app", "prompts", "review.py"),
+    os.path.join(ROOT, "backend", "plugins", "interview", "prompts.py"),
+    os.path.join(ROOT, "backend", "plugins", "review", "prompts.py"),
 ]
 found = {}
 for path in PROMPT_FILES:

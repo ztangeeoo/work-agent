@@ -1,0 +1,67 @@
+# 代码审核官 · 能力包
+#
+# 一个插件 = 一条业务线。插件里的 stages 是这条流水线上的编排位置，
+# 不是独立可插拔的单元（侦察官离开审核官就没有消费者）。
+id: review
+mode: review
+name: 代码审核官
+icon: 审
+version: "0.1.0"
+
+# 对外专家 id（历史取值，与插件目录名不同）。前端 tracks.ts 与库里 expert 表
+# 都按它记录，第 6 步从插件同步库时也用它，不能靠目录名推断。
+expert_id: reviewer
+
+# 专家卡片文案（同步进 expert 表）。库里已有该行时文案以库为准。
+role: AI Code Reviewer
+desc: 轮询仓库开放 PR，按正确性 / 安全 / 并发性能 / 可维护性 / 测试五维审核，给出风险等级与合入结论。
+tags: [PR 审核, 风险定级, 修复建议]
+cta: 开始审核
+sort: 2
+
+# 入口：模块名:函数名，模块相对本目录。
+#   chat  流式，对应 /v1/chat/completions 且 agent_mode=review
+#   job   一次性，对应 /v1/review 与后台 PR 轮询
+entry:
+  chat: pipeline:chat
+  job: pipeline:run
+
+# 流水线角色。label / icon 由这里生效 —— core/stages.py 的 stage_meta()
+# 优先查插件清单，查不到才回落到内置常量。
+stages:
+  - id: scout
+    label: 侦察官
+    icon: 🔍
+    avatar: 侦
+    role: 拉取 PR、解析 diff 与上下文
+    order: 10
+    tools: []            # 只读 diff 文本，不碰仓库接口
+  - id: reviewer
+    label: 审核官
+    icon: 🛡️
+    avatar: 审
+    role: 五维审核、定风险等级与合入结论（主智能体）
+    order: 20
+    primary: true
+    tools: []
+  - id: judge
+    label: 裁决官
+    icon: ⚖️
+    avatar: 裁
+    role: 汇总各维度结论并给出最终裁决
+    order: 30
+    tools: []
+  - id: advisor
+    label: 审核答疑
+    icon: 💬
+    avatar: 答
+    role: 基于审核报告回答追问
+    order: 40
+    tools: [repo_readonly]   # 追问时可以自己拉 MR / diff / 文件
+
+# 该能力包整体依赖的外部件（自检 / 展示用）。
+# **真正决定某个角色装什么工具的是上面的 stages[].tools**，这里是包级汇总，
+# 两边不一致时以 stages 为准（自检会把差异报出来）。
+requires:
+  tools: [repo_readonly]
+  skills: [code-review-security]

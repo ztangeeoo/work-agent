@@ -27,7 +27,7 @@ import threading
 from pathlib import Path
 
 from .. import config
-from ..core.stages import STAGE_META, EXPERT_META, EXPERT_STAGES
+from ..core import stages as stage_catalog
 
 _NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -107,11 +107,13 @@ def _catalog_version() -> str:
 
 
 def _experts() -> list[dict]:
-    """「专家 → 角色」的唯一真相在数据库（expert / agent 两张表）。
+    """「专家 → 角色」的归属映射
 
-    以前这份映射在 core/stages.py 里手抄一份，加了智能体就要两处改，容易漂。
-    现在优先读库，读不到（没初始化 / 未启用 / 单测环境）才回退常量兜底。
-    返回 [{"id", "mode", "label", "icon", "stages": [...]}]，顺序即库里的 sort。
+    权威数据最终是**插件清单**（backend/plugins/*/plugin.yaml）；库里的
+    expert / agent 两张表是它的投影。当前处于过渡期：库里有数据就先用库
+    （不改变已有部署的行为），库空着（新装 / 单测）则直接从插件清单现算。
+
+    返回 [{"id", "mode", "label", "icon", "stages": [...]}]。
     """
     try:
         from .. import store
@@ -135,13 +137,13 @@ def _experts() -> list[dict]:
 
     return [
         {
-            "id": eid,
-            "mode": meta["mode"],
-            "label": meta["label"],
-            "icon": meta["icon"],
-            "stages": list(EXPERT_STAGES.get(eid, ())),
+            "id": e["id"],
+            "mode": e["mode"],
+            "label": e["label"],
+            "icon": e["icon"],
+            "stages": list(e["stages"]),
         }
-        for eid, meta in EXPERT_META.items()
+        for e in stage_catalog.experts()
     ]
 
 
@@ -157,7 +159,7 @@ def _experts_source() -> str:
 
 
 def _all_stages(experts: list[dict]) -> list[str]:
-    """所有已知角色（按专家顺序去重）；库里一个都没有时回退 STAGE_META
+    """所有已知角色（按专家顺序去重）；库里一个都没有时回退插件清单
 
     全局技能的 stages 取自这里 —— 否则库里新增的角色永远吃不到全局技能。
     """
@@ -166,7 +168,7 @@ def _all_stages(experts: list[dict]) -> list[str]:
         for s in e["stages"]:
             if s not in out:
                 out.append(s)
-    return out or list(STAGE_META.keys())
+    return out or list(stage_catalog.stages().keys())
 
 
 def _signature(root: Path) -> tuple:

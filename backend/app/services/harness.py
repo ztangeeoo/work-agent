@@ -2,12 +2,16 @@
 """
 Harness adapter 加载层（Hermit 兼容，可缺省）
 
-作用：把 `backend/adapters/<name>/ADAPTER.md` 这段**可训练的外挂指令**接到各 Agent 的
-system prompt 末尾。指令本身是纯文本文件，训练流程（hermit train）可以改写它，
+作用：把 `backend/plugins/<name>/preferences/ADAPTER.md` 这段**可训练的外挂指令**接到各
+Agent 的 system prompt 末尾。指令本身是纯文本文件，训练流程（hermit train）可以改写它，
 而不需要动 prompts/ 里的任何代码。
 
+偏好跟着插件住：`plugins/<name>/` 里既有代码（pipeline.py / prompts.py），
+也有可训练层（preferences/），一个专家就是一个目录。以前这块单独放
+`backend/adapters/<name>/`，和插件目录同名却不同义，加业务线要在两个根各建一个目录。
+
 设计约束：
-- **零硬依赖**：没装 `hermit-harness`、没有 adapters 目录、或清单不合法时，
+- **零硬依赖**：没装 `hermit-harness`、插件没写 preferences/、或清单不合法时，
   自动退回「直接读文件」；再不行就返回空串，compose() 原样返回 base。
   也就是说：这一层失效时，行为和接入前逐字节一致。
 - **零模型调用**：context() 只读本地文件，不产生 token 消耗、不增加首字延迟。
@@ -17,6 +21,8 @@ system prompt 末尾。指令本身是纯文本文件，训练流程（hermit tr
 环境变量：
   HARNESS_ADAPTER      1/0，是否启用（默认 1）
   HARNESS_ADAPTER_MAX  单份 adapter 文本的字符上限（默认 6000），防止误写超长文件
+  HARNESS_ADAPTER_DIR  偏好根目录，**显式设置时独占**（指向一份实验版本，不掺插件目录）；
+                       不设置就用 PLUGINS_DIR，偏好从 `plugins/<name>/preferences/` 读
 """
 
 import os
@@ -25,8 +31,25 @@ from pathlib import Path
 
 from .. import config
 
-# 目录在 import 时确定（便于测试热切换 HARNESS_ADAPTER_DIR：reload 即可生效）
-ADAPTERS_DIR = Path(os.environ.get("HARNESS_ADAPTER_DIR") or config.ADAPTERS_DIR)
+
+def _root() -> Path:
+    """偏好层根目录。显式设了 HARNESS_ADAPTER_DIR 就独占，否则跟插件同根。
+
+    独占而不是叠加：环境变量的用途是「换一份实验版本跑跑看」，
+    叠加会让实验版本漏掉的 adapter 悄悄回落到线上版本，测出来的结果不可信。
+    """
+    env = os.environ.get("HARNESS_ADAPTER_DIR")
+    return Path(env) if env else config.PLUGINS_DIR
+
+
+def _dir_of(name: str) -> Path | None:
+    """某个名称的偏好目录：插件内的 preferences/ 优先，兼容直接平铺的实验目录"""
+    base = _root() / name
+    for cand in (base / "preferences", base):
+        if cand.is_dir() and (cand / "ADAPTER.md").is_file():
+            return cand
+    return None
+
 
 ENABLED = os.environ.get("HARNESS_ADAPTER", "1") not in ("0", "false", "False")
 MAX_CHARS = int(os.environ.get("HARNESS_ADAPTER_MAX", "6000"))
@@ -78,8 +101,8 @@ def adapter_text(name: str) -> str:
     """返回某个 adapter 的指令文本；不可用时返回空串"""
     if not ENABLED or not name:
         return ""
-    d = ADAPTERS_DIR / name
-    if not d.is_dir():
+    d = _dir_of(name)
+    if d is None:
         return ""
 
     sig = _signature(d)
@@ -102,12 +125,22 @@ def compose(base: str, name: str) -> str:
 
 def status() -> dict:
     """给 /api/db/stats 用的自检信息（先测一遍各 adapter，backend 才准确）"""
-    names = sorted(p.name for p in ADAPTERS_DIR.iterdir() if p.is_dir()) if ADAPTERS_DIR.is_dir() else []
-    sizes = {n: len(adapter_text(n)) for n in names}
+    root = _root()
+    names = sorted(d.name for d in root.iterdir() if d.is_dir()) if root.is_dir() else []
+    sources = {}
+    sizes = {}
+    for n in names:
+        d = _dir_of(n)
+        if d is None:
+            continue
+        sources[n] = str(d)
+        sizes[n] = len(adapter_text(n))
     backend = "hermit" if _last_backend == "hermit" else ("file" if _last_backend == "file" else "none")
     return {
         "enabled": ENABLED,
         "backend": backend,
-        "dir": str(ADAPTERS_DIR),
+        "dir": str(root),
         "adapters": sizes,
+        # 每份偏好实际读的目录（插件内 preferences/ 还是环境变量指的平铺目录）
+        "sources": sources,
     }

@@ -10,9 +10,11 @@ backend/
 ├── server.js                 Node 网关 :8787：静态托管 + CopilotKit runtime + 反向代理到 :8790
 ├── agent_adapter.js          CopilotKit ServiceAdapter：把 runtime 的请求转成 OpenAI 兼容请求
 ├── requirements.txt
-├── adapters/                 可训练的外挂指令（Hermit 格式），按智能体分目录
-│   ├── interview/            ADAPTER.md（面试官 + 策划官）
-│   └── review/               ADAPTER.md（侦察官 + 审核官 + 裁决官 + 审核追问）
+├── plugins/                  专家插件：一个目录一个能力包
+│   ├── interview/            面试出题官（plugin.yaml + pipeline.py + prompts.py + intent.py）
+│   │   └── preferences/      可训练偏好（ADAPTER.md + hermit 清单 adapter.yaml）
+│   └── review/               代码审核官（同上结构）
+│       └── preferences/      可训练偏好（ADAPTER.md + adapter.yaml）
 ├── skills/                   技能（Agent Skills 格式）：一个目录一个 SKILL.md
 │   ├── question-design/      场景化出题方法（面试出题官）
 │   ├── code-review-security/ 安全审查清单（代码审核官）
@@ -22,7 +24,7 @@ backend/
 │   └── sandbox_probe.py      沙箱自检（Docker / 本地）
 └── app/                      ★ 应用主包
     ├── main.py               创建 FastAPI、生命周期（建库 → 起轮询 → 收尾）、注册路由
-    ├── config.py             路径与开关（端口、策划官开关、数据目录、adapter 目录）
+    ├── config.py             路径与开关（端口、默认业务线、数据目录、插件目录）
     ├── state.py              进程内共享状态：前端模型配置、轮询器单例
     ├── core/                 横切关注点
     │   ├── version.py        AgentScope 2.0 版本闸门（装错版本立刻给出修复命令）
@@ -34,10 +36,10 @@ backend/
     │   └── review_report.py  审核报告 JSON 形状、严重度/结论标签、归一化
     ├── llm/
     │   └── factory.py        任意 OpenAI 兼容接口 → OpenAIChatModel（带缓存）
-    ├── prompts/              提示词仓库（一个智能体一个函数）
+    ├── prompts/              提示词（实现在各插件里，这里只剩公共件与兼容壳）
     │   ├── profile.py        候选人画像 / PR 信息 → 文本片段
-    │   ├── interview.py      面试官、策划官、评分官
-    │   └── review.py         侦察官、审核官、裁决官、审核答疑
+    │   ├── interview.py      兼容壳：转发 plugins/interview/prompts.py
+    │   └── review.py         兼容壳：转发 plugins/review/prompts.py
     ├── tools/
     │   ├── question_bank.py  内置高频题库（11 个主方向 × 细分）
     │   └── registry.py       FunctionTool / Toolkit 装配（显式 ALLOW）
@@ -48,16 +50,18 @@ backend/
     │   ├── reviews.py        仓库 / PR / 审核报告 CRUD
     │   └── __init__.py      门面：`from .. import store` 后按 `store.xxx()` 调用
     ├── services/             外部适配与应用服务
-    │   ├── harness.py        adapter 加载（hermit 可缺省 / mtime 热更新 / 可旁路）
+    │   ├── harness.py        可训练偏好加载（读 plugins/<name>/preferences/，hermit 可缺省 / mtime 热更新 / 可旁路）
     │   ├── skills.py         技能扫描与归属解析（全局 / 专家 / 角色，mtime 热更新）
     │   ├── review_client.py  代码托管客户端：解析地址、拉 PR / diff、回帖、走代理
     │   ├── poller.py         PR 轮询调度：同仓库串行、单轮限流、到期触发
     │   └── events.py         审核事件中心（订阅 / 补发最近一批）
-    ├── agents/               智能体编排
-    │   ├── runtime.py        make_agent / drive_agent（事件流）/ StatusFlusher
-    │   ├── router.py         意图路由（出题 vs 评分）
-    │   ├── interview.py      策划官 → 面试官 →（评分官）流水线，SSE 输出
-    │   └── review.py         侦察官 → 审核官 → 裁决官流水线
+    ├── agents/               智能体编排基础设施
+    │   ├── contract.py       ChatCtx + ExpertPlugin 协议（插件只依赖这里）
+    │   ├── registry.py       插件发现与分派（扫 plugins/*/plugin.yaml，按 mode 选能力包）
+    │   ├── runtime.py        make_agent / drive_agent（事件流）/ StatusFlusher / stream_with_retry
+    │   ├── interview.py      兼容壳：转发 plugins/interview/pipeline.py
+    │   ├── router.py         兼容壳：转发 plugins/interview/intent.py
+    │   └── review.py         兼容壳：转发 plugins/review/pipeline.py
     ├── utils/                无状态工具
     │   ├── sse.py            OpenAI 兼容 chunk + agent_stage 事件
     │   ├── messages.py       OpenAI messages → AgentScope Msg
@@ -86,22 +90,26 @@ convo.agent_id ──▶ agent(expert_id) ──▶ expert(mode: interview/revie
   每个专家有且只有一个 `is_primary=1` 的主智能体，新会话默认绑定它。
 - `convo.agent_id`：会话绑定的智能体，`NULL` = 还没关联专家；`convo.agent_mode` 是
   由 `agent → expert` 派生的冗余字段，只给老接口和路由用，写入时一律以 `agentId` 为准。
-- 内置数据由 `store/db.py` 的 `SEED_EXPERTS` / `SEED_AGENTS` 在首次建库时 `INSERT OR IGNORE`
-  灌入；之后以库为准，改文案 / 加专家直接改库即可，重启不覆盖。
+- 内置数据：`store/db.py` 的 `_sync_catalog()` 在启动时**从 `backend/plugins/*/plugin.yaml` 同步**——
+  结构字段（mode / stage / is_primary / sort / enabled）以插件为准，文案字段（name / icon / role /
+  desc / tags / cta）只在首次建档写入，之后以库为准。插件里没有的专家/角色 → `enabled=0` 软停用（不删行，
+  历史会话仍可解析）。`SEED_EXPERTS` / `SEED_AGENTS` 降为兜底：插件清单整个读不到时才用。
 - 老库自动迁移：`convo` 补 `agent_id` 列，并按 `agent_mode` 回填成对应专家的主智能体。
 
 ## 分层与依赖方向
 
 ```
-api  →  agents  →  { llm, prompts, tools, schemas }
-             ↘  services  →  store
+api  →  agents.registry  →  plugins/<id>  →  { llm, tools, schemas }
+                                     ↘  services  →  store
                     ↘  core / config / utils
 ```
 
-- **只允许上层依赖下层**。`services/poller.py` 不直接 import `agents/review.py`，
+- **只允许上层依赖下层**。`services/poller.py` 不直接 import 插件流水线，
   审核函数由 `main.create_app()` 注入——需要时用这个办法打断环，别做模块级互相 import。
-- **路由层只做参数校验与响应**，任何编排逻辑都下沉到 `agents/` 或 `services/`。
-- **提示词只拼字符串**，不读文件：adapter 拼接统一在 `services/harness.py`。
+- **路由层只做参数校验与响应**，任何编排逻辑都下沉到插件或 `services/`。
+- **插件依赖 `agents/contract.py` 的 `ChatCtx`**：模型、SSE 编码、日志由 ctx 与 runtime 提供，
+  `chat(ctx)` 里不要自己 `draft_model()`；只有 `run(payload)`（一次性任务，没有 ctx）才自己建模型。
+- **提示词只拼字符串**，不读文件：偏好拼接统一在 `services/harness.py`。
 
 ## 一次请求怎么走
 
@@ -109,12 +117,14 @@ api  →  agents  →  { llm, prompts, tools, schemas }
 
 ```
 routes/chat.py  预取第一块（404/401 直接 JSON 502，不混进正文）
-  → agents/interview.stream_with_retry   /v1 缺失时补全重试一次
-    → agents/router.route_intent        评分意图 → 评分官；否则出题
-    → agents/runtime.make_agent         每次请求新建空状态 Agent
-    → prompts/*.compose                 system prompt + adapters/*/ADAPTER.md
-    → agents/runtime.drive_agent        事件流 → text / tool / structured
-    → utils/sse.sse_chunk|sse_stage     文本增量 + 阶段事件
+  → agents.registry.for_mode(mode)  没传 agent_mode 就用 config.DEFAULT_MODE
+    → agents/runtime.stream_with_retry   /v1 缺失时补全重试一次
+      → plugins/interview/pipeline.chat
+        → intent.route_intent              评分意图 → 评分官；否则出题
+        → agents/runtime.make_agent        每次请求新建空状态 Agent
+        → plugins/<id>/prompts.compose     system prompt + preferences/ADAPTER.md
+        → agents/runtime.drive_agent       事件流 → text / tool / structured
+        → utils/sse.sse_chunk|sse_stage    文本增量 + 阶段事件
 ```
 
 代码审核（`POST /v1/review`，一次性 JSON）：
@@ -131,8 +141,8 @@ routes/chat.py → agents/review.run_review
 
 | 需求 | 改这里 |
 |---|---|
-| 加一个智能体 / 调整流水线顺序 | `agents/*.py` + `core/stages.py`（前端面板标签）+ `prompts/`（提示词） |
-| 调提示词 | `prompts/*.py`；若属于「可训练的外挂指令」，写 `adapters/<name>/ADAPTER.md` |
+| 加一条业务线（新专家） | 新建 `plugins/<id>/` 目录：`plugin.yaml` 声明专家与角色 + `pipeline.py` + `prompts.py`（+ 可选 `preferences/`），重启即在专家中心出现 |
+| 调提示词 | `plugins/<id>/prompts.py`；若属于「可训练的外挂指令」，写 `plugins/<id>/preferences/ADAPTER.md` |
 | 加一个 Agent 工具 | `tools/` 里写函数 → `tools/registry.build_toolkit()` 注册 → `runtime.make_agent(with_tools=True)` |
 | 加一个技能 | 在 `skills/<name>/SKILL.md` 写正文 + 声明归属（`scope`），放到目录即生效，不用改代码 |
 | 加一个 HTTP 接口 | `api/routes/<域>.py` 里加 `@router.<method>`；`main.create_app()` 已统一挂载，无需改动 |
@@ -148,9 +158,12 @@ routes/chat.py → agents/review.run_review
 | `USE_PLANNER` | `1` | 首次出题前是否跑策划官；`0` 省一次模型调用 |
 | `DB_PATH` | `<仓库根>/data/interview.db` | SQLite 文件位置 |
 | `DATA_DIR` | `<仓库根>/data` | 数据目录（沙箱工作区等） |
-| `HARNESS_ADAPTER` | `1` | 是否启用 adapter 指令层；`0` 完全旁路 |
-| `HARNESS_ADAPTER_DIR` | `backend/adapters` | adapter 根目录 |
-| `HARNESS_ADAPTER_MAX` | `6000` | 单份 adapter 的字符上限 |
+| `HARNESS_ADAPTER` | `1` | 是否启用偏好指令层；`0` 完全旁路 |
+| `HARNESS_ADAPTER_DIR` | 不设置（用 `backend/plugins`） | 偏好根目录；显式设置时**独占**，用于挂实验版本 |
+| `HARNESS_ADAPTER_MAX` | `6000` | 单份偏好的字符上限 |
+| `DEFAULT_MODE` | `interview` | 不传 `agent_mode` 时走哪条业务线 |
+| `PLUGINS_DIR` | `backend/plugins` | 插件根目录，一个子目录一个能力包 |
+| `PLUGINS_ENABLED` | `1` | 是否启用插件发现；`0` 时只走库里的存量数据 |
 | `SKILLS_ENABLED` | `1` | 是否装载技能；`0` 时所有 Agent 都不装（恢复接入前行为） |
 | `SKILLS_DIR` | `backend/skills` | 技能根目录，一个子目录一个技能 |
 | `AGENT_SERVICE_PORT` / `AGENT_SERVICE_DB` / `AGENT_WORKSPACE_DIR` / `SANDBOX` | 见 `scripts/agent_service.py` | 官方 Agent Service 的配置 |

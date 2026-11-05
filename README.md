@@ -7,7 +7,7 @@
 
 前端为 **React SPA（Vite）+ CopilotKit**，后端为 **Node（托管 + CopilotKit runtime + 反向代理）+ Python FastAPI（智能体 + 数据服务）**，前后端分离。
 
-代码分布：`web/` 前端、`backend/` 后端（Python 主包 + Node 网关 + adapters）、`tests/` 回归测试、`docs/` 设计稿。后端目录分层见 [backend/README.md](backend/README.md)。
+代码分布：`web/` 前端、`backend/` 后端（Python 主包 + Node 网关 + plugins 专家插件）、`tests/` 回归测试、`docs/` 设计稿。后端目录分层见 [backend/README.md](backend/README.md)。
 
 ## 架构
 
@@ -20,11 +20,13 @@ backend/server.js（Node :8787）——只做「静态托管 + CopilotKit runtim
   ├── GET  /assets/...          Vite 静态资源
   ├── POST /api/models          直接代理模型接口，拉取可用模型列表
   ├── POST /api/chat            转发给智能体服务（测试连接 / 图片简历视觉识别）
-  ├── POST /api/model-config    前端模型配置（内存留一份供适配器用，同时同步给 Python）
+  ├── POST /api/model-config    全局模型配置（唯一写入口：齿轮弹框保存时调用；落 setting 表并同步 Python）
+  ├── GET  /api/model-config    读回全局模型配置（页面启动时回填表单，浏览器不再本地留副本）
+  ├── POST /api/run-context     每轮对话上下文（profile / 当前 PR / repoId / runId，不进全局配置）
   ├── GET  /api/stages          智能体执行阶段 SSE（与适配器同进程）
   ├── POST /api/copilotkit      CopilotKit 自托管 runtime
   │     └── backend/agent_adapter.js（AgentScopeAdapter）
-  │           ├── 读取模型配置（base / key / model / profile / agentMode）
+  │           ├── 读取全局配置（base / key / model）+ 本轮上下文（profile / agentMode / repoId）
   │           ├── 转成 OpenAI 兼容请求 POST :8790/v1/chat/completions
   │           └── SSE 增量流转发回 CopilotKit 事件流
   └── /api/convos · /api/search · /api/repos · /api/reviews · /api/review/events
@@ -227,7 +229,7 @@ node --experimental-strip-types tests/test_qcard.ts
 | 🧑‍⚖️ 评分官 | 用户消息包含「评分 / 评估 / 打个分 / 评价一下 / 复盘」等 | 对候选人最近一次回答打分，输出维度分、亮点、不足、改进建议与参考回答要点，渲染成 Markdown 评分卡 |
 | 🔍 侦察官 | 每次代码审核第 1 棒 | 只读 diff 归纳：改动意图、涉及文件、重点风险区（不下结论、不提建议） |
 | 🛡️ 审核官 | 代码审核第 2 棒 | 按正确性 / 安全 / 并发性能 / 可维护性 / 兼容测试五个维度输出结构化问题清单（严重度 · 文件 · 行号 · 触发条件 · 改法），最多 10 条 |
-| ⚖️ 裁决官 | 代码审核第 3 棒 | 基于前两棒给出风险等级（高/中/低）与合入结论（可合入 / 建议先改 / 打回修改），并给亮点与建议 |
+| ⚖️ 裁决官 | 代码审核第 3 棒 | 基于前两棒给出风险等级（高/中/低）与合入结论（可以合入 / 建议先改 / 不建议合并），并给亮点与建议。**硬规则：只要出现 1 条阻塞或重要问题，一律「不建议合并」**（代码里还会再做一次兜底改写，模型给「可合入」也会被改回） |
 
 ### 界面怎么用
 
@@ -364,7 +366,14 @@ Node :8787  /api/convos  ──反向代理──►  Python :8790 /api/convos
 
 任意 OpenAI 兼容接口：DeepSeek、通义、Kimi、tokens.store、Ollama 等。
 「拉取模型列表」按钮会列出该接口全部可用模型名。
-这份配置同时供**出题对话**与**自动审核轮询**使用（Node 侧留一份给适配器，另同步一份给 Python 轮询器）。
+
+**这份配置是全局的，不属于任何会话**：只在齿轮弹框里保存时写入一次，落到 SQLite 的
+`setting` 表，Node 与 Python 各缓存一份（Python 重启时自动回填）。
+出题对话与自动审核轮询共用同一份，页面本身不保存配置、也不会把配置回传，
+所以换浏览器、开旧标签页都不会改坏它。
+
+每轮对话的上下文（面试画像 / 当前 PR / 仓库 id / runId）走 `POST /api/run-context`，
+只影响紧接着的那一次请求，不会混进全局配置。
 
 ### 环境变量（可选）
 
@@ -380,21 +389,25 @@ Node :8787  /api/convos  ──反向代理──►  Python :8790 /api/convos
 | `COPILOTKIT_TELEMETRY_DISABLED` | 自动设为 `1` | server.js 启动 runtime 时自动关闭 CopilotKit 匿名遥测，保证纯本地/局域网部署零外网请求 |
 | `HARNESS_ADAPTER` | `1` | 设为 `0` 完全旁路可训练指令层，行为与接入前逐字节一致 |
 | `HARNESS_ADAPTER_MAX` | `6000` | 单份 adapter 文本的字符上限，防止误写超长文件 |
-| `HARNESS_ADAPTER_DIR` | `backend/adapters/` | adapter 根目录，换一份实验版本时指向别处 |
+| `HARNESS_ADAPTER_DIR` | 不设置（用 `backend/plugins/`） | 偏好根目录；**显式设置时独占**，用于挂一份实验版本（不会回落线上版本） |
 | `SKILLS_ENABLED` | `1` | 设为 `0` 时所有 Agent 都不装载技能，行为与接入前一致 |
 | `SKILLS_DIR` | `backend/skills/` | 技能根目录，一个子目录一个 `SKILL.md` |
 
 ## 可训练指令层（harness adapter）
 
-各 Agent 的 system prompt 有一段**外挂的、可训练的部分**，放在 `backend/adapters/<name>/ADAPTER.md`：
+各 Agent 的 system prompt 有一段**外挂的、可训练的部分**，放在 `backend/plugins/<name>/preferences/ADAPTER.md`——偏好跟着插件住，一个专家一个目录：
 
 ```
-backend/adapters/
-  interview/  ADAPTER.md  adapter.yaml   → 面试官 + 策划官
-  review/     ADAPTER.md  adapter.yaml   → 侦察官 + 审核官 + 裁决官 + 审核追问
+backend/plugins/
+  interview/  plugin.yaml  pipeline.py  prompts.py  intent.py
+              preferences/  ADAPTER.md  adapter.yaml   → 面试官 + 策划官
+  review/     plugin.yaml  pipeline.py  prompts.py
+              preferences/  ADAPTER.md  adapter.yaml   → 侦察官 + 审核官 + 裁决官 + 审核追问
 ```
 
-加载链：`app/prompts/*.py` 各 `*_sys_prompt()` → `app/services/harness.compose(base, name)` → `Session(...).context()`（装了 `hermit-harness` 时）或直接读 `ADAPTER.md`（没装时）。最后拼成 `base + "\n\n" + ADAPTER.md`。
+（早期版本把这部分单独放在 `backend/adapters/<name>/`，和插件目录同名却不同义，加一条业务线要在两个根各建一个目录，已合并。）
+
+加载链：`plugins/<name>/prompts.py` 各 `*_sys_prompt()` → `app/services/harness.compose(base, name)` → `Session(...).context()`（装了 `hermit-harness` 时）或直接读 `ADAPTER.md`（没装时）。最后拼成 `base + "\n\n" + ADAPTER.md`。
 
 为什么要这一层：
 
@@ -412,11 +425,13 @@ backend/adapters/
 接入前的状态可以用 `GET /api/db/stats` 里的 `harness` 字段自检：
 
 ```json
-"harness": {"enabled": true, "backend": "hermit", "dir": "...\\adapters",
-            "adapters": {"interview": 309, "review": 330}}
+"harness": {"enabled": true, "backend": "hermit",
+            "dir": "...\\backend\\plugins",
+            "adapters": {"interview": 309, "review": 330},
+            "sources": {"interview": "...\\plugins\\interview\\preferences"}}
 ```
 
-`backend` 为 `hermit` 表示走 Hermit 的 Session（会校验清单合法性），`file` 表示降级直读，`none` 表示关闭或目录不存在。
+`backend` 为 `hermit` 表示走 Hermit 的 Session（会校验清单合法性），`file` 表示降级直读，`none` 表示关闭或目录不存在。`sources` 是每份偏好实际读的目录——指向哪，就说明哪份文件在生效。
 
 
 ## 技能（Skill）与专家绑定
@@ -501,7 +516,7 @@ VITE_COPILOTKIT_KEY=ckpb_你的key
 | `backend/app/core/` | 版本闸门、日志、异常翻译、流水线阶段元信息 |
 | `backend/scripts/agent_service.py` | AgentScope 2.0 官方 Agent Service（`create_app`）：SQLite 持久化 + 内存总线 + 本地工作区，独立端口 8799，自带 `/docs` |
 | `backend/scripts/sandbox_probe.py` | 沙箱自检：建工作区 → 跑命令 / 读写文件 / 校验退出码；默认容器后端，`SANDBOX=local` 切宿主机 |
-| `backend/adapters/` | 可训练的外挂指令（Hermit 格式）：`interview/`（面试官 + 策划官）、`review/`（侦察官 + 审核官 + 裁决官 + 审核追问） |
+| `backend/plugins/` | 专家插件：一个目录一个能力包（`plugin.yaml` 声明角色/工具/技能，`pipeline.py` 流水线，`preferences/` 可训练偏好；`interview/` 面试出题官、`review/` 代码审核官） |
 | `backend/skills/` | 技能（Agent Skills 格式，一个目录一个 `SKILL.md`）：`question-design/`（出题方法）、`code-review-security/`（安全清单）、`cn-tech-writing/`（全局表达规范） |
 | `data/interview.db` | 会话 / 仓库 / 审核报告数据库（自动创建，已加入 `.gitignore`） |
 | `tests/` | 回归测试：`test_store.py`（持久层）、`test_reviewer.py`（地址解析 / diff / 代理规则）、`test_adapter.py`（指令层加载 / 降级 / 热更新 / 格式契约）、`test_agentscope_api.py`（运行时基线）、`test_web.ts`（渲染逻辑）、`test_qcard.ts`（卡片布局与历史守卫）、`test_stages.ts`（流水线状态）、`test_layout.ts`（布局约束）、`test_render.js`（旧版渲染逻辑）、`mock_llm.js`（mock 上游验全链路） |
@@ -535,7 +550,7 @@ node tests/mock_llm.js                                # mock 上游（含审核�
 | `ImportError: cannot import name 'ReActAgent'` 之类 | 代码已是 2.0 写法，装的是 1.x 或照旧教程装了 `agentscope-runtime`，按上一行升级即可 |
 | 上下文很长、模型重复回答同一个问题 | 检查是否又给 `AgentState(context=...)` 预置了历史又往 `inputs` 里传了一遍（见「上下文语义」） |
 | 页面提示「AgentScope 智能体服务未连接」 | Python 服务没起来：双击 `start.bat`，或手动 `.venv\Scripts\python.exe backend\run.py` |
-| 出题报「模型未配置」 | 点右上角齿轮完成模型配置；每次发消息前页面会自动同步配置到 Node 与 Python |
+| 出题报「模型未配置」 | 点右上角齿轮完成模型配置；配置会落库（`setting` 表），重启服务后自动恢复，不用重填 |
 | `平台接口返回 HTTP 404` 且末尾是一段网页（如「你所访问的页面不存在」） | 自建实例的**平台类型判错了**：GitLab 走 `/api/v4`，Gitee（含企业版 / Gitee Premium 私有部署）走 `/api/v5`，GitHub 企业版走 `/api/v3`，猜错就会命中对方网页 404。在仓库配置里把「平台」明确选对（新版也会在保存/测试时自动探测并纠正） |
 | `模型 API Key 无效`（401） | 齿轮弹框里 Key 填错或额度不足 |
 | `接口或模型不存在`（404） | API 地址要以 `/v1` 结尾；或模型名不对，点「拉取模型列表」选一个 |
@@ -544,6 +559,6 @@ node tests/mock_llm.js                                # mock 上游（含审核�
 | 历史会话 / 仓库配置读不到 | 看启动日志「历史库」一行；或 `GET /api/db/stats` 看 `dbAvailable`。数据服务在 Python（:8790），确认它在线 |
 | 拉 PR 报 `HTTP 403` | GitHub 匿名调用有速率限制；填 Token 即可（私有仓库必须填） |
 | 拉 PR 一直超时 | 本机需要代理才能访问 GitHub / GitLab：确认 `HTTPS_PROXY` 已设置（服务会自动走代理） |
-| 仓库一直「未配置模型」 | 还没在页面齿轮里配模型——轮询会继续但不会审核，配好后下一轮自动开始审 |
+| 仓库一直「未配置模型」 | 服务端内存里没有模型配置——轮询会继续但不会审核。在页面齿轮里配一次即可：配置会落库（`setting` 表），这一轮错误会被立即清掉，下一轮开始审核；重启服务后配置自动恢复 |
 | `vite build` 报 `emptyDir` 权限错误 | Node 服务正在占用 `web/dist`，先停服务再构建 |
 | 想换回「无智能体」直连模式 | `set AGENTSCOPE=0 && node server.js` |

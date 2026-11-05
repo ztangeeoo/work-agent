@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
-"""对话与审核接口（OpenAI 兼容层）
+"""对话与任务接口（OpenAI 兼容层）
 
-/v1/chat/completions  : 多智能体出题/追问/评分，SSE 流式
-/v1/review            : 代码审核流水线，一次性返回结构化报告 + Markdown
+/v1/chat/completions  : 按 `agent_mode` 选插件；不传或未命中则走内置面试流水线，SSE 流式
+/v1/review            : 代码审核插件的一次性任务入口，返回结构化报告 + Markdown
 
 两者都在「预取第一块」处做错误分流：模型配置/连接有问题时直接返回 JSON 502，
 而不是先返回 200 再在流里塞一段错误文本——前端才能给出准确的提示。
+
+**这里不再有 `if agent_mode == "review"` 之类的分支**：加一条业务线只加一个
+插件目录，分派逻辑本身不动。
 """
 
 import time
@@ -13,13 +16,46 @@ import time
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from ...agents.interview import stream_with_retry
-from ...agents.review import run_review
+from ...agents import registry
+from ...agents.runtime import stream_with_retry
 from ...core.errors import fmt_exc
 from ...core.log import log
 from ...utils.sse import sse_chunk
 
 router = APIRouter(tags=["chat"])
+
+JOB_MODE = "review"
+"""一次性任务路由对应的能力包 mode"""
+
+
+def _plugin_for(payload: dict):
+    """按 agent_mode 选能力包，返回 (plugin, 错误文案)
+
+    区分两种「没有插件」：
+      - 没传 agent_mode    → 正常回落内置流水线，不算错误
+      - 传了但找不到/撞车  → 是配置问题，直接报出来，不要静默回落
+    """
+    mode = str(payload.get("agent_mode") or "").strip()
+    if not mode:
+        return None, None
+    try:
+        plugin = registry.for_mode(mode)
+    except LookupError as e:
+        return None, str(e)
+    if plugin is None:
+        return None, f"没有声明 mode={mode} 的插件（检查 backend/plugins/*/plugin.yaml）" + _broken_hint()
+    return plugin, None
+
+
+def _broken_hint() -> str:
+    """插件目录被跳过时，把原因带进错误文案——yaml 写错是最常见的情况"""
+    try:
+        broken = registry.problems()
+    except Exception:
+        return ""
+    if not broken:
+        return ""
+    return "；另有 " + "、".join(f"{b['id']}（{b['problem']}）" for b in broken) + " 未能加载"
 
 
 @router.post("/v1/chat/completions")
@@ -36,7 +72,16 @@ async def chat_completions(request: Request):
     if not isinstance(payload.get("messages"), list) or not payload.get("messages"):
         return JSONResponse({"error": {"message": "缺少 messages"}}, status_code=400)
 
-    gen = stream_with_retry(payload)
+    plugin, problem = _plugin_for(payload)
+    if problem:
+        log("插件分派失败：" + problem)
+        return JSONResponse({"error": {"message": problem}}, status_code=500)
+
+    if plugin is not None:
+        # 插件入口签名固定为 chat(payload, base_override)，与内置流水线共用重试口径
+        gen = stream_with_retry(payload, spawn=lambda p, override: plugin.chat(p, override))
+    else:
+        gen = stream_with_retry(payload)
 
     # 预取第一块：模型配置/连接有问题时直接返回 JSON 错误，前端能读到明确原因
     try:
@@ -91,7 +136,16 @@ async def review_pr(request: Request):
         return JSONResponse({"error": {"message": "缺少 diff 内容"}}, status_code=400)
 
     try:
-        result = await run_review(payload)
+        plugin = registry.for_mode(JOB_MODE)
+    except LookupError as e:
+        return JSONResponse({"error": {"message": str(e)}}, status_code=500)
+    if plugin is None:
+        return JSONResponse(
+            {"error": {"message": f"没有声明 mode={JOB_MODE} 的插件"}}, status_code=500
+        )
+
+    try:
+        result = await plugin.job(payload)
         return JSONResponse({"ok": True, **result})
     except ValueError as e:
         return JSONResponse({"error": {"message": str(e)}}, status_code=400)
