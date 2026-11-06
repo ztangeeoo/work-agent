@@ -17,12 +17,19 @@ interface Props {
   expertsOpen: boolean;
   /** 可选的专家数量，显示在入口徽标上 */
   expertCount: number;
+  /** 打开「定时任务」视图（主区域切换，不跳新标签页） */
+  onOpenSchedule: () => void;
+  /** 定时任务视图当前是否展开 */
+  scheduleOpen: boolean;
+  /** 今日触发次数，显示在入口徽标上；失败数 > 0 时入口亮红点 */
+  scheduleStat?: { total: number; failed: number };
   /** 仓库列表：用于在会话行显示绑定的仓库 */
   repos: Repo[];
 }
 
 export default function ConvoSidebar({
-  convos, activeId, onSwitch, onDelete, onNew, banner, onOpenExperts, expertsOpen, expertCount, repos,
+  convos, activeId, onSwitch, onDelete, onNew, banner, onOpenExperts, expertsOpen, expertCount,
+  onOpenSchedule, scheduleOpen, scheduleStat, repos,
 }: Props) {
   /* ---------- 跨会话全文检索 ---------- */
   const [q, setQ] = useState('');
@@ -71,6 +78,42 @@ export default function ConvoSidebar({
               <span className="expert-entry-count">{expertCount}</span>
             </span>
             <span className="expert-entry-desc">面试出题官 · 代码审核官</span>
+          </span>
+          <span className="expert-entry-arrow" aria-hidden="true">›</span>
+        </button>
+
+        {/* 定时任务：与「专家」并列的一个视图。点进来在主区域展示，
+            不开新标签页——整页跳走会中断正在进行的对话生成。 */}
+        <button
+          type="button"
+          className={'expert-entry sched-entry' + (scheduleOpen ? ' active' : '')}
+          onClick={onOpenSchedule}
+          title={
+            scheduleStat
+              ? `今天触发 ${scheduleStat.total} 次${scheduleStat.failed ? `，失败 ${scheduleStat.failed} 次` : ''}`
+              : '查看定时任务的执行记录'
+          }
+        >
+          <span className="expert-entry-ico is-sched" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+                 strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="8.4" />
+              <path d="M12 7.6V12l3 1.9" />
+            </svg>
+          </span>
+          <span className="expert-entry-main">
+            <span className="expert-entry-title">
+              定时任务
+              {!!scheduleStat?.total && (
+                <span className="expert-entry-count">{scheduleStat.total}</span>
+              )}
+              {!!scheduleStat?.failed && <i className="sched-entry-dot" aria-hidden="true" />}
+            </span>
+            <span className="expert-entry-desc">
+              {scheduleStat && scheduleStat.total
+                ? `今天 ${scheduleStat.total} 次` + (scheduleStat.failed ? ` · ${scheduleStat.failed} 次失败` : ' · 全部正常')
+                : '自动轮询与审核记录'}
+            </span>
           </span>
           <span className="expert-entry-arrow" aria-hidden="true">›</span>
         </button>

@@ -161,7 +161,7 @@ async def api_repos_poll(request: Request, rid: str):
     if not store.get_repo(rid, user_key(request)):
         return err("仓库不存在：" + rid, 404)
     force = request.query_params.get("force") != "0"
-    task = asyncio.create_task(get_poller().poll_repo(rid, force=force))
+    task = asyncio.create_task(get_poller().poll_repo(rid, force=force, source="manual"))
     task.add_done_callback(swallow)
     if request.query_params.get("wait") != "1":
         return JSONResponse({"ok": True, "started": True}, status_code=202)

@@ -41,6 +41,23 @@ def render_score_card(card: dict) -> str:
     return "\n".join(lines).strip()
 
 
+def scout_intent(scout: str) -> str:
+    """公开版：从侦察官概览里抽「本次改动做了什么」（消息推送也要用）
+
+    抽不到就退回概览首行——有些模型不按「改动意图：」这个格式写，
+    但第一句往往就是概括，总比推一条「（未提取到功能）」有用。
+    """
+    got = _scout_intent(scout)
+    if got:
+        return got
+    for raw in str(scout or "").splitlines():
+        line = raw.strip().lstrip("-*• ").strip()
+        line = line.lstrip("0123456789.、) ").strip()
+        if line and not line.startswith(("|", "#", "```")):
+            return line[:160]
+    return ""
+
+
 def _scout_intent(scout: str) -> str:
     """从侦察官概览里抽出「改动意图」那一句（用于回帖开头的功能摘要）"""
     for raw in str(scout or "").splitlines():

@@ -12,7 +12,7 @@ from fastapi import FastAPI
 
 from . import state, store
 from .agents.review import run_review
-from .api.routes import catalog, chat, convos, repos, reviews, skills, system
+from .api.routes import catalog, chat, convos, repos, reviews, schedule as schedule_api, skills, system
 from .config import AGENT_NAME, PORT, USE_PLANNER
 from .core.errors import fmt_exc
 from .core.log import log
@@ -76,6 +76,24 @@ async def lifespan(_app):
         repo_list = store.list_repos()
         active = len([r for r in repo_list if r.get("enabled")])
         log(f"代码审核：{len(repo_list)} 个仓库（启用 {active} 个）· 轮询调度启动")
+        # 老库迁移：把 repo 配置补成调度项（单向读 interval_sec，已存在的不动节奏）。
+        # 失败不影响启动——调度层是可选的，轮询主链路仍按老路径跑。
+        try:
+            from .jobs import ensure_repo_schedules
+            n = ensure_repo_schedules(store.list_all_repos())
+            log(f"定时任务：{n} 个调度项就绪")
+        except Exception as e:
+            log("定时任务初始化失败（轮询不受影响）：" + str(e))
+        # 收殓上次进程留下的「有始无终」记录：被杀时 finish_tick 没机会跑，
+        # 库里会留着 outcome=fired 但 finished_at 为空的记录，看板上就是
+        # 一条「成功了却没有结果」的幽灵——不清掉会让人以为定时任务没在干活。
+        # 启动这一刻上一个进程已经死了，不可能还有任务在飞，所以不限时长全收。
+        try:
+            n = store.sweep_stale_ticks(0)
+            if n:
+                log(f"已收殓 {n} 条被中断的执行记录（标记为失败/结果未知）")
+        except Exception as e:
+            log("清扫历史执行记录失败（不影响启动）：" + str(e))
         state.get_poller().start()
     except Exception as e:
         log("持久层初始化失败（前端将回退本地存储）：" + str(e))
@@ -98,7 +116,7 @@ def create_app() -> FastAPI:
     ))
 
     for router in (system.router, catalog.router, convos.router, repos.router,
-                   reviews.router, skills.router, chat.router):
+                   reviews.router, skills.router, chat.router, schedule_api.router):
         app.include_router(router)
     return app
 

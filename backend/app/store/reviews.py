@@ -131,6 +131,15 @@ def save_repo(data: dict, user: str = DEFAULT_USER) -> dict:
             ),
         )
         db.commit()
+    # 调度项跟着仓库配置走：改了间隔/开关却不同步，定时任务会按旧节奏跑，
+    # 页面显示「每 5 分钟」而实际还是 2 分钟，这种不一致最难排查
+    try:
+        from .schedule import upsert_repo_schedule
+        saved = get_repo(rid, user, with_token=False)
+        if saved:
+            upsert_repo_schedule(saved, user, sync_interval=True)
+    except Exception:
+        pass
     return get_repo(rid, user, with_token=False)
 
 
@@ -139,7 +148,16 @@ def delete_repo(rid: str, user: str = DEFAULT_USER) -> bool:
     with lock:
         cur = db.execute("DELETE FROM repo WHERE id = ? AND user_key = ?", (str(rid or ""), user))
         db.commit()
-        return cur.rowcount > 0
+        ok = cur.rowcount > 0
+    # 仓库没了，调度项跟着走：否则每轮还在触发一个查不到仓库的调度项，
+    # tick_log 里会堆满「仓库不存在」
+    if ok:
+        try:
+            from .schedule import delete_schedule, repo_schedule_id
+            delete_schedule(repo_schedule_id(rid))
+        except Exception:
+            pass
+    return ok
 
 
 def set_repo_provider(rid: str, provider: str) -> bool:
@@ -166,6 +184,14 @@ def set_repo_enabled(rid: str, enabled: bool, user: str = DEFAULT_USER) -> dict 
         db.commit()
         if not cur.rowcount:
             return None
+    # 停用要同步到调度项，否则「关掉自动轮询」之后定时任务照跑
+    try:
+        from .schedule import upsert_repo_schedule
+        saved = get_repo(rid, user, with_token=False)
+        if saved:
+            upsert_repo_schedule(saved, user, sync_interval=False)
+    except Exception:
+        pass
     return get_repo(rid, user, with_token=False)
 
 
@@ -282,6 +308,21 @@ def get_pr(repo_id: str, number) -> dict | None:
     }
 
 
+def _json_or(r, col: str, fallback):
+    """取一个 JSON 列，解析失败就返回 fallback（老库/脏数据不炸）"""
+    try:
+        keys = r.keys()
+    except Exception:
+        return fallback
+    if col not in keys or not r[col]:
+        return fallback
+    try:
+        v = json.loads(r[col])
+        return v if isinstance(v, type(fallback)) else fallback
+    except Exception:
+        return fallback
+
+
 def _map_review(r) -> dict | None:
     if not r:
         return None
@@ -314,6 +355,9 @@ def _map_review(r) -> dict | None:
         "stages": stages,
         "model": r["model"] or "",
         "posted": bool(r["posted"]),
+        "tickId": (int(r["tick_id"]) if ("tick_id" in keys and r["tick_id"]) else None),
+        "feature": (r["feature"] if "feature" in keys else "") or "",
+        "stats": _json_or(r, "stats_json", {}),
         "postError": r["post_error"] or "",
         "createdAt": r["created_at"],
         "updatedAt": r["updated_at"],
@@ -340,13 +384,16 @@ def save_review(data: dict) -> dict | None:
         db.execute(
             """INSERT INTO review (id, repo_id, pr_number, head_sha, risk, decision, summary, report_md,
                                    issues_json, issue_count, stages_json, model, posted, post_error,
-                                   created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                   tick_id, feature, stats_json, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(id) DO UPDATE SET
                     risk = excluded.risk, decision = excluded.decision, summary = excluded.summary,
                     report_md = excluded.report_md, issues_json = excluded.issues_json,
                     issue_count = excluded.issue_count, stages_json = excluded.stages_json,
-                    model = excluded.model, updated_at = excluded.updated_at""",
+                    model = excluded.model, tick_id = COALESCE(excluded.tick_id, review.tick_id),
+                    feature = COALESCE(excluded.feature, review.feature),
+                    stats_json = COALESCE(excluded.stats_json, review.stats_json),
+                    updated_at = excluded.updated_at""",
             (
                 rid, repo_id, pr_number, head_sha,
                 str(data.get("risk") or "low"), str(data.get("decision") or "comment"),
@@ -354,6 +401,9 @@ def save_review(data: dict) -> dict | None:
                 json.dumps(issues, ensure_ascii=False), int(data.get("issueCount") or len(issues)),
                 json.dumps(data.get("stages") or [], ensure_ascii=False), str(data.get("model") or ""),
                 1 if data.get("posted") else 0, str(data.get("postError") or ""),
+                int(data["tickId"]) if data.get("tickId") else None,
+                str(data.get("feature") or ""),
+                json.dumps(data.get("stats") or {}, ensure_ascii=False) if data.get("stats") is not None else None,
                 ts, ts,
             ),
         )
@@ -402,12 +452,56 @@ def list_reviews(user: str = DEFAULT_USER, repo_id: str = "", limit: int = 20) -
     return [_map_review(r) for r in rows]
 
 
-def mark_review_posted(rid: str, posted: bool = True, error: str = "") -> dict | None:
+def posted_map(tick_ids: list) -> dict:
+    """一批触发记录各自贴了几条评论：{tick_id: [review, ...]}
+
+    执行历史的「有评论」筛选要精确到「这一轮真的贴出去了」，
+    所以按 review.tick_id 直连，不按时间窗猜——同仓库的复用执行
+    （skipped）横跨了别人的整个审核过程，时间上完全罩得住。
+    """
+    ids = []
+    for i in tick_ids or []:
+        try:
+            ids.append(int(i))
+        except Exception:
+            continue
+    if not ids:
+        return {}
+    db = init()
+    marks = ",".join("?" * len(ids))
+    with lock:
+        rows = db.execute(
+            "SELECT id, tick_id, repo_id, pr_number, risk, decision, issue_count, post_error"
+            "  FROM review WHERE tick_id IN (" + marks + ") ORDER BY created_at ASC",
+            tuple(ids),
+        ).fetchall()
+    out: dict = {}
+    for r in rows:
+        out.setdefault(int(r["tick_id"]), []).append({
+            "id": r["id"], "prNumber": r["pr_number"],
+            "risk": r["risk"] or "", "decision": r["decision"] or "",
+            "issueCount": r["issue_count"] or 0, "postError": r["post_error"] or "",
+        })
+    return out
+
+
+def mark_review_posted(rid: str, posted: bool = True, error: str = "",
+                       tick_id: int | None = None) -> dict | None:
+    """标记「已回帖到 PR」
+
+    tick_id：这一轮执行贴出去的就把它记上，执行历史的「有评论」筛选靠它。
+    """
     db = init()
     with lock:
-        db.execute(
-            "UPDATE review SET posted = ?, post_error = ?, updated_at = ? WHERE id = ?",
-            (1 if posted else 0, str(error or ""), now(), str(rid)),
-        )
+        if tick_id:
+            db.execute(
+                "UPDATE review SET posted = ?, post_error = ?, tick_id = ?, updated_at = ? WHERE id = ?",
+                (1 if posted else 0, str(error or ""), int(tick_id), now(), str(rid)),
+            )
+        else:
+            db.execute(
+                "UPDATE review SET posted = ?, post_error = ?, updated_at = ? WHERE id = ?",
+                (1 if posted else 0, str(error or ""), now(), str(rid)),
+            )
         db.commit()
     return get_review(rid)

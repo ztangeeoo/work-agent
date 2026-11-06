@@ -1,0 +1,36 @@
+# 企业微信群机器人 · 通知渠道
+#
+# 这是一个「通知渠道」，不是「专家插件」：
+#   - plugins/  一条业务线，会投影进 expert / agent 表、出现在专家中心
+#   - notifiers/ 只负责把事件发出去，不进库、不占专家位
+#
+# 加一个新渠道（钉钉 / 飞书 / 内部 webhook）= 复制本目录改名，
+# 改 notifier.yaml 的 name / options，重写 notifier.py 的 render + send。
+id: wecom
+name: 企业微信群机器人
+icon: 💬
+version: "0.1.0"
+
+# 停用就把 enabled 改成 false（比删目录好，随时能恢复）。
+# 渠道被停用后仍会出现在自检里，只是不会再发消息。
+enabled: true
+
+# 入口：模块名:函数名，模块相对本目录
+#   send      必填，async (event, options) -> dict
+#   available 选填，sync (options) -> bool，判断这个渠道现在能不能用
+entry:
+  send: notifier:send
+  available: notifier:available
+
+# 渠道自己的配置，原样传给 notifier.py，由它自己解释。
+# 敏感值（webhook / token / secret / key）在自检接口里会被遮掉中间部分。
+options:
+  # 群机器人 webhook。留空则读环境变量 WECOM_WEBHOOK（便于不同环境用不同群）。
+  # 填了就以这里为准——「哪个群收审核通知」是配置，不是代码。
+  #
+  # 这里**故意留空**：webhook 的 key 等同于「往这个群发消息」的权限，
+  # 写进仓库就等于公开（本仓库是 public）。真实值请放环境变量：
+  #   WECOM_WEBHOOK=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxx
+  webhook: ""
+  # 消息里最多列几条「必须处理」的问题（只列 blocker + major）
+  max_blocking: 5

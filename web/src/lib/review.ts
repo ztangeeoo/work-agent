@@ -102,8 +102,19 @@ export async function fetchReviews(repoId?: string, limit = 20): Promise<ReviewI
   return j.list || [];
 }
 
-/** 把审核意见回帖到 PR */
-export async function postReviewToPR(id: string): Promise<{ url: string; review: ReviewItem }> {
+/**
+ * 把审核意见回帖到 PR
+ *
+ * 除回帖结果外还带群消息的推送结果：回帖成功、推送失败是常见情况
+ * （群机器人 key 失效、网络不通），界面要说清「评论已经贴上去了，
+ * 只是群里没看到」，别让人以为整件事都失败了。
+ */
+export async function postReviewToPR(id: string): Promise<{
+  url: string;
+  review: ReviewItem;
+  pushed?: boolean;
+  pushError?: string;
+}> {
   return api('/api/reviews/' + encodeURIComponent(id) + '/post', { method: 'POST' });
 }
 

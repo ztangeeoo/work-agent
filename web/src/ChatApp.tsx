@@ -112,8 +112,10 @@ export default function ChatApp() {
   /** 「清空对话」的二次确认弹框：清空不可撤销，多一步总比误删强 */
   const [clearAsk, setClearAsk] = useState(false);
 
-  /* ---------- 视图：对话 / 专家选择 ---------- */
-  const [view, setView] = useState<'chat' | 'experts'>('chat');
+  /* ---------- 视图：对话 / 专家选择 / 定时任务 ---------- */
+  const [view, setView] = useState<'chat' | 'experts' | 'schedule'>('chat');
+  /** 定时任务今日概览：只用于左侧入口的数字与红点，明细在 iframe 里自己拉 */
+  const [schedStat, setSchedStat] = useState<{ total: number; failed: number } | undefined>();
   /** 技能目录与「专家 → 技能」绑定关系（只读，来自 backend/skills/） */
   const [skills, setSkills] = useState<SkillsPayload | null>(null);
   /** 从专家入口选中、等待填配置的专家；确认后新建任务会话并永久绑定 */
@@ -420,6 +422,25 @@ export default function ChatApp() {
     return () => { alive = false; window.clearInterval(id); };
   }, [mode, reviewConvoCount, syncPoll]);
 
+  /* 定时任务今日概览：左侧入口的数字与红点。
+     每 30 秒拉一次就够——这玩意儿是「今天跑了多少次」，不是秒级指标，
+     跟 iframe 里 5 秒一次的明细刷新互不干扰。 */
+  useEffect(() => {
+    let alive = true;
+    const pull = async () => {
+      try {
+        const r = await fetch('/api/schedule', { headers: { 'Content-Type': 'application/json' } });
+        if (!r.ok) return;
+        const d = await r.json();
+        const t = (d?.summary?.today) || null;
+        if (alive && t) setSchedStat({ total: t.total || 0, failed: t.failed || 0 });
+      } catch { /* 后端没起来时静默：入口照常可点，明细页自己会报错 */ }
+    };
+    pull();
+    const id = window.setInterval(pull, 30000);
+    return () => { alive = false; window.clearInterval(id); };
+  }, []);
+
   /* 轮询 / 审核进度：后端推送事件，前端即时更新 */
   useReviewEvents(true, (ev) => {
     /* 先刷新状态快照：事件是「某一刻开始/结束」，下一轮倒计时与指示灯都要跟着变 */
@@ -493,7 +514,10 @@ export default function ChatApp() {
     try {
       const out = await postReviewToPR(review.id);
       setReviews(prev => prev.map(x => (x.id === review.id ? out.review : x)));
-      toast('✅ 已回帖到 PR');
+      /* 推送失败不算回帖失败：评论已经贴在 PR 上了，群里少一条消息而已。
+         分开报，免得用户以为要重试整个回帖。 */
+      if (out.pushed) toast('✅ 已回帖到 PR，并推送了群消息');
+      else toast('✅ 已回帖到 PR（群消息未推送：' + (out.pushError || '未知原因') + '）');
     } catch (e: any) {
       toast('❌ 回帖失败：' + (e.message || e));
     }
@@ -998,6 +1022,9 @@ export default function ChatApp() {
           onOpenExperts={() => setView(v => (v === 'experts' ? 'chat' : 'experts'))}
           expertsOpen={view === 'experts'}
           expertCount={experts.length}
+          onOpenSchedule={() => setView(v => (v === 'schedule' ? 'chat' : 'schedule'))}
+          scheduleOpen={view === 'schedule'}
+          scheduleStat={schedStat}
           repos={repos}
           banner={
             !health.proxyOk ? (
@@ -1023,6 +1050,18 @@ export default function ChatApp() {
             onPick={pickExpert}
             onBack={() => setView('chat')}
           />
+        ) : view === 'schedule' ? (
+          /* 定时任务：用 iframe 内嵌同一份 schedule.html（?embed=1 会隐藏它自己的顶栏）。
+             做成独立组件要重写八百多行、还要跟 Python 侧同步维护两遍；
+             内嵌则让「独立打开」和「嵌进来看」共用同一份代码，改一处两边都对。
+             同源页面，直接读 localStorage 就能跟随主题切换。 */
+          <div className="sched-view">
+            <iframe
+              className="sched-view-frame"
+              src="/schedule.html?embed=1"
+              title="定时任务执行记录"
+            />
+          </div>
         ) : (
         <div className="chat-wrap">
           <div className="chat-head">

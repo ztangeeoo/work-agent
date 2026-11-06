@@ -14,6 +14,7 @@ from ...core.errors import fmt_exc
 from ...core.log import log
 from ...core.version import AS_VERSION
 from ...services import harness
+from ...notify import registry as notify_registry
 from ...services import skills as skill_svc
 from ...state import MODEL_CFG
 from ..deps import err
@@ -48,6 +49,8 @@ async def health():
         "modes": ["interview", "review"],
         "planner": USE_PLANNER,
         "skills": skill_svc.status(),
+        # 通知渠道：扫到几个、哪些会真的发、配置有没有问题（webhook 已脱敏）
+        "notifiers": notify_registry.status(),
     }
     try:
         if store.available():

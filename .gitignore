@@ -27,3 +27,12 @@ Thumbs.db
 npm-debug.log*
 __pycache__/
 *.pyc
+
+# 临时验证目录（测试仓库克隆、接口响应快照等）
+/.tmp/
+
+# 本地环境变量（真实 webhook key、模型 API Key 等一律不进仓库）
+# notifier.yaml 里的 webhook 故意留空，真实值放这里或系统环境变量
+.env
+.env.local
+.env.*.local

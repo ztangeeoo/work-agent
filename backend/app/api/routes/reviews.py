@@ -11,8 +11,8 @@ import json
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
-from ... import store
-from ...services import events, review_client as rv
+from ... import notify, store
+from ...services import events, notify_event, review_client as rv
 from ...utils.render import render_comment_body
 from ..deps import db_blocked, err, user_key
 
@@ -52,10 +52,37 @@ async def api_review_post(request: Request, rid: str):
     body = render_comment_body(review)
     try:
         r = await rv.post_pr_comment(repo, review["prNumber"], body)
-        return {"ok": True, "url": r.get("url"), "review": store.mark_review_posted(rid, posted=True)}
+        saved = store.mark_review_posted(rid, posted=True)
     except Exception as e:
         store.mark_review_posted(rid, posted=False, error=str(e))
         return err("回帖失败：" + str(e), 502)
+
+    # 手动回帖也通知：用户在页面上点「回帖」和自动回帖是同一个动作，
+    # 群里看到的应该是同一件事。通知失败不影响回帖结果。
+    push = {"ok": False, "error": "no pr"}
+    try:
+        prx = store.get_pr(review["repoId"], review["prNumber"]) or {}
+        event = notify_event.build(
+            {
+                "number": review["prNumber"],
+                "title": prx.get("title") or "",
+                "author": prx.get("author") or review.get("author") or "",
+                "url": prx.get("url") or review.get("prUrl") or "",
+                "headBranch": prx.get("headBranch") or "",
+                "baseBranch": prx.get("baseBranch") or "",
+            },
+            saved or {},
+            repo=repo,
+            trigger="manual",
+        )
+        push = await notify.dispatch(event)
+    except Exception as e:
+        push = {"ok": False, "error": str(e)}
+
+    return {"ok": True, "url": r.get("url"), "review": saved,
+            "pushed": bool(push.get("ok")),
+            "pushError": "" if push.get("ok") else str(push.get("error") or ""),
+            "channels": push.get("sent") or []}
 
 
 @router.get("/api/review/events")

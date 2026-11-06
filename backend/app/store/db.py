@@ -13,6 +13,7 @@
 
 import json
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -163,11 +164,15 @@ CREATE TABLE IF NOT EXISTS review (
   model       TEXT,
   posted      INTEGER NOT NULL DEFAULT 0,
   post_error  TEXT,
+  tick_id     INTEGER,                        -- 哪一轮执行贴的评论（NULL=不是调度链路发的）
+  feature     TEXT,                           -- 本次改动做了什么（消息推送与回帖开头共用）
+  stats_json  TEXT,                           -- 代码量：{files, additions, deletions}
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_review_uniq ON review(repo_id, pr_number, head_sha);
 CREATE INDEX IF NOT EXISTS idx_review_repo ON review(repo_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_review_tick ON review(tick_id);
 
 /* ---------- 进程级设置：键值对 ----------
    只放「重启后还要在」的少量配置。value 统一存 JSON 字符串，
@@ -178,6 +183,68 @@ CREATE TABLE IF NOT EXISTS setting (
   value      TEXT,
   updated_at INTEGER NOT NULL
 );
+
+/* ---------- 定时调度：组 / 调度项 / 触发记录 ----------
+   三层分开的理由：配置要稳定，触发要精确，历史要可查。
+   - schedule_group：把多个调度项绑成一个节拍器，实现「一起配置、一起触发」
+   - schedule：每个可调度对象一行（当前只用于仓库轮询，id = 'repo.poll:<repo_id>'）
+     next_at 是**唯一真相**：不再由前端用 last+interval 现算，否则没法表达
+     jitter / catch_up / 跳过原因，也算不出「错过了几次」
+   - tick_log：每次触发的记录（含「到点了但跳过」）。执行详情回填在同一行，
+     run 层落地后改为 run_id 指向 run，本表退回「触发决策」职责。 */
+CREATE TABLE IF NOT EXISTS schedule_group (
+  id          TEXT PRIMARY KEY,
+  user_key    TEXT NOT NULL DEFAULT 'local',
+  name        TEXT NOT NULL DEFAULT '',
+  every_sec   INTEGER,                        -- NULL = 成员各用各的节奏
+  jitter_pct  INTEGER NOT NULL DEFAULT 10,    -- 组内错开比例，0=严格同时
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  next_at     INTEGER,
+  last_at     INTEGER,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS schedule (
+  id          TEXT PRIMARY KEY,
+  user_key    TEXT NOT NULL DEFAULT 'local',
+  kind        TEXT NOT NULL,                  -- repo.poll（将来 chat.turn / interview.batch）
+  scope       TEXT NOT NULL,                  -- repo_id：同 scope 串行
+  group_id    TEXT,                           -- NULL = 独立节奏
+  every_sec   INTEGER NOT NULL DEFAULT 120,
+  jitter_pct  INTEGER NOT NULL DEFAULT 0,
+  next_at     INTEGER NOT NULL,
+  last_at     INTEGER,
+  catch_up    TEXT NOT NULL DEFAULT 'skip',   -- skip / once / all
+  max_backlog INTEGER NOT NULL DEFAULT 1,
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  fail_streak INTEGER NOT NULL DEFAULT 0,     -- 连续触发失败次数，健康看板用
+  last_error  TEXT,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_schedule_due ON schedule(enabled, next_at);
+CREATE INDEX IF NOT EXISTS idx_schedule_group ON schedule(group_id);
+
+CREATE TABLE IF NOT EXISTS tick_log (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  schedule_id TEXT NOT NULL,
+  group_id    TEXT,
+  kind        TEXT NOT NULL DEFAULT '',
+  source      TEXT NOT NULL DEFAULT 'tick',   -- tick（定时）/ manual（点了立即执行）
+  planned_at  INTEGER NOT NULL,               -- 本该几点触发（next_at 原值）
+  fired_at    INTEGER NOT NULL,               -- 实际判定时刻
+  started_at  INTEGER,                        -- 真正开始执行（队列里排过队的话晚于 fired_at）
+  finished_at INTEGER,
+  outcome     TEXT NOT NULL,                  -- fired / skipped / failed / running
+  reason      TEXT,                           -- 跳过或失败原因
+  run_id      TEXT,                           -- 执行记录 id（run 层落地后填）
+  result_json TEXT,                           -- 拉到几个 PR / 审了几个 / 错误列表
+  duration_ms INTEGER,
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tick_sched ON tick_log(schedule_id, id DESC);
+CREATE INDEX IF NOT EXISTS idx_tick_recent ON tick_log(id DESC);
 """
 
 # ------------------------------------------------------------------ 内置专家 / 智能体
@@ -231,6 +298,25 @@ def _ensure_convo_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE convo ADD COLUMN agent_mode TEXT")
     if "repo_id" not in cols:
         conn.execute("ALTER TABLE convo ADD COLUMN repo_id TEXT")
+
+
+def _ensure_review_columns(conn: sqlite3.Connection) -> None:
+    """老库补列：review.tick_id 记录「这条评论是哪一轮执行贴出去的」（幂等）。
+
+    没有它就只能用时间窗去猜，而时间窗会误判——同仓库的复用执行（skipped）
+    横跨了别人的整个审核过程，起止时间完全罩住了那条 review。
+    """
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(review)").fetchall()}
+    if not cols:
+        return
+    if "tick_id" not in cols:
+        conn.execute("ALTER TABLE review ADD COLUMN tick_id INTEGER")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_review_tick ON review(tick_id)")
+    # feature / stats_json：消息推送要「功能 + 代码量」，不能只靠前端现算
+    if "feature" not in cols:
+        conn.execute("ALTER TABLE review ADD COLUMN feature TEXT")
+    if "stats_json" not in cols:
+        conn.execute("ALTER TABLE review ADD COLUMN stats_json TEXT")
 
 
 def _seed_catalog(conn: sqlite3.Connection) -> None:
@@ -357,6 +443,84 @@ def _sync_catalog(conn: sqlite3.Connection) -> None:
         _seed_catalog(conn)
 
 
+def _backfill_review_tick(conn: sqlite3.Connection) -> None:
+    """给老评论补 tick_id（幂等）：按「评论写入时刻落在哪一轮执行的时间窗内」认亲。
+
+    只在**唯一命中**时补，命中多条就留空——宁可少标，也不要把评论挂到错的
+    轮次上（挂错了「有评论」筛选就会漏或者多）。
+
+    排除 skipped 是关键：同仓库的复用执行横跨了别人的整个审核过程，
+    起止时间完全罩住了那条评论，不排除就会把没贴评论的一轮算成有评论。
+    """
+    rows = conn.execute(
+        "SELECT id, repo_id, updated_at FROM review"
+        " WHERE posted = 1 AND (tick_id IS NULL OR tick_id = 0)"
+    ).fetchall()
+    if not rows:
+        return
+    ticks = conn.execute(
+        "SELECT id, schedule_id, fired_at, finished_at FROM tick_log"
+        " WHERE outcome <> 'skipped' AND finished_at IS NOT NULL"
+    ).fetchall()
+    by_repo: dict = {}
+    for t in ticks:
+        sid = str(t["schedule_id"] or "")
+        rid = sid.split(":", 1)[1] if ":" in sid else sid
+        by_repo.setdefault(rid, []).append(t)
+    for r in rows:
+        at = int(r["updated_at"] or 0)
+        hit = [t for t in by_repo.get(str(r["repo_id"]), [])
+               if int(t["fired_at"] or 0) <= at <= int(t["finished_at"] or 0)]
+        if len(hit) == 1:
+            conn.execute("UPDATE review SET tick_id = ? WHERE id = ?",
+                         (int(hit[0]["id"]), r["id"]))
+
+
+def _backfill_review_meta(conn: sqlite3.Connection) -> None:
+    """给老评论补 feature / stats_json（幂等）：从已存的 report_md 里抽回来。
+
+    为什么值得回填：消息推送要「功能 + 开发者 + 代码量」，而这两个字段是
+    后加的列。不回填的话，库里已有的几十条评论点「回帖」推出去会显示
+    「（未提取到功能描述）」和「0 个文件」——比不推还糟。
+
+    report_md 是当时渲染好的成品，格式稳定（"**功能**：..." 行、页脚的
+    "N 个文件 (+A/−D)"），比事后重新拉 diff 便宜，也不用网络。
+    只补空值，已有值的记录一个字都不动。
+    """
+    rows = conn.execute(
+        "SELECT id, report_md, feature, stats_json FROM review"
+        " WHERE report_md IS NOT NULL AND report_md <> ''"
+        "   AND (feature IS NULL OR feature = '' OR stats_json IS NULL)"
+    ).fetchall()
+    if not rows:
+        return
+
+    for r in rows:
+        md = r["report_md"] or ""
+        feat = r["feature"] or ""
+        if not feat:
+            m = re.search(r"\*\*功能\*\*[：:]\s*(.+)", md)
+            if m:
+                feat = m.group(1).strip().split("\n")[0][:200]
+        stats = None
+        if not r["stats_json"]:
+            # 页脚形如「… ｜ 26 个文件 (+780/−119) ｜ model ｜ 3.2s」
+            m = re.search(r"(\d+)\s*个文件\s*\(\+(\d+)\s*/\s*[−\-](\d+)\)", md)
+            if m:
+                stats = json.dumps(
+                    {"files": int(m.group(1)), "additions": int(m.group(2)),
+                     "deletions": int(m.group(3))},
+                    ensure_ascii=False,
+                )
+        if not feat and stats is None:
+            continue
+        conn.execute(
+            "UPDATE review SET feature = COALESCE(NULLIF(?, ''), feature),"
+            " stats_json = COALESCE(?, stats_json) WHERE id = ?",
+            (feat, stats, r["id"]),
+        )
+
+
 def _backfill_agent_links(conn: sqlite3.Connection) -> None:
     """把老会话的 agent_mode 与新会话的 agent_id 对齐（幂等）。
 
@@ -410,9 +574,12 @@ def init() -> sqlite3.Connection:
             conn.execute("PRAGMA busy_timeout = 5000")
             conn.executescript(SCHEMA)
             _ensure_convo_columns(conn)
+            _ensure_review_columns(conn)
             _ensure_msg_index(conn)
             _sync_catalog(conn)
             _backfill_agent_links(conn)
+            _backfill_review_tick(conn)
+            _backfill_review_meta(conn)
             conn.commit()
             _conn = conn
             _available = True

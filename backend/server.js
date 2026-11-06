@@ -129,6 +129,8 @@ function broadcastReview(ev) {
 /* ---------- 静态文件 ---------- */
 const DIST = path.join(ROOT, 'web', 'dist');
 
+/* 定时任务入口已经做进 React 侧栏（专家下方），原来的浮层胶囊撤掉了。
+ * 保留 serveIndex 这一层：读取 index.html 时统一处理，将来要再注入别的东西还在这里。 */
 function serveIndex(res) {
   const distIndex = path.join(DIST, 'index.html');
   const target = fs.existsSync(distIndex) ? distIndex : path.join(ROOT, 'index.html');
@@ -163,7 +165,14 @@ function serveDistAsset(urlPath, res) {
       '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff': 'font/woff',
       '.woff2': 'font/woff2', '.map': 'application/json',
     }[ext] || 'application/octet-stream';
-    res.writeHead(200, { 'Content-Type': mime + '; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+    // HTML 不缓存：schedule.html 这类页面是「改了就希望立刻生效」的，
+    // 缓存一小时会让用户反复看到旧版界面，还以为改动没上线。
+    // 带 hash 的静态资源（js/css）保持长缓存。
+    const isHtml = ext === '.html' || ext === '';
+    res.writeHead(200, {
+      'Content-Type': mime + '; charset=utf-8',
+      'Cache-Control': isHtml ? 'no-cache, no-store, must-revalidate' : 'public, max-age=3600',
+    });
     res.end(buf);
   });
 }
@@ -888,6 +897,11 @@ const server = http.createServer((req, res) => {
     return void proxyApi(req, res, url.pathname + url.search);
   }
   if (req.method === 'GET' && url.pathname === '/api/review/events') {
+    return void proxyApi(req, res, url.pathname + url.search);
+  }
+
+  /* 定时任务：调度项、执行记录、批量配置、分组（Python 提供，看板 schedule.html 用） */
+  if (url.pathname === '/api/schedule' || url.pathname.startsWith('/api/schedule/')) {
     return void proxyApi(req, res, url.pathname + url.search);
   }
 

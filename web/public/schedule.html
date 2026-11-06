@@ -1,0 +1,1109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>定时任务 · 执行记录</title>
+<style>
+  /* 主题约定跟主应用（web/src/styles/tokens.css）保持一致：
+     :root 是浅色基线，html.dark 覆盖成深色。
+     之前这里反着写（:root 深色 + html.light 覆盖），而主题库只会往 <html> 挂 .dark，
+     浅色用户进来时既没有 .dark 也没有 .light，于是落到 :root 的深色上——
+     页面永远是黑的，切到浅色也没反应。 */
+  :root {
+    color-scheme: light;
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --panel-2: #f2f3f6;
+    --panel-3: #e9ebf0;
+    --line: #e3e5ea;
+    --line-2: #d3d6de;
+    --text: #1d2027;
+    /* muted 用在 .pill（底是 panel-2 而非页面底）与 .sec-head。
+       #6b7280 在原底上只有 4.51（卡边）、在 panel-2 上 4.36（不合格），
+       压到 #666d79 后：页面底 4.86、panel-2 4.70，两处都过 AA。 */
+    --muted: #666d79;
+    /* dim 承担表头、时间戳、摘要这些「必须读」的内容，不是装饰。
+       原来 #9aa0aa 在白卡上只有 2.63:1，远低于 WCAG AA 的 4.5:1。
+       #656b78 在页面底 4.99、白卡 5.35、表头底(panel-2) 4.82，三处都够。 */
+    --dim: #656b78;
+    /* 状态色：徽标是 11px 小字，底色又叠了 9~10% 同色透明，
+       实际对比会被稀释。用原色只有 4.0~4.3（不达 AA 的 4.5），
+       各压深一档后 4.75~5.08，既达标又不至于沉得发黑。 */
+    --ok: #177032;
+    --ok-bg: rgba(23,112,50,.09);
+    --ok-line: rgba(23,112,50,.28);
+    --bad: #c01d29;
+    --bad-bg: rgba(192,29,41,.09);
+    --bad-line: rgba(192,29,41,.28);
+    --warn: #8a5c00;
+    --warn-bg: rgba(138,92,0,.1);
+    --warn-line: rgba(138,92,0,.28);
+    --info: #085fc4;
+    --info-bg: rgba(8,95,196,.09);
+    --info-line: rgba(8,95,196,.28);
+    --radius: 10px;
+    /* 阴影与按钮：深浅两套差别大，单独抽出来，避免在规则里写死 */
+    --shadow-pop: 0 -8px 24px rgba(0,0,0,.12);
+    --shadow-drawer: -12px 0 32px rgba(0,0,0,.14);
+    --btn-primary-bg: #1f4d8f;
+    --btn-primary-bg-hover: #245aa5;
+    --btn-primary-border: #2a63b0;
+    --btn-primary-text: #ffffff;
+    --accent: #2a63b0;
+  }
+  html.dark {
+    color-scheme: dark;
+    --bg: #131316;
+    --panel: #1b1b21;
+    --panel-2: #22222a;
+    --panel-3: #2a2a33;
+    --line: #2e2e38;
+    --line-2: #3d3d4a;
+    --text: #e8e8ee;
+    --muted: #8b8b99;
+    /* 同理：原 #62626f 在深底上只有 2.85:1。压到 #8d8d9c 后
+       页面底 5.67、panel-2（表头/胶囊底）4.83，两处都过 AA。 */
+    --dim: #8d8d9c;
+    --ok: #3fb950;
+    --ok-bg: rgba(63,185,80,.1);
+    --ok-line: rgba(63,185,80,.3);
+    /* 深色下红色压深会看不清，得提亮：徽标底是 panel-2 叠 10% 同色，
+       #f85149 只有 4.20，换 #ff6b63 到 4.93，过 AA 且仍是明确的「危险」红。 */
+    --bad: #ff6b63;
+    --bad-bg: rgba(255,107,99,.1);
+    --bad-line: rgba(255,107,99,.3);
+    --warn: #d29922;
+    --warn-bg: rgba(210,153,34,.1);
+    --warn-line: rgba(210,153,34,.3);
+    --info: #58a6ff;
+    --info-bg: rgba(88,166,255,.1);
+    --info-line: rgba(88,166,255,.3);
+    --shadow-pop: 0 -8px 24px rgba(0,0,0,.45);
+    --shadow-drawer: -12px 0 32px rgba(0,0,0,.5);
+    --btn-primary-bg: #1f4d8f;
+    --btn-primary-bg-hover: #245aa5;
+    --btn-primary-border: #2a63b0;
+    --btn-primary-text: #ffffff;
+    --accent: #2a63b0;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+
+  /* 滚动条也跟着主题走：深色页面配一条亮白滚动条非常刺眼，
+     Firefox 用 scrollbar-color，Chrome/Edge 用 ::-webkit-scrollbar。 */
+  html { scrollbar-color: var(--line-2) transparent; scrollbar-width: thin; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 6px; border: 2px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); background-clip: content-box; }
+  ::-webkit-scrollbar-corner { background: transparent; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 14px/1.6 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 13px 20px; border-bottom: 1px solid var(--line); flex-wrap: wrap;
+    background: var(--panel);
+  }
+  h1 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: .2px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 2px 9px; border-radius: 999px; font-size: 12px;
+    background: var(--panel-2); color: var(--muted); border: 1px solid var(--line);
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); flex: none; }
+  .dot.on { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-bg); }
+  .dot.off { background: var(--bad); }
+  .dot.live { background: var(--info); animation: pulse 1.4s infinite; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--info-bg); }
+    50% { opacity: .55; box-shadow: 0 0 0 4px var(--info-bg); }
+  }
+  .spacer { flex: 1; }
+  button {
+    font: inherit; font-size: 13px; color: var(--text); cursor: pointer;
+    background: var(--panel-2); border: 1px solid var(--line);
+    padding: 5px 12px; border-radius: 7px; white-space: nowrap;
+  }
+  button:hover { border-color: var(--line-2); background: var(--panel-3); }
+  button.primary {
+    background: var(--btn-primary-bg); border-color: var(--btn-primary-border);
+    color: var(--btn-primary-text);
+  }
+  button.primary:hover { background: var(--btn-primary-bg-hover); }
+  button.ghost { background: transparent; }
+  button.mini { padding: 2px 8px; font-size: 12px; border-radius: 6px; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  main { flex: 1; overflow: auto; padding: 16px 20px 96px; }
+
+  /* 嵌入主界面时：顶栏压成一条紧凑工具条，保留状态与操作，去掉标题和外边距。
+     直接 display:none 会连带丢掉「调度器是否在跑」和「立即执行所选」。 */
+  html.embed header {
+    background: transparent; border-bottom: 1px solid var(--line);
+    padding: 0 0 10px; margin-bottom: 14px; gap: 8px;
+  }
+  html.embed header h1 { display: none; }
+  html.embed main { padding: 4px 0 80px; }
+  /* html 和 body 都要透明：只设 body 的话，iframe 的根画布仍是白底，
+     深色主题下会透出一层白（尤其是表格透明区域和滚动到底的一瞬间）。 */
+  html.embed, html.embed body { background: transparent; }
+  html.embed th { top: 0; }
+  section { margin-bottom: 20px; }
+  .sec-head {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+    color: var(--muted); font-size: 12px; letter-spacing: .4px; flex-wrap: wrap;
+  }
+  .sec-head .fill { flex: 1; height: 1px; background: var(--line); min-width: 20px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); overflow: hidden;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th {
+    font-weight: 500; font-size: 12px; color: var(--dim);
+    background: var(--panel-2); position: sticky; top: 0; z-index: 1;
+  }
+  tr:last-child td { border-bottom: none; }
+  tbody tr.row { cursor: pointer; }
+  tbody tr.row:hover { background: var(--panel-2); }
+  tbody tr.sel { background: var(--info-bg); }
+  .name { font-weight: 500; }
+  .sub { color: var(--dim); font-size: 12px; }
+  .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12px; }
+  .tag {
+    display: inline-block; padding: 1px 7px; border-radius: 5px;
+    font-size: 11px; border: 1px solid transparent; white-space: nowrap;
+  }
+  .tag.ok { color: var(--ok); background: var(--ok-bg); border-color: var(--ok-line); }
+  .tag.bad { color: var(--bad); background: var(--bad-bg); border-color: var(--bad-line); }
+  .tag.warn { color: var(--warn); background: var(--warn-bg); border-color: var(--warn-line); }
+  .tag.idle { color: var(--dim); background: var(--panel-2); border-color: var(--line); }
+  .tag.man { color: var(--info); background: var(--info-bg); border-color: var(--info-line); }
+  .bar { height: 4px; background: var(--panel-3); border-radius: 2px; overflow: hidden; min-width: 60px; }
+  .bar > i { display: block; height: 100%; background: var(--ok); }
+  .empty { padding: 28px; text-align: center; color: var(--dim); }
+  input[type=checkbox] { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
+
+  /* 概览统计 */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 10px; }
+  .stat {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 11px 14px;
+  }
+  .stat .k { color: var(--dim); font-size: 12px; }
+  .stat .v { font-size: 22px; font-weight: 600; line-height: 1.35; font-variant-numeric: tabular-nums; }
+  .stat .n { color: var(--dim); font-size: 11px; }
+  .stat.ok .v { color: var(--ok); }
+  .stat.bad .v { color: var(--bad); }
+  .stat.warn .v { color: var(--warn); }
+  .stat.info .v { color: var(--info); }
+
+  /* 筛选 tab */
+  .tabs { display: inline-flex; gap: 4px; background: var(--panel-2); padding: 3px; border-radius: 8px; border: 1px solid var(--line); }
+  .tabs button {
+    background: transparent; border: none; padding: 2px 10px; border-radius: 6px;
+    color: var(--muted); font-size: 12px;
+  }
+  .tabs button.active { background: var(--panel); color: var(--text); border: 1px solid var(--line); }
+  .tabs button b { font-weight: 600; margin-left: 3px; font-variant-numeric: tabular-nums; }
+
+  /* ---- 主视图切换（执行记录 / 仓库）----
+     比筛选 tab 大一号：这是「换一页」，跟「筛一类」不是同一个层级，
+     做成一样大会让人以为点完只是过滤了下表格。 */
+  .viewbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .viewbar .fill { flex: 1; height: 1px; background: var(--line); min-width: 12px; }
+  .main-tabs { padding: 4px; }
+  .main-tabs button { padding: 5px 16px; font-size: 13px; font-weight: 500; }
+  .main-tabs button.active { box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  .view-panel[hidden] { display: none; }
+
+  /* 「有评论」标记：结果列里的一个小角标，说明这一轮真把意见贴到 PR 了。
+     用 --info 系（两套主题都过 4.5:1），不用绿色——绿色在这个页面已经
+     被「成功」占用，再加一个绿会分不清「跑成功了」和「贴了评论」。 */
+  .cmt-mark {
+    display: inline-flex; align-items: center; gap: 3px;
+    margin-top: 3px; padding: 1px 6px 1px 4px; border-radius: 6px;
+    font-size: 11px; line-height: 1.6;
+    color: var(--info); background: var(--info-bg);
+    border: 1px solid var(--info-line);
+  }
+  .cmt-mark svg { flex: none; }
+
+  /* 展开的详情 */
+  tr.detail > td { background: var(--panel-2); padding: 0; border-bottom: 1px solid var(--line); }
+  .detail-box { padding: 12px 14px 14px 44px; }
+  .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 18px; margin-bottom: 10px; }
+  .detail-grid .k { color: var(--dim); font-size: 11px; }
+  .detail-grid .v { font-size: 13px; font-variant-numeric: tabular-nums; }
+  .res-list { margin: 0 0 10px; padding-left: 18px; }
+  .res-list li { margin: 2px 0; font-size: 13px; }
+  .res-list li.err { color: var(--bad); }
+  details.raw summary { cursor: pointer; color: var(--dim); font-size: 12px; }
+  details.raw pre {
+    margin: 6px 0 0; padding: 10px; background: var(--bg); border: 1px solid var(--line);
+    border-radius: 8px; overflow: auto; font-size: 12px; max-height: 220px;
+  }
+
+  /* 倒计时 */
+  .countdown { font-variant-numeric: tabular-nums; }
+  .countdown.due { color: var(--warn); }
+  .countdown.off { color: var(--dim); }
+
+  /* 底部批量条 */
+  #batch {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    display: none; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 12px 20px; background: var(--panel); border-top: 1px solid var(--line);
+    box-shadow: var(--shadow-pop); z-index: 15;
+  }
+  #batch.show { display: flex; }
+  #batch .count { color: var(--muted); font-size: 13px; }
+  #batch input[type=number], #batch input[type=text] {
+    font: inherit; font-size: 13px; color: var(--text); background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 7px; padding: 5px 9px; width: 100px;
+  }
+  #batch input[type=text] { width: 130px; }
+
+  /* 单仓库历史抽屉 */
+  #drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(620px, 92vw);
+    background: var(--panel); border-left: 1px solid var(--line);
+    transform: translateX(100%); transition: transform .18s ease;
+    display: flex; flex-direction: column; z-index: 20;
+    box-shadow: var(--shadow-drawer);
+  }
+  #drawer.open { transform: translateX(0); }
+  #drawer .head {
+    padding: 14px 18px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 10px;
+  }
+  #drawer .body { flex: 1; overflow: auto; padding: 14px 18px; }
+  .tick {
+    padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+    margin-bottom: 8px; background: var(--panel-2);
+  }
+  .tick .row1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .tick .row2 { color: var(--dim); font-size: 12px; margin-top: 5px; word-break: break-all; }
+  .kv { display: grid; grid-template-columns: 92px 1fr; gap: 6px 12px; font-size: 13px; margin-bottom: 14px; }
+  .kv dt { color: var(--dim); }
+  .kv dd { margin: 0; word-break: break-all; }
+
+  #toast {
+    position: fixed; left: 50%; bottom: 80px; transform: translateX(-50%);
+    background: var(--panel-3); border: 1px solid var(--line); color: var(--text);
+    padding: 9px 16px; border-radius: 8px; font-size: 13px;
+    opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 40;
+    max-width: min(560px, 88vw);
+  }
+  #toast.show { opacity: 1; }
+  #toast.err { border-color: var(--bad-line); color: var(--bad); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>定时任务</h1>
+  <span class="pill" id="schedPill"><span class="dot" id="schedDot"></span><span id="schedText">调度器</span></span>
+  <span class="pill" id="autoPill">自动刷新 5s</span>
+  <span class="spacer"></span>
+  <button class="ghost" id="btnReload">刷新</button>
+  <button class="primary" id="btnRunSel" disabled>立即执行所选</button>
+</header>
+
+<main>
+  <section>
+    <div class="sec-head">今天 <span class="sub" id="todayLabel"></span><span class="fill"></span></div>
+    <div class="stats" id="stats">
+      <div class="stat"><div class="k">触发次数</div><div class="v">—</div><div class="n">加载中</div></div>
+    </div>
+  </section>
+
+  <!-- 主视图切换：执行记录是「刚发生了什么」，仓库是「配置成什么样」，
+       两类问题互不依赖，堆在一页要来回滚。做成同级 tab 后各占满屏。
+       分组放在仓库页里——组就是仓库的集合，脱离仓库单独看没有意义。 -->
+  <div class="viewbar">
+    <div class="tabs main-tabs" id="views">
+      <button data-view="ticks" class="active">执行记录<b id="viewTicksCount"></b></button>
+      <button data-view="repos">仓库<b id="viewReposCount"></b></button>
+    </div>
+    <span class="fill"></span>
+    <span class="sub" id="viewHint"></span>
+  </div>
+
+  <div class="view-panel" id="panelTicks">
+    <section>
+      <div class="sec-head">
+        <span class="fill" style="min-width:0"></span>
+        <div class="tabs" id="tabs">
+          <button data-tab="all" class="active">全部<b id="tabAll"></b></button>
+          <button data-tab="fired">成功<b id="tabFired"></b></button>
+          <button data-tab="failed">失败<b id="tabFailed"></b></button>
+          <button data-tab="skipped">跳过<b id="tabSkipped"></b></button>
+          <button data-tab="running">执行中<b id="tabRunning"></b></button>
+          <button data-tab="manual">手动<b id="tabManual"></b></button>
+          <button data-tab="comment" title="只显示这一轮把审核意见贴到 PR 的执行">有评论<b id="tabComment"></b></button>
+        </div>
+      </div>
+      <div class="card">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:158px">时间</th>
+              <th>仓库</th>
+              <th style="width:78px">触发</th>
+              <th style="width:86px">结果</th>
+              <th style="width:88px">耗时</th>
+              <th>执行结果</th>
+              <th style="width:26px"></th>
+            </tr>
+          </thead>
+          <tbody id="ticks">
+            <tr><td colspan="7" class="empty">加载中…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div class="view-panel" id="panelRepos" hidden>
+    <section>
+      <div class="sec-head">定时任务 <span class="sub">点一行看该仓库的全部历史</span><span class="fill"></span></div>
+      <div class="card">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:34px"><input type="checkbox" id="checkAll"></th>
+              <th>仓库</th>
+              <th style="width:96px">节奏</th>
+              <th style="width:132px">下次触发</th>
+              <th style="width:132px">上次结果</th>
+              <th style="width:118px">近 7 天</th>
+              <th style="width:132px">状态</th>
+            </tr>
+          </thead>
+          <tbody id="rows">
+            <tr><td colspan="7" class="empty">加载中…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head">分组 · 共享一个节拍器<span class="fill"></span></div>
+      <div class="card" id="groupCard">
+        <div class="empty">加载中…</div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<div id="batch">
+  <span class="count" id="batchCount">已选 0 项</span>
+  <button id="btnEvery">设置间隔</button>
+  <input type="number" id="inEvery" min="30" max="86400" placeholder="秒" hidden>
+  <button id="btnEnable">启用</button>
+  <button id="btnDisable">停用</button>
+  <button id="btnGroup">编成一组</button>
+  <input type="text" id="inGroup" placeholder="分组名" hidden>
+  <button class="ghost" id="btnClear">取消选择</button>
+</div>
+
+<div id="drawer">
+  <div class="head">
+    <strong id="drawerTitle">执行记录</strong>
+    <span class="spacer"></span>
+    <button class="ghost" id="btnCloseDrawer">关闭</button>
+  </div>
+  <div class="body" id="drawerBody"></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* 嵌入模式：主界面用 iframe 内嵌本页（?embed=1）时不显示自己的顶栏，
+   高度交给外层控制——否则会出现「页面里再套一个页面标题」和大片留白。 */
+(function () {
+  var embed = /[?&]embed=1/.test(location.search);
+  if (embed) document.documentElement.classList.add('embed');
+})();
+
+/* 主题：与主应用同一套约定——只往 <html> 挂 .dark，没有 .dark 就是浅色。
+   默认不跟随系统：主应用里那个开关是显式选择的，内页擅自跟随系统会和外面打架
+   （用户在主界面选了浅色，内嵌页却因为系统是深色而发黑）。
+   首次访问没有存过偏好时按浅色，与 web/src/lib/theme.ts 的 loadTheme() 一致。 */
+function applyDark(on) {
+  document.documentElement.classList.toggle('dark', !!on);
+}
+(function () {
+  var pref = null;
+  try { pref = localStorage.getItem('theme'); } catch (e) { pref = null; }
+  applyDark(pref === 'dark');
+})();
+
+/* 主应用切换深浅色时同步过来。storage 事件只在「另一个文档」写入时触发，
+   iframe 与父页面正是两个文档，所以这里能收到。 */
+window.addEventListener('storage', function (e) {
+  if (e.key !== 'theme') return;
+  applyDark(e.newValue === 'dark');
+});
+
+/* 兜底：某些情况下父页面懒得发 storage（比如同文档内切换），
+   用 MutationObserver 盯住父级 <html> 的 class，变化就跟。
+   同源才能读，跨源会抛错——包在 try 里，失败就只靠 storage。 */
+(function () {
+  try {
+    var top = window.parent;
+    if (!top || top === window) return;
+    var root = top.document.documentElement;
+    var sync = function () { applyDark(root.classList.contains('dark')); };
+    sync();
+    new MutationObserver(sync).observe(root, { attributes: true, attributeFilter: ['class'] });
+  } catch (e) { /* 跨源或父级不可读：保持自身判断 */ }
+})();
+
+
+const API = location.protocol === 'file:' ? 'http://localhost:8787' : '';
+const state = {
+  list: [], groups: [], selected: new Set(), ticks: [], summary: null,
+  tab: (() => {
+    try { return localStorage.getItem('sched.tab') || 'all'; } catch (e) { return 'all'; }
+  })(), expanded: new Set(), current: null, sig: '', tickSig: '',
+  /* 主视图：ticks = 执行记录，repos = 仓库与分组。
+     记住选择：用户来回跳的时候不该每次都回到默认页。 */
+  view: (() => {
+    try { return localStorage.getItem('sched.view') === 'repos' ? 'repos' : 'ticks'; }
+    catch (e) { return 'ticks'; }
+  })(),
+};
+
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s == null ? '' : s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+function fmtEvery(sec) {
+  const s = Number(sec) || 0;
+  if (s >= 3600) return (s / 3600).toFixed(s % 3600 ? 1 : 0) + ' 小时';
+  if (s >= 60) return (s / 60).toFixed(s % 60 ? 1 : 0) + ' 分钟';
+  return s + ' 秒';
+}
+
+function fmtClock(ms) {
+  if (!ms) return '—';
+  const d = new Date(Number(ms));
+  return d.toLocaleTimeString('zh-CN', { hour12: false });
+}
+
+function fmtDayClock(ms) {
+  if (!ms) return '—';
+  const d = new Date(Number(ms));
+  const today = new Date();
+  const sameDay = d.toDateString() === today.toDateString();
+  const hh = d.toLocaleTimeString('zh-CN', { hour12: false });
+  if (sameDay) return '今天 ' + hh;
+  return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hh;
+}
+
+function fmtRel(ms) {
+  if (!ms) return '—';
+  const diff = Date.now() - Number(ms);
+  const abs = Math.abs(diff);
+  const word = diff >= 0 ? '前' : '后';
+  if (abs < 60000) return Math.round(abs / 1000) + ' 秒' + word;
+  if (abs < 3600000) return Math.round(abs / 60000) + ' 分钟' + word;
+  if (abs < 86400000) return Math.round(abs / 3600000) + ' 小时' + word;
+  return Math.round(abs / 86400000) + ' 天' + word;
+}
+
+function fmtDur(ms) {
+  if (ms == null || ms === '') return '—';
+  const n = Number(ms);
+  if (!isFinite(n)) return '—';
+  if (n < 1000) return n + ' ms';
+  if (n < 60000) return (n / 1000).toFixed(1) + ' s';
+  return Math.floor(n / 60000) + ' 分 ' + Math.round((n % 60000) / 1000) + ' 秒';
+}
+
+function outcomeTag(o) {
+  if (o === 'fired') return '<span class="tag ok">成功</span>';
+  if (o === 'failed') return '<span class="tag bad">失败</span>';
+  if (o === 'skipped') return '<span class="tag warn">跳过</span>';
+  if (o === 'running') return '<span class="tag man">执行中</span>';
+  return '<span class="tag idle">未执行</span>';
+}
+
+function sourceTag(s) {
+  return s === 'manual'
+    ? '<span class="tag man">手动</span>'
+    : '<span class="tag idle">定时</span>';
+}
+
+function toast(msg, isErr) {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.className = 'show' + (isErr ? ' err' : '');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.className = ''; }, 2800);
+}
+
+async function api(path, opts) {
+  const res = await fetch(API + path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts));
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }
+  if (!res.ok) {
+    const msg = (data && (data.error && data.error.message || data.error)) || ('HTTP ' + res.status);
+    throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+  }
+  return data;
+}
+
+/* ---------------- 概览 ---------------- */
+function renderStats() {
+  const s = (state.summary || {});
+  const box = $('#stats');
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  $('#todayLabel').textContent = '（' + (today.getMonth() + 1) + '月' + today.getDate() + '日 0 点起）';
+  const cells = [
+    { k: '触发次数', v: s.total || 0, n: '含跳过与失败', cls: '' },
+    { k: '成功', v: s.fired || 0, n: s.total ? Math.round((s.fired || 0) * 100 / s.total) + '% 成功率' : '—', cls: 'ok' },
+    { k: '失败', v: s.failed || 0, n: s.failed ? '点下方记录看原因' : '没有失败', cls: 'bad' },
+    { k: '跳过', v: s.skipped || 0, n: '停用或未到期', cls: 'warn' },
+    { k: '执行中', v: s.running || 0, n: s.running ? '正在跑' : '空闲', cls: 'info' },
+    { k: '平均耗时', v: s.avgMs ? fmtDur(s.avgMs) : '—', n: '单次执行', cls: '' },
+  ];
+  box.innerHTML = cells.map((c) =>
+    '<div class="stat ' + c.cls + '"><div class="k">' + c.k + '</div>' +
+    '<div class="v">' + esc(c.v) + '</div><div class="n">' + esc(c.n) + '</div></div>'
+  ).join('');
+}
+
+/* ---------------- 执行记录 ---------------- */
+function resultBits(t) {
+  const r = t.result || {};
+  const bits = [];
+  if (r.skipped) bits.push('跳过原因：' + r.skipped);
+  if (r.prs != null) bits.push('发现 ' + r.prs + ' 个 PR');
+  // 「审核 0 个」单看像没干活，补上 pending 与 note 才说得清到底是没事可做还是出了问题
+  if (r.reviewed != null) {
+    let s = '审核 ' + r.reviewed + ' 个';
+    if (!r.reviewed && r.pending) s += '（' + r.pending + ' 个待审，受单轮上限限制）';
+    bits.push(s);
+  }
+  if (t.commentCount) {
+    const prs = (t.postedReviews || []).map((x) => '#' + x.prNumber).join('、');
+    bits.push('回帖 ' + t.commentCount + ' 条' + (prs ? '（' + prs + '）' : ''));
+  }
+  if (r.note) bits.push(r.note);
+  if (Array.isArray(r.errors) && r.errors.length) bits.push(r.errors.length + ' 条错误');
+  // 被中断的记录只带一个 error 字段，没有 errors 数组
+  if (r.error && t.reason !== r.error) bits.push(r.error);
+  if (t.reason && !r.skipped) bits.push(t.reason);
+  if (!bits.length) {
+    if (t.outcome === 'running') bits.push('正在执行…');
+    else if (t.outcome === 'failed') bits.push('没有返回结果');
+    else if (t.outcome === 'skipped') bits.push('未执行');
+    else bits.push('已完成，无额外结果');
+  }
+  return bits;
+}
+
+function tickCounts() {
+  const c = { all: state.ticks.length, fired: 0, failed: 0, skipped: 0, running: 0, manual: 0, comment: 0 };
+  for (const t of state.ticks) {
+    if (c[t.outcome] != null) c[t.outcome] += 1;
+    if (t.source === 'manual') c.manual += 1;
+    if (t.hasComment) c.comment += 1;
+  }
+  return c;
+}
+
+/* 「有评论」是唯一走服务端的筛选：评论太稀疏，只筛本地这 80 条会把
+   更早贴过评论的轮次全漏掉。所以这个 tab 下 state.ticks 本身就是
+   服务端过滤过的结果，本地不再二次过滤。 */
+function isServerFiltered() {
+  return state.tab === 'comment';
+}
+
+function filteredTicks() {
+  const t = state.tab;
+  if (t === 'all' || t === 'comment') return state.ticks;
+  if (t === 'manual') return state.ticks.filter((x) => x.source === 'manual');
+  return state.ticks.filter((x) => x.outcome === t);
+}
+
+function repoLabel(t) {
+  if (t.owner || t.name) return (t.owner ? t.owner + '/' : '') + (t.name || '');
+  return t.repoId ? String(t.repoId).slice(0, 8) : (t.scheduleId || '—');
+}
+
+/* 起止时间。老记录里 started_at 曾被 finish_tick 补成结束时刻，于是「开始」
+   显示成结束那一秒，却带着一分半的耗时——自相矛盾。这里用 durationMs 反推
+   真实开始时刻，历史数据也不会露馅。 */
+function spanText(t) {
+  if (!t.finishedAt && !t.startedAt) return '—';
+  let start = t.startedAt || null;
+  const end = t.finishedAt || null;
+  if (start && end && t.durationMs > 1000 && end - start < 1000) start = end - t.durationMs;
+  const a = start ? fmtClock(start) : '—';
+  const b = end ? fmtClock(end) : '进行中';
+  const span = (start && end && end > start) ? '（' + fmtDur(end - start) + '）' : '';
+  return a + ' → ' + b + span;
+}
+
+function detailHtml(t) {
+  const r = t.result || {};
+  const delay = t.plannedAt && t.firedAt ? t.firedAt - t.plannedAt : null;
+  const cells = [
+    ['计划触发', t.plannedAt ? fmtDayClock(t.plannedAt) : '—'],
+    ['实际触发', t.firedAt ? fmtDayClock(t.firedAt) : '—'],
+    ['触发延迟', delay == null ? '—' : fmtDur(Math.abs(delay))],
+    ['开始 / 结束', spanText(t)],
+    ['耗时', fmtDur(t.durationMs)],
+    ['记录 ID', '#' + t.id + (t.runId ? ' · run ' + t.runId : '')],
+  ];
+  const items = [];
+  if (r.prs != null) items.push('拉取到 ' + r.prs + ' 个开放 PR');
+  if (r.reviewed != null) items.push('本轮完成审核 ' + r.reviewed + ' 个');
+  for (const p of (t.postedReviews || [])) {
+    items.push('回帖到 PR #' + p.prNumber +
+      (p.risk ? ' · 风险 ' + p.risk : '') +
+      (p.issueCount ? ' · ' + p.issueCount + ' 处问题' : '') +
+      (p.postError ? ' · 回帖报错：' + p.postError : ''));
+  }
+  if (r.skipped) items.push('未执行：' + r.skipped);
+  if (Array.isArray(r.errors)) {
+    for (const e of r.errors) items.push('错误：' + e);
+  }
+  const list = items.length
+    ? '<ul class="res-list">' + items.map((x) =>
+        '<li class="' + (/^错误/.test(x) ? 'err' : '') + '">' + esc(x) + '</li>').join('') + '</ul>'
+    : '<div class="sub" style="margin-bottom:10px">' + esc(t.reason || '没有更多结果字段') + '</div>';
+  return '<div class="detail-box">' +
+    '<div class="detail-grid">' + cells.map((c) =>
+      '<div><div class="k">' + c[0] + '</div><div class="v">' + esc(c[1]) + '</div></div>').join('') +
+    '</div>' + list +
+    '<details class="raw"><summary>原始结果</summary><pre>' +
+    esc(JSON.stringify(r && Object.keys(r).length ? r : { outcome: t.outcome, reason: t.reason }, null, 2)) +
+    '</pre></details></div>';
+}
+
+function renderTicks(force) {
+  const sig = state.ticks.map((t) => t.id + ':' + t.outcome + ':' + (t.commentCount || 0)).join(',') +
+    '|' + state.tab + '|' + [...state.expanded].join(',');
+  if (!force && sig === state.tickSig) return;
+  state.tickSig = sig;
+
+  const counts = tickCounts();
+  $('#tabAll').textContent = counts.all || '';
+  $('#tabFired').textContent = counts.fired || '';
+  $('#tabFailed').textContent = counts.failed || '';
+  $('#tabSkipped').textContent = counts.skipped || '';
+  $('#tabRunning').textContent = counts.running || '';
+  $('#tabManual').textContent = counts.manual || '';
+  /* 「有评论」的徽标用摘要里的全局数，不用本地这 80 条的计数：
+     评论太稀疏，最近 80 条里可能一条都没有，徽标就会显示 0，
+     让人以为「从来没贴过评论」，点进去反而有。 */
+  const commented = (state.summary && state.summary.commented) || counts.comment;
+  $('#tabComment').textContent = commented || '';
+  document.querySelectorAll('#tabs button').forEach((b) => {
+    b.classList.toggle('active', b.dataset.tab === state.tab);
+  });
+
+  const body = $('#ticks');
+  const rows = filteredTicks();
+  /* 提示跟着筛选走（「最近 80 条」会变成「最近 3 条」），所以只能在这里算；
+     放在 switchView 里写死条数，筛选一变化就对不上了。 */
+  if (state.view === 'ticks') {
+    $('#viewHint').textContent = isServerFiltered()
+      ? (rows.length ? rows.length + ' 条贴过评论 · 全量历史' : '')
+      : (rows.length ? '最近 ' + rows.length + ' 条 · 每 5 秒自动刷新' : '');
+  }
+
+  const scrollHost = document.querySelector('main');
+  const keepTop = scrollHost ? scrollHost.scrollTop : 0;
+
+  if (!rows.length) {
+    const hint = state.ticks.length ? '这个筛选条件下没有记录' : '还没有执行记录。等到下一次触发，或点「立即执行所选」。';
+    body.innerHTML = '<tr><td colspan="7" class="empty">' + esc(hint) + '</td></tr>';
+    return;
+  }
+
+  body.innerHTML = rows.map((t) => {
+    const open = state.expanded.has(t.id);
+    const bits = resultBits(t);
+    const preview = bits.join(' · ');
+    return '<tr class="row" data-tick="' + t.id + '">' +
+      '<td><div class="mono">' + fmtDayClock(t.firedAt) + '</div><div class="sub">' + fmtRel(t.firedAt) + '</div></td>' +
+      '<td><div class="name">' + esc(repoLabel(t)) + '</div><div class="sub">' + esc(t.kind || '') + '</div></td>' +
+      '<td>' + sourceTag(t.source) + '</td>' +
+      '<td>' + outcomeTag(t.outcome) +
+        (t.commentCount ? '<div class="cmt-mark" title="这一轮把审核意见贴到了 PR">' +
+          '<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path fill="currentColor" d="M2 3.2A1.2 1.2 0 0 1 3.2 2h9.6A1.2 1.2 0 0 1 14 3.2v6.6a1.2 1.2 0 0 1-1.2 1.2H6.6L3.4 13.9a.5.5 0 0 1-.8-.4v-2.5h-.4A1.2 1.2 0 0 1 1 9.8z"/></svg>' +
+          t.commentCount + '</div>' : '') + '</td>' +
+      '<td class="mono">' + fmtDur(t.durationMs) + '</td>' +
+      '<td><div class="sub" style="color:var(--muted);max-width:520px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
+        esc(preview) + '">' + esc(preview) + '</div></td>' +
+      '<td class="sub" style="text-align:center">' + (open ? '▾' : '▸') + '</td>' +
+      '</tr>' +
+      (open ? '<tr class="detail"><td colspan="7">' + detailHtml(t) + '</td></tr>' : '');
+  }).join('');
+
+  body.querySelectorAll('[data-tick]').forEach((tr) => {
+    tr.onclick = () => {
+      const id = Number(tr.dataset.tick);
+      if (state.expanded.has(id)) state.expanded.delete(id);
+      else state.expanded.add(id);
+      renderTicks(true);
+      if (scrollHost) scrollHost.scrollTop = keepTop;
+    };
+  });
+}
+
+/* ---------------- 调度项 ---------------- */
+function renderList() {
+  const rows = $('#rows');
+  if (!state.list.length) {
+    rows.innerHTML = '<tr><td colspan="7" class="empty">还没有可调度的仓库。先在主应用里添加仓库。</td></tr>';
+    return;
+  }
+  rows.innerHTML = state.list.map((it) => {
+    const st = it.stats || {};
+    const total = st.total || 0;
+    const okPct = total ? Math.round((st.fired || 0) * 100 / total) : 0;
+    const sel = state.selected.has(it.repoId);
+    const live = it.polling;
+    let status = it.enabled
+      ? '<span class="tag ok">启用</span>'
+      : '<span class="tag idle">停用</span>';
+    if (live) status = '<span class="tag man"><span class="dot live" style="display:inline-block;margin-right:5px"></span>执行中</span>';
+    const streak = it.failStreak > 0
+      ? '<div class="sub" style="color:var(--bad)">连续失败 ' + it.failStreak + ' 次</div>'
+      : '';
+    const reason = it.lastReason
+      ? '<div class="sub" title="' + esc(it.lastReason) + '" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(it.lastReason) + '</div>'
+      : '';
+    const nextCell = it.enabled
+      ? '<div class="mono countdown" data-next="' + (it.nextAt || 0) + '">' + fmtRel(it.nextAt) + '</div>' +
+        '<div class="sub">' + fmtDayClock(it.nextAt) + '</div>'
+      : '<div class="countdown off mono">已停用</div><div class="sub">不会自动触发</div>';
+    return '<tr class="row ' + (sel ? 'sel' : '') + '" data-id="' + esc(it.repoId) + '">' +
+      '<td><input type="checkbox" data-pick="' + esc(it.repoId) + '" ' + (sel ? 'checked' : '') + '></td>' +
+      '<td><div class="name">' + esc(it.owner) + '/' + esc(it.name) + '</div>' +
+        '<div class="sub">' + esc(it.groupName || '未分组') + '</div>' + reason + '</td>' +
+      '<td class="mono">' + fmtEvery(it.everySec) + '</td>' +
+      '<td>' + nextCell + '</td>' +
+      '<td>' + (it.lastOutcome ? outcomeTag(it.lastOutcome) : '<span class="tag idle">未执行</span>') +
+        '<div class="sub">' + (it.lastFiredAt ? fmtRel(it.lastFiredAt) + ' · ' + fmtDur(it.lastDurationMs) : '还没跑过') + '</div></td>' +
+      '<td><div class="bar"><i style="width:' + okPct + '%"></i></div>' +
+        '<div class="sub">' + (st.fired || 0) + ' 成 / ' + (st.failed || 0) + ' 败' +
+        (st.skipped ? ' / ' + st.skipped + ' 跳过' : '') + '</div></td>' +
+      '<td>' + status + streak +
+        '<div style="margin-top:4px"><button class="mini ghost" data-run="' + esc(it.repoId) + '">立即执行</button></div></td>' +
+      '</tr>';
+  }).join('');
+
+  rows.querySelectorAll('[data-pick]').forEach((cb) => {
+    cb.onclick = (ev) => {
+      ev.stopPropagation();
+      const id = cb.dataset.pick;
+      cb.checked ? state.selected.add(id) : state.selected.delete(id);
+      renderList(); renderBatch();
+    };
+  });
+  rows.querySelectorAll('[data-run]').forEach((b) => {
+    b.onclick = (ev) => { ev.stopPropagation(); runRepos([b.dataset.run]); };
+  });
+  rows.querySelectorAll('tr[data-id]').forEach((tr) => {
+    tr.onclick = () => openDrawer(tr.dataset.id);
+  });
+}
+
+/* 只更新倒计时文本，不重绘整张表（每秒一次，重绘会打断选中） */
+function tickCountdowns() {
+  document.querySelectorAll('.countdown[data-next]').forEach((el) => {
+    const at = Number(el.dataset.next) || 0;
+    const diff = at - Date.now();
+    if (!at) { el.textContent = '—'; return; }
+    el.classList.toggle('due', diff <= 0);
+    el.textContent = diff <= 0 ? '待触发' : fmtRel(at);
+  });
+}
+
+function renderGroups() {
+  const box = $('#groupCard');
+  if (!state.groups.length) {
+    box.innerHTML = '<div class="empty">还没有分组。勾选多个仓库后点「编成一组」，它们会共享同一个节拍器，到点一起触发。</div>';
+    return;
+  }
+  box.innerHTML = state.groups.map((g) => {
+    const members = state.list.filter((x) => x.groupId === g.id);
+    const last = members.map((m) => m.lastFiredAt || 0).sort((a, b) => b - a)[0] || 0;
+    const live = members.some((m) => m.polling);
+    return '<div style="display:flex;align-items:center;gap:12px;padding:11px 13px;border-bottom:1px solid var(--line)">' +
+      '<div style="flex:1;min-width:0">' +
+        '<div class="name">' + esc(g.name || '未命名分组') +
+          (live ? ' <span class="tag man">执行中</span>' : '') +
+          ' <span class="sub">· ' + members.length + ' 个成员</span></div>' +
+        '<div class="sub">' + (g.everySec ? '节奏 ' + fmtEvery(g.everySec) : '成员各用各的节奏') +
+          ' · 错开 ' + g.jitterPct + '%' + (last ? ' · 上次 ' + fmtRel(last) : '') + '</div>' +
+      '</div>' +
+      '<button class="ghost" data-rep="' + esc(g.id) + '">执行整组</button>' +
+      '<button class="ghost" data-del="' + esc(g.id) + '">删除</button>' +
+    '</div>';
+  }).join('');
+  box.querySelectorAll('[data-rep]').forEach((b) => b.onclick = () => runRepos(
+    state.list.filter((x) => x.groupId === b.dataset.rep).map((x) => x.repoId)));
+  box.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
+    if (!confirm('删除这个分组？成员会解绑，但不会被删除。')) return;
+    try { await api('/api/schedule/group/' + encodeURIComponent(b.dataset.del), { method: 'DELETE' }); toast('已删除分组'); load(); }
+    catch (e) { toast('删除失败：' + e.message, true); }
+  });
+}
+
+function renderBatch() {
+  const n = state.selected.size;
+  $('#batch').classList.toggle('show', n > 0);
+  $('#batchCount').textContent = '已选 ' + n + ' 项';
+  $('#btnRunSel').disabled = n === 0;
+  $('#btnRunSel').textContent = n ? '立即执行所选（' + n + '）' : '立即执行所选';
+}
+
+/* ---------------- 数据加载 ---------------- */
+async function loadTicks(force) {
+  try {
+    /* 「有评论」服务端过滤；limit 也得放大——被筛掉的都是没评论的轮次，
+       按 80 条找只剩个位数，看着像「几乎没贴过」。 */
+    const remote = isServerFiltered();
+    const url = remote ? '/api/schedule/ticks?limit=200&comment=1' : '/api/schedule/ticks?limit=80';
+    const d = await api(url);
+    state.ticks = d.list || [];
+    state.summary = d.summary || null;
+    renderStats();
+    renderViewCounts();
+    renderTicks(force);
+  } catch (e) {
+    if (/404|Not Found/i.test(e.message)) {
+      $('#ticks').innerHTML = '<tr><td colspan="7" class="empty">后端还在跑旧代码：请重启服务以加载 /api/schedule/ticks</td></tr>';
+      return;
+    }
+    $('#ticks').innerHTML = '<tr><td colspan="7" class="empty">' + esc(e.message) + '</td></tr>';
+  }
+}
+
+async function load() {
+  try {
+    const d = await api('/api/schedule');
+    state.list = d.list || [];
+    state.groups = d.groups || [];
+    if (d.summary && d.summary.today && !state.summary) {
+      state.summary = d.summary.today;
+      renderStats();
+    }
+    const s = d.scheduler || {};
+    $('#schedDot').className = 'dot ' + (s.running ? 'on' : 'off');
+    $('#schedText').textContent = s.running ? '调度器运行中' : '调度器已停';
+    const live = state.list.filter((x) => x.polling).length;
+    $('#autoPill').textContent = live
+      ? '正在执行 ' + live + ' 个 · 每 5 秒刷新'
+      : '自动刷新 5 秒';
+    for (const id of [...state.selected]) {
+      if (!state.list.some((x) => x.repoId === id)) state.selected.delete(id);
+    }
+    renderGroups();
+    renderList();
+    renderBatch();
+    renderViewCounts();
+    renderViewHint();      /* 数据到位后再写提示：启动时先到的是空数组 */
+    tickCountdowns();
+  } catch (e) {
+    const hint = /404|Not Found/i.test(e.message)
+      ? '后端还在跑旧代码：请重启服务（start.bat / start_service.bat）以加载 /api/schedule'
+      : e.message;
+    toast('读取失败：' + hint, true);
+    $('#rows').innerHTML = '<tr><td colspan="7" class="empty">' + esc(hint) + '</td></tr>';
+    $('#groupCard').innerHTML = '<div class="empty">' + esc(hint) + '</div>';
+  }
+}
+
+async function batchPatch(payload, okMsg) {
+  const repoIds = [...state.selected];
+  if (!repoIds.length) return;
+  try {
+    const d = await api('/api/schedule/batch', { method: 'POST', body: JSON.stringify({ repoIds, ...payload }) });
+    toast(okMsg.replace('{n}', d.updated || 0));
+    load();
+  } catch (e) { toast('操作失败：' + e.message, true); }
+}
+
+async function runRepos(repoIds) {
+  if (!repoIds || !repoIds.length) { toast('没有可执行的项', true); return; }
+  toast('已提交 ' + repoIds.length + ' 个仓库，执行中…');
+  loadTicks(true);
+  try {
+    const d = await api('/api/schedule/run', { method: 'POST', body: JSON.stringify({ repoIds }) });
+    const bad = (d.list || []).filter((x) => !x.ok);
+    toast(bad.length ? ('完成，' + bad.length + ' 个失败：' + bad[0].error) : '已完成 ' + (d.list || []).length + ' 个', bad.length > 0);
+    load(); loadTicks(true);
+  } catch (e) { toast('执行失败：' + e.message, true); }
+}
+
+async function openDrawer(repoId) {
+  const it = state.list.find((x) => x.repoId === repoId);
+  if (!it) return;
+  state.current = it;
+  $('#drawerTitle').textContent = it.owner + '/' + it.name + ' · 全部历史';
+  $('#drawer').classList.add('open');
+  $('#drawerBody').innerHTML = '<div class="empty">加载中…</div>';
+  try {
+    const d = await api('/api/schedule/' + encodeURIComponent(it.id) + '/ticks?limit=60');
+    const st = d.stats || {};
+    const ticks = d.list || [];
+    const head = '<dl class="kv">' +
+      '<dt>轮询间隔</dt><dd>' + fmtEvery(it.everySec) + '</dd>' +
+      '<dt>下次触发</dt><dd>' + fmtDayClock(it.nextAt) + '（' + fmtRel(it.nextAt) + '）</dd>' +
+      '<dt>近 7 天</dt><dd>' + (st.fired || 0) + ' 成功 · ' + (st.failed || 0) + ' 失败 · ' +
+        (st.skipped || 0) + ' 跳过 · 平均 ' + fmtDur(st.avgMs || 0) + '</dd>' +
+      '<dt>连续失败</dt><dd style="color:' + (it.failStreak ? 'var(--bad)' : 'inherit') + '">' + (it.failStreak || 0) + '</dd>' +
+      '<dt>所属分组</dt><dd>' + esc(it.groupName || '未分组') + '</dd>' +
+    '</dl>';
+    const body = ticks.length ? ticks.map((t) => {
+      const bits = resultBits(t);
+      return '<div class="tick">' +
+        '<div class="row1">' + outcomeTag(t.outcome) + sourceTag(t.source) +
+          '<span class="mono">' + fmtDayClock(t.firedAt) + '</span>' +
+          '<span class="sub">' + fmtRel(t.firedAt) + '</span>' +
+          '<span class="spacer"></span><span class="mono">' + fmtDur(t.durationMs) + '</span></div>' +
+        '<div class="row2">' + esc(bits.join(' · ')) + '</div>' +
+      '</div>';
+    }).join('') : '<div class="empty">还没有执行记录。等到下一次触发，或点「立即执行」。</div>';
+    $('#drawerBody').innerHTML = head + body;
+  } catch (e) {
+    $('#drawerBody').innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
+  }
+}
+
+/* ---------------- 事件绑定 ---------------- */
+$('#btnReload').onclick = () => { load(); loadTicks(true); };
+$('#btnCloseDrawer').onclick = () => $('#drawer').classList.remove('open');
+$('#btnRunSel').onclick = () => runRepos([...state.selected]);
+$('#btnClear').onclick = () => { state.selected.clear(); renderList(); renderBatch(); };
+
+document.querySelectorAll('#tabs button').forEach((b) => {
+  b.onclick = () => {
+    const next = b.dataset.tab || 'all';
+    if (next === state.tab) return;
+    const remote = (next === 'comment') !== (state.tab === 'comment');
+    state.tab = next;
+    try { localStorage.setItem('sched.tab', next); } catch (e) { /* 存不下不影响本次 */ }
+    /* 进/出「有评论」要换数据源，必须重新拉；其余 tab 都在本地切，
+       重拉反而会让表格闪一下。 */
+    if (remote) loadTicks(true);
+    else renderTicks(true);
+    renderViewCounts();
+  };
+});
+
+/* ---------------- 主视图切换 ---------------- */
+function switchView(next) {
+  if (next !== 'repos') next = 'ticks';
+  state.view = next;
+  try { localStorage.setItem('sched.view', next); } catch (e) { /* 存不下不影响本次 */ }
+
+  $('#panelTicks').hidden = next !== 'ticks';
+  $('#panelRepos').hidden = next !== 'repos';
+  document.querySelectorAll('#views button').forEach((b) => {
+    b.classList.toggle('active', b.dataset.view === next);
+  });
+
+  /* 切页要回到顶部：从长列表滚到中间再切到另一个 tab，
+     新内容会停在半途，看着像「这页只有半截」。 */
+  const host = document.querySelector('main');
+  if (host) host.scrollTop = 0;
+
+  /* 只负责「显示哪一页」和「让那页刷新一次」。
+     提示文字由各自的渲染函数更新——它们才知道当前有几条、筛掉了多少。 */
+  if (next === 'ticks') {
+    renderTicks(true);
+  } else {
+    renderList();
+    renderGroups();
+    renderViewHint();
+  }
+}
+
+/* 视图条右侧那句提示：两个页面都有数据可说了才写，避免启动时写进「0 个仓库」 */
+function renderViewHint() {
+  if (state.view === 'repos') {
+    $('#viewHint').textContent = state.list.length
+      ? state.list.length + ' 个仓库 · 勾选后可批量改间隔'
+      : '';
+  }
+}
+
+document.querySelectorAll('#views button').forEach((b) => {
+  b.onclick = () => switchView(b.dataset.view);
+});
+
+/* 两个 tab 上的数字：执行记录给总条数，仓库给仓库数。
+   不刷数字的话入口就是个死按钮，看不出哪边有新东西。 */
+function renderViewCounts() {
+  const t = state.summary || {};
+  $('#viewTicksCount').textContent = t.total || '';
+  $('#viewReposCount').textContent = state.list.length || '';
+}
+
+$('#checkAll').onclick = (ev) => {
+  state.selected.clear();
+  if (ev.target.checked) state.list.forEach((x) => state.selected.add(x.repoId));
+  renderList(); renderBatch();
+};
+
+$('#btnEvery').onclick = () => {
+  const inp = $('#inEvery');
+  if (inp.hidden) { inp.hidden = false; inp.focus(); return; }
+  const sec = Number(inp.value);
+  if (!sec || sec < 30) { toast('间隔至少 30 秒', true); return; }
+  inp.hidden = true;
+  batchPatch({ everySec: sec }, '已把 {n} 个仓库的间隔改为 ' + fmtEvery(sec));
+};
+
+$('#btnEnable').onclick = () => batchPatch({ enabled: true }, '已启用 {n} 项');
+$('#btnDisable').onclick = () => batchPatch({ enabled: false }, '已停用 {n} 项');
+
+$('#btnGroup').onclick = async () => {
+  const inp = $('#inGroup');
+  if (inp.hidden) { inp.hidden = false; inp.focus(); return; }
+  const name = inp.value.trim();
+  if (!name) { toast('先填分组名', true); return; }
+  inp.hidden = true;
+  try {
+    await api('/api/schedule/group', {
+      method: 'POST',
+      body: JSON.stringify({ name, everySec: null, jitterPct: 10, repoIds: [...state.selected] }),
+    });
+    toast('已编组：' + name);
+    inp.value = '';
+    load();
+  } catch (e) { toast('编组失败：' + e.message, true); }
+};
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') $('#drawer').classList.remove('open');
+});
+
+/* ---------------- 启动 ---------------- */
+/* 先套用记住的视图，再拉数据：反过来的话默认是「执行记录」，
+   仓库页的面板会先闪一下再收起。 */
+switchView(state.view);
+load();
+loadTicks(true);
+setInterval(() => { load(); }, 15000);        /* 调度项：15s */
+setInterval(() => { loadTicks(false); }, 5000);  /* 执行记录：5s */
+setInterval(tickCountdowns, 1000);              /* 倒计时：本地每秒 */
+</script>
+</body>
+</html>

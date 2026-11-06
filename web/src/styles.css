@@ -316,6 +316,28 @@ html, body { height: 100%; }
   .expert-entry-desc { font-size: 11px; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .expert-entry-arrow { color: var(--sub); font-size: 14px; flex-shrink: 0; }
 
+  /* ---- 左侧「定时任务」入口：与专家并列，同一种卡片样式 ---- */
+  .sched-entry { margin-top: 8px; }
+  /* 图标底色用中性色，不用品牌色：专家是「找人」，定时任务是「看机器」，
+     两张卡都用品牌绿会分不清谁是谁。中性色由 token 派生，深浅主题各自成立。 */
+  .expert-entry-ico.is-sched {
+    background: var(--md-surface-3);
+    color: var(--md-text-2);
+    border: 1px solid var(--border);
+  }
+  /* 有失败时亮红点：入口不点开也要能看出「今天出过问题」。
+     用 danger-text 而不是 danger —— 后者只定义了浅色值（注释写明「仅填充」），
+     深色下会漏用浅色值；danger-text 两套主题都有，红点在两边都够醒目。 */
+  .sched-entry-dot {
+    width: 6px; height: 6px; border-radius: 50%; flex: none;
+    background: var(--md-danger-text);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--md-danger-text) 22%, transparent);
+  }
+
+  /* ---- 右侧：定时任务视图（内嵌 schedule.html） ---- */
+  .sched-view { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .sched-view-frame { flex: 1; width: 100%; border: 0; background: transparent; display: block; }
+
   /* ---- 右侧：专家选择视图 ---- */
   .expert-view { flex: 1; min-width: 0; overflow-y: auto; }
   .expert-view-inner { max-width: 880px; margin: 0 auto; padding: 30px 26px 48px; }
