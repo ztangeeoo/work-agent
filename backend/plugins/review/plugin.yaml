@@ -64,4 +64,4 @@ stages:
 # 两边不一致时以 stages 为准（自检会把差异报出来）。
 requires:
   tools: [repo_readonly]
-  skills: [code-review-security]
+  skills: [code-review-security, security-audit]
